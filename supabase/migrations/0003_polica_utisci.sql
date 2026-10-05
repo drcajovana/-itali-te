@@ -1,4 +1,4 @@
--- 0003 — полица и утисци.
+-- 0003 — polica i utisci.
 
 create or replace function public.dodirni_izmenjeno()
 returns trigger
@@ -11,7 +11,7 @@ end;
 $fn$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Полица
+-- Polica
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.polica (
@@ -37,39 +37,39 @@ create trigger polica_izmenjeno_bu
 
 alter table public.polica enable row level security;
 
--- Своју полицу читалац види увек (план, тачка 4).
+-- Svoju policu čitalac vidi uvek (plan, tačka 4).
 create policy polica_svoja on public.polica
   for all to authenticated
   using (clan_id = auth.uid())
   with check (clan_id = auth.uid() and public.aktivan_clan());
 
--- Туђу полицу види само ако у `veze` постоји прихваћен ред са оба члана.
+-- Tuđu policu vidi samo ako u `veze` postoji prihvaćen red sa oba člana.
 create policy polica_povezani_select on public.polica
   for select to authenticated
   using (public.su_povezani(auth.uid(), clan_id));
 
--- Библиотекару треба увид ради извештаја за набавку (план, тачка 3, 5а).
+-- Bibliotekaru treba uvid radi izveštaja za nabavku (plan, tačka 3, 5a).
 create policy polica_bibliotekar_select on public.polica
   for select to authenticated
   using (public.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Утисци
+-- Utisci
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.utisci (
   id                  uuid primary key default gen_random_uuid(),
   clan_id             uuid not null references public.clanovi(id) on delete cascade,
   knjiga_id           uuid not null references public.knjige(id) on delete cascade,
-  -- Оцена 1–10, не звездице: разлика између 7 и 8 је битна (план, тачка 3).
+  -- Ocena 1–10, ne zvezdice: razlika između 7 i 8 je bitna (plan, tačka 3).
   ocena               smallint check (ocena between 1 and 10),
   tekst               text,
   vidljivost          text not null default 'javno'
                         check (vidljivost in ('javno', 'prijatelji', 'samo_ja')),
   spojler             boolean not null default false,
   skriven             boolean not null default false,
-  -- „Записано на пулту": библиотекар уноси утисак у име члана који није
-  -- дигитално вешт (план, тачка 2). Утисак и даље припада члану.
+  -- „Zapisano na pultu": bibliotekar unosi utisak u ime člana koji nije
+  -- digitalno vešt (plan, tačka 2). Utisak i dalje pripada članu.
   uneo_bibliotekar_id uuid references public.clanovi(id) on delete set null,
   kreiran             timestamptz not null default now(),
   izmenjeno           timestamptz not null default now(),
@@ -86,8 +86,8 @@ create trigger utisci_izmenjeno_bu
   before update on public.utisci
   for each row execute function public.dodirni_izmenjeno();
 
--- Скривање је потез модерације: аутор не сме сам да откључа свој сакривени
--- утисак, нити да га сакрије па открије да би избегао преглед.
+-- Skrivanje je potez moderacije: autor ne sme sam da otključa svoj sakriveni
+-- utisak, niti da ga sakrije pa otkrije da bi izbegao pregled.
 create or replace function public.utisci_zastita()
 returns trigger
 language plpgsql
@@ -129,8 +129,8 @@ create policy utisci_bibliotekar_select on public.utisci
   for select to authenticated
   using (public.je_bibliotekar());
 
--- Свој утисак пише члан; библиотекар сме и у име члана — уз потпис у
--- uneo_bibliotekar_id, да се увек зна ко је куцао.
+-- Svoj utisak piše član; bibliotekar sme i u ime člana — uz potpis u
+-- uneo_bibliotekar_id, da se uvek zna ko je kucao.
 create policy utisci_insert on public.utisci
   for insert to authenticated
   with check (
@@ -153,10 +153,10 @@ create policy utisci_delete on public.utisci
   using (clan_id = auth.uid() or public.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Просечна оцена по књизи
+-- Prosečna ocena po knjizi
 --
--- security_invoker: поглед се извршава са правима онога ко га чита, па га
--- политике изнад и даље штите. Без тога поглед заобилази RLS.
+-- security_invoker: pogled se izvršava sa pravima onoga ko ga čita, pa ga
+-- politike iznad i dalje štite. Bez toga pogled zaobilazi RLS.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create view public.ocene_knjiga
@@ -172,7 +172,7 @@ where not skriven
 group by knjiga_id;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Права приступа
+-- Prava pristupa
 -- ─────────────────────────────────────────────────────────────────────────────
 
 revoke all on public.polica       from anon;

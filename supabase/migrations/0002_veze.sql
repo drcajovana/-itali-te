@@ -1,14 +1,14 @@
--- 0002 — везе позивницом и блокаде.
+-- 0002 — veze pozivnicom i blokade.
 --
--- Ово је најосетљивији део (план, тачка 5, корак 6). Правило: веза постоји тек
--- кад је друга страна прихвати, нема јавног списка чланова и нема претраге по
--- имену. Једини начин да се дође до неког јесте да ти он лично да своју шифру.
+-- Ovo je najosetljiviji deo (plan, tačka 5, korak 6). Pravilo: veza postoji tek
+-- kad je druga strana prihvati, nema javnog spiska članova i nema pretrage po
+-- imenu. Jedini način da se dođe do nekog jeste da ti on lično da svoju šifru.
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Блокаде
+-- Blokade
 --
--- Блокирани не сме ни да сазна да је блокиран (план, тачка 3), па нема
--- ниједне политике која му даје увид у ову табелу.
+-- Blokirani ne sme ni da sazna da je blokiran (plan, tačka 3), pa nema
+-- nijedne politike koja mu daje uvid u ovu tabelu.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.blokade (
@@ -35,7 +35,7 @@ create policy blokade_bibliotekar_select on public.blokade
   using (public.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Везе
+-- Veze
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.veze (
@@ -50,7 +50,7 @@ create table public.veze (
   constraint veze_ne_zove_sebe check (pozivalac_id <> pozvani_id)
 );
 
--- Веза је неусмерена: не сме да постоји и A→B и B→A.
+-- Veza je neusmerena: ne sme da postoji i A→B i B→A.
 create unique index veze_par_idx on public.veze (
   least(pozivalac_id, pozvani_id),
   greatest(pozivalac_id, pozvani_id)
@@ -59,10 +59,10 @@ create unique index veze_par_idx on public.veze (
 create index veze_pozvani_idx on public.veze (pozvani_id) where status = 'na_cekanju';
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- su_povezani — једно место на које се ослањају све остале политике
+-- su_povezani — jedno mesto na koje se oslanjaju sve ostale politike
 --
--- Блокада поништава везу и пре него што је ред у `veze` обрисан, зато је
--- провера блокаде овде а не у позивима.
+-- Blokada poništava vezu i pre nego što je red u `veze` obrisan, zato je
+-- provera blokade ovde a ne u pozivima.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create or replace function public.su_povezani(a uuid, b uuid)
@@ -90,12 +90,12 @@ as $fn$
 $fn$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Слање и прихватање позива
+-- Slanje i prihvatanje poziva
 --
--- Иду кроз функције, а не кроз INSERT из апликације, јер члан нема право да
--- чита туђи ред у `clanovi` — значи не може ни да сазна pozvani_id. Тако се
--- успут онемогућава и пробање шифара уназад: једини одговор који клијент
--- добије јесте „шифра не постоји“.
+-- Idu kroz funkcije, a ne kroz INSERT iz aplikacije, jer član nema pravo da
+-- čita tuđi red u `clanovi` — znači ne može ni da sazna pozvani_id. Tako se
+-- usput onemogućava i probanje šifara unazad: jedini odgovor koji klijent
+-- dobije jeste „šifra ne postoji“.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create or replace function public.posalji_poziv(sifra text)
@@ -111,7 +111,7 @@ declare
   veza_id uuid;
 begin
   if ja is null or not exists (select 1 from public.clanovi where id = ja and aktivan) then
-    raise exception 'Налог није активан';
+    raise exception 'Nalog nije aktivan';
   end if;
 
   select id into meta
@@ -120,16 +120,16 @@ begin
      and aktivan;
 
   if meta is null or meta = ja then
-    raise exception 'Шифра позива не постоји';
+    raise exception 'Šifra poziva ne postoji';
   end if;
 
-  -- Блокада се не открива: исти текст као и за непостојећу шифру.
+  -- Blokada se ne otkriva: isti tekst kao i za nepostojeću šifru.
   if exists (
     select 1 from public.blokade
      where (blokirao_id = meta and blokirani_id = ja)
         or (blokirao_id = ja   and blokirani_id = meta)
   ) then
-    raise exception 'Шифра позива не постоји';
+    raise exception 'Šifra poziva ne postoji';
   end if;
 
   insert into public.veze (pozivalac_id, pozvani_id)
@@ -162,17 +162,17 @@ begin
      set status = 'prihvacena',
          potvrdjena = now()
    where id = veza
-     and pozvani_id = ja           -- прихвата само позвана страна
+     and pozvani_id = ja           -- prihvata samo pozvana strana
      and status = 'na_cekanju';
 
   if not found then
-    raise exception 'Позив не постоји или је већ решен';
+    raise exception 'Poziv ne postoji ili je već rešen';
   end if;
 end;
 $fn$;
 
--- Раскидање везе у сваком тренутку, без обавештења другој страни
--- (план, тачка 3). Библиотекар сме да раскине везу малолетног члана.
+-- Raskidanje veze u svakom trenutku, bez obaveštenja drugoj strani
+-- (plan, tačka 3). Bibliotekar sme da raskine vezu maloletnog člana.
 create or replace function public.raskini_vezu(veza uuid)
 returns void
 language plpgsql
@@ -188,30 +188,30 @@ begin
      and (pozivalac_id = ja or pozvani_id = ja or public.je_bibliotekar());
 
   if not found then
-    raise exception 'Веза не постоји';
+    raise exception 'Veza ne postoji';
   end if;
 end;
 $fn$;
 
 alter table public.veze enable row level security;
 
--- Своје везе (позване и примљене) види свака страна.
+-- Svoje veze (pozvane i primljene) vidi svaka strana.
 create policy veze_svoje_select on public.veze
   for select to authenticated
   using (pozivalac_id = auth.uid() or pozvani_id = auth.uid());
 
--- Библиотекар има увид у везе ради заштите малолетних чланова (план, тачка 3).
+-- Bibliotekar ima uvid u veze radi zaštite maloletnih članova (plan, tačka 3).
 create policy veze_bibliotekar_select on public.veze
   for select to authenticated
   using (public.je_bibliotekar());
 
--- Нема INSERT/UPDATE политике: везе се мењају искључиво кроз функције изнад.
+-- Nema INSERT/UPDATE politike: veze se menjaju isključivo kroz funkcije iznad.
 create policy veze_svoje_delete on public.veze
   for delete to authenticated
   using (pozivalac_id = auth.uid() or pozvani_id = auth.uid() or public.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Права приступа
+-- Prava pristupa
 -- ─────────────────────────────────────────────────────────────────────────────
 
 revoke all on public.veze    from anon;

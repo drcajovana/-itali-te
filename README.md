@@ -1,67 +1,70 @@
-# Читалиште
+# Čitalište
 
-Читалачка платформа Народне библиотеке „Доситеј Новаковић" у Неготину.
+Čitalačka platforma Narodne biblioteke „Dositej Novaković" u Negotinu.
 
-Пун опис пројекта, обим, фазе и редослед развоја су у [PLAN.md](PLAN.md).
+Pun opis projekta, obim, faze i redosled razvoja su u [PLAN.md](PLAN.md).
 
-## Стање
+## Stanje
 
-Скела и база. Урађен је корак 1 из плана (тачка 5) — шема и RLS.
-Апликација још нема екране.
+Skela i baza. Urađen je korak 1 iz plana (tačka 5) — šema i RLS.
+Aplikacija još nema ekrane.
 
-| Корак из плана | Стање |
+| Korak iz plana | Stanje |
 |---|---|
-| 1. Шема + RLS | ✅ у `supabase/migrations/` — **још није пуштена ни на један сервер** |
-| 1. Seed ~200 књига из фонда | ⛔ чека извоз из COBISS3 (план, тачка 7) |
-| 2. Пријава чланском картом | ⬜ |
-| 3. Претрага и страница књиге | ⬜ |
-| 3а. Унос линком | ⬜ парсер постоји у `nabavka-knjiga`, треба га пренети |
+| 1. Šema + RLS | ✅ u `supabase/migrations/` — **još nije puštena ni na jedan server** |
+| 1. Seed ~200 knjiga iz fonda | ⛔ čeka izvoz iz COBISS3 (plan, tačka 7) |
+| 2. Prijava članskom kartom | ⬜ |
+| 3. Pretraga i stranica knjige | ⬜ |
+| 3a. Unos linkom | ⬜ parser postoji u `nabavka-knjiga`, treba ga preneti |
 | 4–11. | ⬜ |
 
-## Покретање
+## Pokretanje
 
 ```bash
 npm install
-cp .env.example .env    # попунити VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY
+cp .env.example .env    # popuniti VITE_SUPABASE_URL i VITE_SUPABASE_ANON_KEY
 npm run dev
 ```
 
-## База
+## Baza
 
-Миграције се пуштају редом, бројевима:
+Migracije se puštaju redom, brojevima:
 
-| Фајл | Шта уводи |
+| Fajl | Šta uvodi |
 |---|---|
-| `0001_osnova.sql` | нормализација текста, `clanovi`, `knjige`, помоћне функције за RLS |
-| `0002_veze.sql` | `blokade`, `veze`, `su_povezani()`, слање и прихватање позивнице |
-| `0003_polica_utisci.sql` | `polica`, `utisci`, поглед `ocene_knjiga` |
+| `0001_osnova.sql` | normalizacija teksta, `clanovi`, `knjige`, pomoćne funkcije za RLS |
+| `0002_veze.sql` | `blokade`, `veze`, `su_povezani()`, slanje i prihvatanje pozivnice |
+| `0003_polica_utisci.sql` | `polica`, `utisci`, pogled `ocene_knjiga` |
 | `0004_moderacija.sql` | `prijave`, `objave`, `rezervacije` |
 | `0005_preporuke.sql` | `preporuke` |
-| `0006_izvestaj_nabavka.sql` | извештаји за набавку, спајање дупликата |
+| `0006_izvestaj_nabavka.sql` | izveštaji za nabavku, spajanje duplikata |
 
-Редослед није произвољан: `0003` и `0005` се ослањају на `su_povezani()` из
-`0002`, а политика на `preporuke` гледа у `prijave`, па `0004` мора пре `0005`.
+Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na `su_povezani()` iz
+`0002`, a politika na `preporuke` gleda u `prijave`, pa `0004` mora pre `0005`.
 
-### Три правила која држе целу заштиту
+### Tri pravila koja drže celu zaštitu
 
-1. **Веза пре свега.** Туђу полицу, утиске „само пријатељи" и препоруке види
-   само онај ко има прихваћену везу. Провера је у политици, не у апликацији —
+1. **Veza pre svega.** Tuđu policu, utiske „samo prijatelji" i preporuke vidi
+   samo onaj ko ima prihvaćenu vezu. Provera je u politici, ne u aplikaciji —
    `public.su_povezani()`.
-2. **Нема списка чланова.** До другог члана се долази искључиво преко шифре
-   позива коју он лично да. Зато `posalji_poziv()` јесте функција а не INSERT:
-   члан нема право да прочита туђи ред у `clanovi`, па не може ни да сазна
-   чији је `id`. Непостојећа шифра и блокада дају исти одговор, да се блокада
-   не открије.
-3. **Помоћне функције су SECURITY DEFINER.** Политике на осталим табелама
-   морају да прочитају „ко сам ја" из `clanovi`, а `clanovi` и сама има RLS.
-   Без `SECURITY DEFINER` политика зове саму себе и Postgres пријави
-   бесконачну рекурзију.
+2. **Nema spiska članova.** Do drugog člana se dolazi isključivo preko šifre
+   poziva koju on lično da. Zato `posalji_poziv()` jeste funkcija a ne INSERT:
+   član nema pravo da pročita tuđi red u `clanovi`, pa ne može ni da sazna
+   čiji je `id`. Nepostojeća šifra i blokada daju isti odgovor, da se blokada
+   ne otkrije.
+3. **Pomoćne funkcije su SECURITY DEFINER.** Politike na ostalim tabelama
+   moraju da pročitaju „ko sam ja" iz `clanovi`, a `clanovi` i sama ima RLS.
+   Bez `SECURITY DEFINER` politika zove samu sebe i Postgres prijavi
+   beskonačnu rekurziju.
 
-## Технички стек
+## Tehnički stek
 
 React 19 + Vite 8, Tailwind 4, Supabase (Postgres, Auth, Storage), Vercel.
-PWA преко `vite-plugin-pwa` — Service Worker никад не пресреће POST захтеве
-(план, тачка 4).
+PWA preko `vite-plugin-pwa` — Service Worker nikad ne presreće POST zahteve
+(plan, tačka 4).
 
-Supabase клијент је **singleton** у [`src/lib/supabase.js`](src/lib/supabase.js).
-Ако се негде направи други, Auth сесија почиње да се дуплира.
+Sav tekst interfejsa je u [`src/lib/tekst.js`](src/lib/tekst.js) (latinica; ćirilični
+prevod se dodaje kao drugi objekat, bez diranja komponenti).
+
+Supabase klijent je **singleton** u [`src/lib/supabase.js`](src/lib/supabase.js).
+Ako se negde napravi drugi, Auth sesija počinje da se duplira.

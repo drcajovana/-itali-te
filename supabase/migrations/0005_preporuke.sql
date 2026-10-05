@@ -1,7 +1,7 @@
--- 0004 — директне препоруке између повезаних читалаца.
+-- 0004 — direktne preporuke između povezanih čitalaca.
 --
--- Нема слободног дописивања (план, тачка 3): порука увек виси о конкретној
--- књизи. Или је препорука, или одговор на препоруку.
+-- Nema slobodnog dopisivanja (plan, tačka 3): poruka uvek visi o konkretnoj
+-- knjizi. Ili je preporuka, ili odgovor na preporuku.
 
 create table public.preporuke (
   id            uuid primary key default gen_random_uuid(),
@@ -20,7 +20,7 @@ create table public.preporuke (
 create index preporuke_primalac_idx  on public.preporuke (primalac_id, kreirana desc);
 create index preporuke_posiljalac_idx on public.preporuke (posiljalac_id, kreirana desc);
 
--- Пошиљалац не мења препоруку пошто је послата, нити прима одговор у своје име.
+-- Pošiljalac ne menja preporuku pošto je poslata, niti prima odgovor u svoje ime.
 create or replace function public.preporuke_zastita()
 returns trigger
 language plpgsql
@@ -47,13 +47,13 @@ create trigger preporuke_zastita_bu
 
 alter table public.preporuke enable row level security;
 
--- Препоруке види само пошиљалац и прималац (план, тачка 4).
+-- Preporuke vidi samo pošiljalac i primalac (plan, tačka 4).
 create policy preporuke_ucesnici_select on public.preporuke
   for select to authenticated
   using (posiljalac_id = auth.uid() or primalac_id = auth.uid());
 
--- Изузетак: библиотекар види само ону препоруку која је пријављена. Модерација
--- не сме да значи увид у сву преписку.
+-- Izuzetak: bibliotekar vidi samo onu preporuku koja je prijavljena. Moderacija
+-- ne sme da znači uvid u svu prepisku.
 create policy preporuke_prijavljene_select on public.preporuke
   for select to authenticated
   using (
@@ -64,8 +64,8 @@ create policy preporuke_prijavljene_select on public.preporuke
     )
   );
 
--- Кључно правило: препорука се може уписати само ако веза постоји.
--- Провера стоји у политици, не у апликацији (план, тачка 4).
+-- Ključno pravilo: preporuka se može upisati samo ako veza postoji.
+-- Provera stoji u politici, ne u aplikaciji (plan, tačka 4).
 create policy preporuke_insert on public.preporuke
   for insert to authenticated
   with check (
@@ -74,7 +74,7 @@ create policy preporuke_insert on public.preporuke
     and public.su_povezani(auth.uid(), primalac_id)
   );
 
--- Прималац означава прочитано и уписује одговор; триггер изнад чува остало.
+-- Primalac označava pročitano i upisuje odgovor; trigger iznad čuva ostalo.
 create policy preporuke_primalac_update on public.preporuke
   for update to authenticated
   using (primalac_id = auth.uid())

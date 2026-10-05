@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Читаоци су и основци и пензионери (план, тачка 2) — основа је крупнија
-   од уобичајене и додирне мете су велике. */
+/* Čitaoci su i osnovci i penzioneri (plan, tačka 2) — osnova je krupnija
+   od uobičajene i dodirne mete su velike. */
 @theme {
   --color-papir: #faf7f2;
   --color-mastilo: #1c1917;
@@ -20,7 +20,7 @@ body {
   color: var(--color-mastilo);
 }
 
-/* Ниједна додирна мета испод 44px. */
+/* Nijedna dodirna meta ispod 44px. */
 button,
 [role="button"],
 a.dugme,

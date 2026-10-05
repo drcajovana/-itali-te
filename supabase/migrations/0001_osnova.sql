@@ -1,15 +1,15 @@
--- 0001 — основа: помоћне функције, чланови, књиге.
--- RLS иде у истој миграцији као и табела (план, тачка 4).
+-- 0001 — osnova: pomoćne funkcije, članovi, knjige.
+-- RLS ide u istoj migraciji kao i tabela (plan, tačka 4).
 
 create extension if not exists pg_trgm;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Нормализација текста
+-- Normalizacija teksta
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- Ћирилица и латиница се у библиотеци мешају у истом пољу: запис из COBISS-а је
--- ћирилички, читалац куца латиницом и без квачица. Претрага зато пореди
--- нормализован облик, па „Андрић", „Andrić" и „andric" дају исти резултат.
+-- Ćirilica i latinica se u biblioteci mešaju u istom polju: zapis iz COBISS-a je
+-- ćirilički, čitalac kuca latinicom i bez kvačica. Pretraga zato poredi
+-- normalizovan oblik, pa „Андрић", „Andrić" i „andric" daju isti rezultat.
 create or replace function public.norm_tekst(t text)
 returns text
 language sql
@@ -26,8 +26,8 @@ as $fn$
   );
 $fn$;
 
--- Шифра позива се даје усмено и преписује руком, па се поређење ради без
--- разделника и без обзира на величину слова: „NEG·4471·KJ" = „neg 4471 kj".
+-- Šifra poziva se daje usmeno i prepisuje rukom, pa se poređenje radi bez
+-- razdelnika i bez obzira na veličinu slova: „NEG·4471·KJ" = „neg 4471 kj".
 create or replace function public.norm_sifra(s text)
 returns text
 language sql
@@ -39,7 +39,7 @@ as $fn$
 $fn$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Чланови
+-- Članovi
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.clanovi (
@@ -63,16 +63,16 @@ create unique index clanovi_sifra_norm_idx
   on public.clanovi (public.norm_sifra(sifra_poziva));
 
 comment on column public.clanovi.sifra_poziva is
-  'Шифра коју члан лично даје другоме. Једини начин да се дође до неког члана — нема јавног списка ни претраге по имену.';
+  'Šifra koju član lično daje drugome. Jedini način da se dođe do nekog člana — nema javnog spiska ni pretrage po imenu.';
 comment on column public.clanovi.datum_rodjenja is
-  'Само због малолетних чланова: родитељска сагласност и увид библиотекара у везе.';
+  'Samo zbog maloletnih članova: roditeljska saglasnost i uvid bibliotekara u veze.';
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Помоћне функције за RLS
+-- Pomoćne funkcije za RLS
 --
--- Све су SECURITY DEFINER јер политике на другим табелама морају да прочитају
--- „ко сам ја" из clanovi, а clanovi и сама има RLS. Без DEFINER-а политика
--- зове саму себе и Postgres пријави бесконачну рекурзију.
+-- Sve su SECURITY DEFINER jer politike na drugim tabelama moraju da pročitaju
+-- „ko sam ja" iz clanovi, a clanovi i sama ima RLS. Bez DEFINER-a politika
+-- zove samu sebe i Postgres prijavi beskonačnu rekurziju.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create or replace function public.moja_uloga()
@@ -116,7 +116,7 @@ as $fn$
 $fn$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Шифра позива
+-- Šifra poziva
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create or replace function public.nova_sifra_poziva()
@@ -127,7 +127,7 @@ security definer
 set search_path = public, pg_temp
 as $fn$
 declare
-  -- Без I, L и O — мешају се са 1 и 0 кад се шифра преписује са папира.
+  -- Bez I, L i O — mešaju se sa 1 i 0 kad se šifra prepisuje sa papira.
   slova constant text := 'ABCDEFGHJKMNPQRSTUVWXYZ';
   kod   text;
 begin
@@ -146,17 +146,17 @@ begin
     end if;
   end loop;
 
-  raise exception 'Не могу да направим јединствену шифру позива';
+  raise exception 'Ne mogu da napravim jedinstvenu šifru poziva';
 end;
 $fn$;
 
--- Шифра се додељује сама, да не зависи од тога да ли ју је неко уписао при
--- отварању налога. Члан без шифре не би могао ником да да позивницу.
+-- Šifra se dodeljuje sama, da ne zavisi od toga da li ju je neko upisao pri
+-- otvaranju naloga. Član bez šifre ne bi mogao nikom da da pozivnicu.
 alter table public.clanovi
   alter column sifra_poziva set default public.nova_sifra_poziva();
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Заштита поља која члан не сме сам да мења
+-- Zaštita polja koja član ne sme sam da menja
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create or replace function public.clanovi_zastita()
@@ -171,11 +171,11 @@ begin
   end if;
 
   if public.je_bibliotekar() then
-    new.uloga := old.uloga;          -- улоге додељује само администратор
+    new.uloga := old.uloga;          -- uloge dodeljuje samo administrator
     return new;
   end if;
 
-  -- Читалац мења само оно што је његово: име, надимак, аватар, жанрове, телефон.
+  -- Čitalac menja samo ono što je njegovo: ime, nadimak, avatar, žanrove, telefon.
   new.broj_kartice           := old.broj_kartice;
   new.uloga                  := old.uloga;
   new.aktivan                := old.aktivan;
@@ -191,12 +191,12 @@ create trigger clanovi_zastita_bu
   for each row execute function public.clanovi_zastita();
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- RLS: чланови
+-- RLS: članovi
 -- ─────────────────────────────────────────────────────────────────────────────
 
 alter table public.clanovi enable row level security;
 
--- Свој налог, увек.
+-- Svoj nalog, uvek.
 create policy clanovi_svoj_select on public.clanovi
   for select to authenticated
   using (id = auth.uid());
@@ -206,12 +206,12 @@ create policy clanovi_svoj_update on public.clanovi
   using (id = auth.uid())
   with check (id = auth.uid());
 
--- Библиотекар и администратор виде све чланове.
+-- Bibliotekar i administrator vide sve članove.
 create policy clanovi_bibliotekar_select on public.clanovi
   for select to authenticated
   using (public.je_bibliotekar());
 
--- Нема самосталне регистрације — налог отвара библиотекар (план, тачка 3).
+-- Nema samostalne registracije — nalog otvara bibliotekar (plan, tačka 3).
 create policy clanovi_bibliotekar_insert on public.clanovi
   for insert to authenticated
   with check (public.je_bibliotekar());
@@ -226,7 +226,7 @@ create policy clanovi_admin_delete on public.clanovi
   using (public.je_administrator());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Књиге
+-- Knjige
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.knjige (
@@ -259,9 +259,9 @@ create table public.knjige (
 );
 
 comment on column public.knjige.spojena_sa_id is
-  'Дупликат показује на матични запис. Библиотекар спаја ручно (план, тачка 3, извештај за набавку).';
+  'Duplikat pokazuje na matični zapis. Bibliotekar spaja ručno (plan, tačka 3, izveštaj za nabavku).';
 comment on column public.knjige.korice_url is
-  'Чува се URL, не фајл — услови Google Books-а траже приказ уз линк ка њиховом запису.';
+  'Čuva se URL, ne fajl — uslovi Google Books-a traže prikaz uz link ka njihovom zapisu.';
 
 create index knjige_pretraga_idx on public.knjige using gin (
   public.norm_tekst(coalesce(naslov, '') || ' ' || coalesce(autor, '')) gin_trgm_ops
@@ -270,7 +270,7 @@ create index knjige_isbn_idx    on public.knjige (isbn) where isbn is not null;
 create index knjige_u_fondu_idx on public.knjige (u_fondu);
 create index knjige_spojena_idx on public.knjige (spojena_sa_id) where spojena_sa_id is not null;
 
--- Члан сме да упише наслов који немамо, али не сме да га прогласи делом фонда.
+-- Član sme da upiše naslov koji nemamo, ali ne sme da ga proglasi delom fonda.
 create or replace function public.knjige_unos_clana()
 returns trigger
 language plpgsql
@@ -300,13 +300,13 @@ create trigger knjige_unos_clana_bi
 
 alter table public.knjige enable row level security;
 
--- Каталог виде сви пријављени активни чланови.
+-- Katalog vide svi prijavljeni aktivni članovi.
 create policy knjige_select on public.knjige
   for select to authenticated
   using (public.aktivan_clan());
 
--- „Наслов који немамо" — кључна функционалност (план, тачка 3).
--- Претрага никад не сме да буде ћорсокак, па сваки активан члан сме да упише.
+-- „Naslov koji nemamo" — ključna funkcionalnost (plan, tačka 3).
+-- Pretraga nikad ne sme da bude ćorsokak, pa svaki aktivan član sme da upiše.
 create policy knjige_insert_clan on public.knjige
   for insert to authenticated
   with check (public.aktivan_clan());
@@ -321,7 +321,7 @@ create policy knjige_delete_admin on public.knjige
   using (public.je_administrator());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Права приступа
+-- Prava pristupa
 -- ─────────────────────────────────────────────────────────────────────────────
 
 revoke all on public.clanovi from anon;

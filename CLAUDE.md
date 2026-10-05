@@ -1,82 +1,91 @@
 # CLAUDE.md
 
-Смернице за рад у овом репозиторијуму. Пројектни оквир је у `PLAN.md` — он је
-извор истине за обим и редослед; ово су само правила израде.
+Smernice za rad u ovom repozitorijumu. Projektni okvir je u `PLAN.md` — on je
+izvor istine za obim i redosled; ovo su samo pravila izrade.
 
-## Команде
+## Komande
 
 ```bash
-npm run dev      # Vite dev сервер
-npm run build    # продукциони build у dist/
+npm run dev      # Vite dev server
+npm run build    # produkcioni build u dist/
 npm run lint     # ESLint
 ```
 
-Тестова нема. Провера је ручна, кроз UI — осим RLS-а, који се проверава
-упитима у бази под различитим налозима (план, тачка 5, корак 6).
+Testova nema. Provera je ručna, kroz UI — osim RLS-a, koji se proverava
+upitima u bazi pod različitim nalozima (plan, tačka 5, korak 6).
 
-## Језик
+## Jezik i pismo
 
-Целокупан код, коментари, називи табела и колона су **на српском**, латиницом
-у коду и ћирилицом у корисничком тексту и коментарима. Није декорација: ово
-пише службеник библиотеке, а не тим програмера, и одржаваће га неко ко зна
-библиотечки посао а не енглеску терминологију. `polica`, `utisci`, `veze` —
-не `shelf`, `reviews`, `connections`.
+Celokupan kod, komentari, nazivi tabela i kolona su **na srpskom, latinicom**.
+Nije dekoracija: ovo piše službenik biblioteke, a ne tim programera, i
+održavaće ga neko ko zna bibliotečki posao a ne englesku terminologiju.
+`polica`, `utisci`, `veze` — ne `shelf`, `reviews`, `connections`.
 
-## Шта се не ради
+Sav tekst koji korisnik vidi živi u `src/lib/tekst.js`, kao jedan objekat.
+Komponente ga čitaju odatle (`tekst.pocetna.naslov`) i nikad ne pišu natpise
+direktno u JSX. Tako se ćirilični prevod kasnije dodaje kao drugi objekat
+pored `lat`, bez diranja komponenti. Fajl mora ostati običan JS bez uvoza,
+jer ga čita i `vite.config.js` (manifest, naslov stranice).
 
-- **Не скидају се подаци са сајтова издавача и књижара** (Делфи, Лагуна,
-  Вулкан). Услови коришћења то по правилу забрањују и установа не треба да
-  носи тај ризик. Линковање ка COBISS+ запису и сајту издавача остаје.
-- **Не пише се ништа у COBISS.** COBISS је извор истине за каталог и
-  задужења; „Резервиши" је обавештење библиотекару, ништа више.
-- **Нема самосталне регистрације.** Налог постоји само ако је чланство
-  активно, отвара га библиотекар.
-- **Нема слободног дописивања.** Порука увек виси о конкретној књизи.
-- **Нема јавног списка чланова ни претраге по имену.**
+Jedina ćirilica u repozitorijumu je u funkciji `norm_tekst()` u migraciji
+`0001`: tamo je to podatak (mapa slova za pretragu), ne tekst. Ne
+transliterovati je.
 
-## База
+## Šta se ne radi
 
-RLS иде у **истој миграцији** као и креирање табеле. Табела без политике
-никад не сме да прође.
+- **Ne skidaju se podaci sa sajtova izdavača i knjižara** (Delfi, Laguna,
+  Vulkan). Uslovi korišćenja to po pravilu zabranjuju i ustanova ne treba da
+  nosi taj rizik. Linkovanje ka COBISS+ zapisu i sajtu izdavača ostaje.
+- **Ne piše se ništa u COBISS.** COBISS je izvor istine za katalog i
+  zaduženja; „Rezerviši" je obaveštenje bibliotekaru, ništa više.
+- **Nema samostalne registracije.** Nalog postoji samo ako je članstvo
+  aktivno, otvara ga bibliotekar.
+- **Nema slobodnog dopisivanja.** Poruka uvek visi o konkretnoj knjizi.
+- **Nema javnog spiska članova ni pretrage po imenu.**
 
-Кад политика треба да зна улогу или везу, зове помоћну функцију
-(`je_bibliotekar()`, `su_povezani()`), никад не гледа `clanovi` директно —
-`clanovi` и сама има RLS, па директан упит производи бесконачну рекурзију.
+## Baza
 
-Погледи се праве са `with (security_invoker = true)`. Без тога поглед се
-извршава са правима власника и тихо заобиђе RLS.
+RLS ide u **istoj migraciji** kao i kreiranje tabele. Tabela bez politike
+nikad ne sme da prođe.
 
-Поља која корисник не сме да мења (`uloga`, `aktivan`, `skriven`,
-`u_fondu`, …) чувају BEFORE триггери, не апликација. RLS уме да каже „смеш да
-мењаш овај ред", али не и „смеш да мењаш ову колону".
+Kad politika treba da zna ulogu ili vezu, zove pomoćnu funkciju
+(`je_bibliotekar()`, `su_povezani()`), nikad ne gleda `clanovi` direktno —
+`clanovi` i sama ima RLS, pa direktan upit proizvodi beskonačnu rekurziju.
 
-## Клијент
+Pogledi se prave sa `with (security_invoker = true)`. Bez toga pogled se
+izvršava sa pravima vlasnika i tiho zaobiđe RLS.
 
-Supabase клијент је singleton у `src/lib/supabase.js`. Увози се одатле, никад
-се не прави нови `createClient`.
+Polja koja korisnik ne sme da menja (`uloga`, `aktivan`, `skriven`,
+`u_fondu`, …) čuvaju BEFORE triggeri, ne aplikacija. RLS ume da kaže „smeš da
+menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 
-Број чланске карте није е-адреса, па Auth ради са синтетичком
-`{broj_kartice}@citaliste.local` и PIN-ом као лозинком (план, тачка 4).
+## Klijent
 
-Тајне (`SUPABASE_SERVICE_ROLE_KEY`, Infobip кључ) никад не смеју да добију
-`VITE_` префикс — Vite их уграђује у бандл. SMS иде искључиво преко
-serverless функције.
+Supabase klijent je singleton u `src/lib/supabase.js`. Uvozi se odatle, nikad
+se ne pravi novi `createClient`.
 
-Service Worker **никад не пресреће POST захтеве**.
+Broj članske karte nije e-adresa, pa Auth radi sa sintetičkom
+`{broj_kartice}@citaliste.local` i PIN-om kao lozinkom (plan, tačka 4).
 
-## Интерфејс
+Tajne (`SUPABASE_SERVICE_ROLE_KEY`, Infobip ključ) nikad ne smeju da dobiju
+`VITE_` prefiks — Vite ih ugrađuje u bandl. SMS ide isključivo preko
+serverless funkcije.
 
-Корисници су и основци и пензионери. Интерфејс мора да ради без објашњења:
-крупна основа (17px), додирне мете најмање 44px, јасна дугмад, без
-гејмификације. То је разлог за правила у `src/index.css`, нису произвољна.
+Service Worker **nikad ne presreće POST zahteve**.
 
-Оцена је 1–10, не звездице: разлика између 7 и 8 је битна.
+## Interfejs
 
-## Постојећи код који се преноси, а не пише изнова
+Korisnici su i osnovci i penzioneri. Interfejs mora da radi bez objašnjenja:
+krupna osnova (17px), dodirne mete najmanje 44px, jasna dugmad, bez
+gejmifikacije. To je razlog za pravila u `src/index.css`, nisu proizvoljna.
 
-Парсер за унос линком већ постоји у `../nabavka-knjiga/src/lib/extract.js`
-(schema.org JSON-LD → скенирање DOM ознака → OG/meta, плус посебан пут за
-Делфијев JSON API). Везан је за Tauri `fetch`; при преносу у Vercel
-serverless функцију мења се само тај слој. Уз њега иде и
-`../nabavka-knjiga/src/lib/cyrillic.js` — транслитерација и нормализација
-имена издавача.
+Ocena je 1–10, ne zvezdice: razlika između 7 i 8 je bitna.
+
+## Postojeći kod koji se prenosi, a ne piše iznova
+
+Parser za unos linkom već postoji u `../nabavka-knjiga/src/lib/extract.js`
+(schema.org JSON-LD → skeniranje DOM oznaka → OG/meta, plus poseban put za
+Delfijev JSON API). Vezan je za Tauri `fetch`; pri prenosu u Vercel
+serverless funkciju menja se samo taj sloj. Uz njega ide i
+`../nabavka-knjiga/src/lib/cyrillic.js` — transliteracija i normalizacija
+imena izdavača.

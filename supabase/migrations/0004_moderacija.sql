@@ -1,12 +1,12 @@
--- 0004 — пријаве, објаве библиотекара, резервације.
+-- 0004 — prijave, objave bibliotekara, rezervacije.
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Пријаве
+-- Prijave
 --
--- Дугме „Пријави" стоји на свакој поруци и сваком утиску (план, тачка 3).
--- `stavka_id` намерно нема страни кључ: показује час на препоруку, час на
--- утисак, а пријава мора да преживи брисање пријављене ставке — иначе се
--- траг о инциденту губи баш кад је најпотребнији.
+-- Dugme „Prijavi" stoji na svakoj poruci i svakom utisku (plan, tačka 3).
+-- `stavka_id` namerno nema strani ključ: pokazuje čas na preporuku, čas na
+-- utisak, a prijava mora da preživi brisanje prijavljene stavke — inače se
+-- trag o incidentu gubi baš kad je najpotrebniji.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.prijave (
@@ -45,7 +45,7 @@ create policy prijave_bibliotekar_update on public.prijave
   with check (public.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Објаве и препорука библиотекара
+-- Objave i preporuka bibliotekara
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.objave (
@@ -60,8 +60,8 @@ create table public.objave (
   objavljena timestamptz,
   kreirana   timestamptz not null default now(),
 
-  -- Препорука библиотекара је истакнута књига са образложењем — без књиге
-  -- нема шта да се истакне.
+  -- Preporuka bibliotekara je istaknuta knjiga sa obrazloženjem — bez knjige
+  -- nema šta da se istakne.
   constraint objave_preporuka_ima_knjigu
     check (vrsta <> 'preporuka_bibliotekara' or knjiga_id is not null)
 );
@@ -71,7 +71,7 @@ create index objave_objavljene_idx on public.objave (objavljena desc)
 
 alter table public.objave enable row level security;
 
--- Необјављен нацрт види само библиотекар.
+-- Neobjavljen nacrt vidi samo bibliotekar.
 create policy objave_select on public.objave
   for select to authenticated
   using (
@@ -85,10 +85,10 @@ create policy objave_bibliotekar_write on public.objave
   with check (public.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Резервације
+-- Rezervacije
 --
--- „Резервиши" је обавештење библиотекару, не упис у COBISS — COBISS остаје
--- извор истине за задужења (план, тачка 4).
+-- „Rezerviši" je obaveštenje bibliotekaru, ne upis u COBISS — COBISS ostaje
+-- izvor istine za zaduženja (plan, tačka 4).
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table public.rezervacije (
@@ -101,7 +101,7 @@ create table public.rezervacije (
   kreirana  timestamptz not null default now()
 );
 
--- Иста књига не може двапут да се резервише док прва резервација стоји.
+-- Ista knjiga ne može dvaput da se rezerviše dok prva rezervacija stoji.
 create unique index rezervacije_otvorena_idx
   on public.rezervacije (clan_id, knjiga_id)
   where status = 'nova';
@@ -118,7 +118,7 @@ create policy rezervacije_insert on public.rezervacije
   for insert to authenticated
   with check (clan_id = auth.uid() and public.aktivan_clan() and status = 'nova');
 
--- Члан сме само да откаже своју; обраду уписује библиотекар.
+-- Član sme samo da otkaže svoju; obradu upisuje bibliotekar.
 create policy rezervacije_svoje_update on public.rezervacije
   for update to authenticated
   using (clan_id = auth.uid() and status = 'nova')
@@ -130,7 +130,7 @@ create policy rezervacije_bibliotekar_all on public.rezervacije
   with check (public.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Права приступа
+-- Prava pristupa
 -- ─────────────────────────────────────────────────────────────────────────────
 
 revoke all on public.prijave     from anon;
