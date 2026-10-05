@@ -8,3 +8,6 @@ dist-ssr
 *.local
 .DS_Store
 *.log
+
+# Supabase CLI (lokalno stanje linkovanja)
+supabase/.temp

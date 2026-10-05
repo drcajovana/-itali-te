@@ -1,4 +1,4 @@
--- 0004 — direktne preporuke između povezanih čitalaca.
+-- 0005 — direktne preporuke između povezanih čitalaca.
 --
 -- Nema slobodnog dopisivanja (plan, tačka 3): poruka uvek visi o konkretnoj
 -- knjizi. Ili je preporuka, ili odgovor na preporuku.
