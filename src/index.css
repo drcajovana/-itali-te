@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/* Читаоци су и основци и пензионери (план, тачка 2) — основа је крупнија
+   од уобичајене и додирне мете су велике. */
+@theme {
+  --color-papir: #faf7f2;
+  --color-mastilo: #1c1917;
+  --color-pecat: #7c2d12;
+  --color-pecat-svetli: #9a3412;
+  --color-ivica: #e7e0d6;
+  --font-size-base: 1.0625rem;
+}
+
+html {
+  font-size: 17px;
+}
+
+body {
+  background: var(--color-papir);
+  color: var(--color-mastilo);
+}
+
+/* Ниједна додирна мета испод 44px. */
+button,
+[role="button"],
+a.dugme,
+input,
+select,
+textarea {
+  min-height: 2.75rem;
+}
