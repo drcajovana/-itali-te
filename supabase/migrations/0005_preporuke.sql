@@ -21,14 +21,13 @@ create index preporuke_primalac_idx  on public.preporuke (primalac_id, kreirana 
 create index preporuke_posiljalac_idx on public.preporuke (posiljalac_id, kreirana desc);
 
 -- Pošiljalac ne menja preporuku pošto je poslata, niti prima odgovor u svoje ime.
-create or replace function public.preporuke_zastita()
+create or replace function privatno.preporuke_zastita()
 returns trigger
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $fn$
 begin
-  if public.je_bibliotekar() then
+  if privatno.servisna_uloga() or privatno.je_bibliotekar() then
     return new;
   end if;
 
@@ -43,7 +42,7 @@ $fn$;
 
 create trigger preporuke_zastita_bu
   before update on public.preporuke
-  for each row execute function public.preporuke_zastita();
+  for each row execute function privatno.preporuke_zastita();
 
 alter table public.preporuke enable row level security;
 
@@ -57,7 +56,7 @@ create policy preporuke_ucesnici_select on public.preporuke
 create policy preporuke_prijavljene_select on public.preporuke
   for select to authenticated
   using (
-    public.je_bibliotekar()
+    privatno.je_bibliotekar()
     and exists (
       select 1 from public.prijave p
        where p.tip = 'preporuka' and p.stavka_id = preporuke.id
@@ -70,8 +69,8 @@ create policy preporuke_insert on public.preporuke
   for insert to authenticated
   with check (
     posiljalac_id = auth.uid()
-    and public.aktivan_clan()
-    and public.su_povezani(auth.uid(), primalac_id)
+    and privatno.aktivan_clan()
+    and privatno.su_povezani(auth.uid(), primalac_id)
   );
 
 -- Primalac označava pročitano i upisuje odgovor; trigger iznad čuva ostalo.
@@ -82,12 +81,15 @@ create policy preporuke_primalac_update on public.preporuke
 
 create policy preporuke_bibliotekar_update on public.preporuke
   for update to authenticated
-  using (public.je_bibliotekar())
-  with check (public.je_bibliotekar());
+  using (privatno.je_bibliotekar())
+  with check (privatno.je_bibliotekar());
 
 create policy preporuke_delete on public.preporuke
   for delete to authenticated
-  using (posiljalac_id = auth.uid() or public.je_bibliotekar());
+  using (posiljalac_id = auth.uid() or privatno.je_bibliotekar());
 
-revoke all on public.preporuke from anon;
+revoke all on public.preporuke from anon, authenticated;
 grant select, insert, update, delete on public.preporuke to authenticated;
+
+revoke all on all functions in schema privatno from public, anon;
+grant execute on all functions in schema privatno to authenticated, service_role;

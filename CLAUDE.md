@@ -48,9 +48,41 @@ transliterovati je.
 RLS ide u **istoj migraciji** kao i kreiranje tabele. Tabela bez politike
 nikad ne sme da prođe.
 
-Kad politika treba da zna ulogu ili vezu, zove pomoćnu funkciju
-(`je_bibliotekar()`, `su_povezani()`), nikad ne gleda `clanovi` direktno —
-`clanovi` i sama ima RLS, pa direktan upit proizvodi beskonačnu rekurziju.
+Kad politika treba da zna ulogu ili vezu, zove pomoćnu funkciju iz šeme
+`privatno` (`privatno.je_bibliotekar()`, `privatno.su_povezani()`), nikad ne
+gleda `clanovi` direktno — `clanovi` i sama ima RLS, pa direktan upit
+proizvodi beskonačnu rekurziju.
+
+**Nove pomoćne funkcije za RLS se prave u `privatno`, nikad u `public`.**
+Sve što je u `public` Supabase izlaže kao RPC (`/rest/v1/rpc/...`) svakom
+prijavljenom korisniku, pa pomoćna funkcija tamo postaje upit koji sme da
+postavi bilo ko: da je `su_povezani(a, b)` u `public`, otkrivala bi ko je s kim povezan. Zato:
+
+- funkcija ide u `privatno`, a na kraju migracije se ponavljaju
+  `revoke all on all functions in schema privatno from public, anon;` i
+  `grant execute on all functions in schema privatno to authenticated, service_role;`
+  (nove funkcije inače može da pozove svako);
+- `service_role` mora da ima `execute`, jer se podrazumevana vrednost
+  `clanovi.sifra_poziva` i trigeri izvršavaju i pod tom ulogom;
+- šema `privatno` ne sme da se doda u izložene šeme (Project Settings → API).
+
+Javne funkcije (RPC) su samo `posalji_poziv()`, `prihvati_poziv()` i
+`spoji_knjige()`. Nova javna funkcija se dodaje samo kad klijent zaista mora
+da je pozove, i sama proverava ko je zove.
+
+Pretraga knjiga ne može da zove `privatno.norm_tekst()` iz klijenta; ide
+preko javne funkcije koja je koristi iznutra.
+
+Trigeri za zaštitu polja su `SECURITY INVOKER` i prvo propuštaju
+`privatno.servisna_uloga()` (postgres, service_role, supabase_admin), da uvoz
+fonda i prvi administrator rade. U definer funkciji `current_user` je uvek
+vlasnik, pa ta provera tamo ne bi radila.
+
+Tabele: `revoke all … from anon, authenticated`, pa `grant` samo ono što
+aplikacija radi. Supabase podrazumevano daje sve, a RLS ne štiti `TRUNCATE`.
+
+Migracije su puštene ručno u SQL Editoru (vidi README, „Migracije su puštene
+ručno"): izmena fajla u repozitorijumu nije u bazi dok se ne ponovi tamo.
 
 Pogledi se prave sa `with (security_invoker = true)`. Bez toga pogled se
 izvršava sa pravima vlasnika i tiho zaobiđe RLS.

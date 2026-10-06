@@ -33,16 +33,16 @@ create policy prijave_svoje_select on public.prijave
 
 create policy prijave_insert on public.prijave
   for insert to authenticated
-  with check (prijavio_id = auth.uid() and public.aktivan_clan());
+  with check (prijavio_id = auth.uid() and privatno.aktivan_clan());
 
 create policy prijave_bibliotekar_select on public.prijave
   for select to authenticated
-  using (public.je_bibliotekar());
+  using (privatno.je_bibliotekar());
 
 create policy prijave_bibliotekar_update on public.prijave
   for update to authenticated
-  using (public.je_bibliotekar())
-  with check (public.je_bibliotekar());
+  using (privatno.je_bibliotekar())
+  with check (privatno.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Objave i preporuka bibliotekara
@@ -75,14 +75,14 @@ alter table public.objave enable row level security;
 create policy objave_select on public.objave
   for select to authenticated
   using (
-    (objavljena is not null and objavljena <= now() and public.aktivan_clan())
-    or public.je_bibliotekar()
+    (objavljena is not null and objavljena <= now() and privatno.aktivan_clan())
+    or privatno.je_bibliotekar()
   );
 
 create policy objave_bibliotekar_write on public.objave
   for all to authenticated
-  using (public.je_bibliotekar())
-  with check (public.je_bibliotekar());
+  using (privatno.je_bibliotekar())
+  with check (privatno.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Rezervacije
@@ -116,7 +116,7 @@ create policy rezervacije_svoje_select on public.rezervacije
 
 create policy rezervacije_insert on public.rezervacije
   for insert to authenticated
-  with check (clan_id = auth.uid() and public.aktivan_clan() and status = 'nova');
+  with check (clan_id = auth.uid() and privatno.aktivan_clan() and status = 'nova');
 
 -- Član sme samo da otkaže svoju; obradu upisuje bibliotekar.
 create policy rezervacije_svoje_update on public.rezervacije
@@ -126,16 +126,14 @@ create policy rezervacije_svoje_update on public.rezervacije
 
 create policy rezervacije_bibliotekar_all on public.rezervacije
   for all to authenticated
-  using (public.je_bibliotekar())
-  with check (public.je_bibliotekar());
+  using (privatno.je_bibliotekar())
+  with check (privatno.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Prava pristupa
 -- ─────────────────────────────────────────────────────────────────────────────
 
-revoke all on public.prijave     from anon;
-revoke all on public.objave      from anon;
-revoke all on public.rezervacije from anon;
+revoke all on public.prijave, public.objave, public.rezervacije from anon, authenticated;
 
 grant select, insert, update on public.prijave to authenticated;
 grant select, insert, update, delete on public.objave to authenticated;

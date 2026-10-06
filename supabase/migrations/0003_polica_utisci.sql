@@ -1,6 +1,6 @@
 -- 0003 — polica i utisci.
 
-create or replace function public.dodirni_izmenjeno()
+create or replace function privatno.dodirni_izmenjeno()
 returns trigger
 language plpgsql
 as $fn$
@@ -33,7 +33,7 @@ create index polica_knjiga_idx on public.polica (knjiga_id);
 
 create trigger polica_izmenjeno_bu
   before update on public.polica
-  for each row execute function public.dodirni_izmenjeno();
+  for each row execute function privatno.dodirni_izmenjeno();
 
 alter table public.polica enable row level security;
 
@@ -41,17 +41,17 @@ alter table public.polica enable row level security;
 create policy polica_svoja on public.polica
   for all to authenticated
   using (clan_id = auth.uid())
-  with check (clan_id = auth.uid() and public.aktivan_clan());
+  with check (clan_id = auth.uid() and privatno.aktivan_clan());
 
 -- Tuđu policu vidi samo ako u `veze` postoji prihvaćen red sa oba člana.
 create policy polica_povezani_select on public.polica
   for select to authenticated
-  using (public.su_povezani(auth.uid(), clan_id));
+  using (privatno.su_povezani(auth.uid(), clan_id));
 
 -- Bibliotekaru treba uvid radi izveštaja za nabavku (plan, tačka 3, 5a).
 create policy polica_bibliotekar_select on public.polica
   for select to authenticated
-  using (public.je_bibliotekar());
+  using (privatno.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Utisci
@@ -84,18 +84,17 @@ create index utisci_clan_idx   on public.utisci (clan_id);
 
 create trigger utisci_izmenjeno_bu
   before update on public.utisci
-  for each row execute function public.dodirni_izmenjeno();
+  for each row execute function privatno.dodirni_izmenjeno();
 
 -- Skrivanje je potez moderacije: autor ne sme sam da otključa svoj sakriveni
 -- utisak, niti da ga sakrije pa otkrije da bi izbegao pregled.
-create or replace function public.utisci_zastita()
+create or replace function privatno.utisci_zastita()
 returns trigger
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $fn$
 begin
-  if not public.je_bibliotekar() then
+  if not (privatno.servisna_uloga() or privatno.je_bibliotekar()) then
     new.skriven   := old.skriven;
     new.clan_id   := old.clan_id;
     new.knjiga_id := old.knjiga_id;
@@ -106,7 +105,7 @@ $fn$;
 
 create trigger utisci_zastita_bu
   before update on public.utisci
-  for each row execute function public.utisci_zastita();
+  for each row execute function privatno.utisci_zastita();
 
 alter table public.utisci enable row level security;
 
@@ -118,24 +117,24 @@ create policy utisci_javni_select on public.utisci
   for select to authenticated
   using (
     not skriven
-    and public.aktivan_clan()
+    and privatno.aktivan_clan()
     and (
       vidljivost = 'javno'
-      or (vidljivost = 'prijatelji' and public.su_povezani(auth.uid(), clan_id))
+      or (vidljivost = 'prijatelji' and privatno.su_povezani(auth.uid(), clan_id))
     )
   );
 
 create policy utisci_bibliotekar_select on public.utisci
   for select to authenticated
-  using (public.je_bibliotekar());
+  using (privatno.je_bibliotekar());
 
 -- Svoj utisak piše član; bibliotekar sme i u ime člana — uz potpis u
 -- uneo_bibliotekar_id, da se uvek zna ko je kucao.
 create policy utisci_insert on public.utisci
   for insert to authenticated
   with check (
-    (clan_id = auth.uid() and public.aktivan_clan())
-    or (public.je_bibliotekar() and uneo_bibliotekar_id = auth.uid())
+    (clan_id = auth.uid() and privatno.aktivan_clan())
+    or (privatno.je_bibliotekar() and uneo_bibliotekar_id = auth.uid())
   );
 
 create policy utisci_svoj_update on public.utisci
@@ -145,12 +144,12 @@ create policy utisci_svoj_update on public.utisci
 
 create policy utisci_bibliotekar_update on public.utisci
   for update to authenticated
-  using (public.je_bibliotekar())
-  with check (public.je_bibliotekar());
+  using (privatno.je_bibliotekar())
+  with check (privatno.je_bibliotekar());
 
 create policy utisci_delete on public.utisci
   for delete to authenticated
-  using (clan_id = auth.uid() or public.je_bibliotekar());
+  using (clan_id = auth.uid() or privatno.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Prosečna ocena po knjizi
@@ -175,10 +174,11 @@ group by knjiga_id;
 -- Prava pristupa
 -- ─────────────────────────────────────────────────────────────────────────────
 
-revoke all on public.polica       from anon;
-revoke all on public.utisci       from anon;
-revoke all on public.ocene_knjiga from anon;
+revoke all on public.polica, public.utisci, public.ocene_knjiga from anon, authenticated;
 
 grant select, insert, update, delete on public.polica to authenticated;
 grant select, insert, update, delete on public.utisci to authenticated;
 grant select on public.ocene_knjiga to authenticated;
+
+revoke all on all functions in schema privatno from public, anon;
+grant execute on all functions in schema privatno to authenticated, service_role;

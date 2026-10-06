@@ -28,11 +28,11 @@ alter table public.blokade enable row level security;
 create policy blokade_svoje on public.blokade
   for all to authenticated
   using (blokirao_id = auth.uid())
-  with check (blokirao_id = auth.uid() and public.aktivan_clan());
+  with check (blokirao_id = auth.uid() and privatno.aktivan_clan());
 
 create policy blokade_bibliotekar_select on public.blokade
   for select to authenticated
-  using (public.je_bibliotekar());
+  using (privatno.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Veze
@@ -65,7 +65,7 @@ create index veze_pozvani_idx on public.veze (pozvani_id) where status = 'na_cek
 -- provera blokade ovde a ne u pozivima.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-create or replace function public.su_povezani(a uuid, b uuid)
+create or replace function privatno.su_povezani(a uuid, b uuid)
 returns boolean
 language sql
 stable
@@ -116,7 +116,7 @@ begin
 
   select id into meta
     from public.clanovi
-   where public.norm_sifra(sifra_poziva) = public.norm_sifra(sifra)
+   where privatno.norm_sifra(sifra_poziva) = privatno.norm_sifra(sifra)
      and aktivan;
 
   if meta is null or meta = ja then
@@ -171,27 +171,10 @@ begin
 end;
 $fn$;
 
--- Raskidanje veze u svakom trenutku, bez obaveštenja drugoj strani
--- (plan, tačka 3). Bibliotekar sme da raskine vezu maloletnog člana.
-create or replace function public.raskini_vezu(veza uuid)
-returns void
-language plpgsql
-volatile
-security definer
-set search_path = public, pg_temp
-as $fn$
-declare
-  ja uuid := auth.uid();
-begin
-  delete from public.veze
-   where id = veza
-     and (pozivalac_id = ja or pozvani_id = ja or public.je_bibliotekar());
-
-  if not found then
-    raise exception 'Veza ne postoji';
-  end if;
-end;
-$fn$;
+-- Raskidanje veze u svakom trenutku, bez obaveštenja drugoj strani (plan,
+-- tačka 3), ide običnim DELETE-om: politika veze_svoje_delete niže to dozvoljava
+-- obema stranama i bibliotekaru (zaštita maloletnih članova). Posebna funkcija
+-- bi samo ponovila istu proveru i povećala javnu površinu API-ja.
 
 alter table public.veze enable row level security;
 
@@ -203,29 +186,28 @@ create policy veze_svoje_select on public.veze
 -- Bibliotekar ima uvid u veze radi zaštite maloletnih članova (plan, tačka 3).
 create policy veze_bibliotekar_select on public.veze
   for select to authenticated
-  using (public.je_bibliotekar());
+  using (privatno.je_bibliotekar());
 
 -- Nema INSERT/UPDATE politike: veze se menjaju isključivo kroz funkcije iznad.
 create policy veze_svoje_delete on public.veze
   for delete to authenticated
-  using (pozivalac_id = auth.uid() or pozvani_id = auth.uid() or public.je_bibliotekar());
+  using (pozivalac_id = auth.uid() or pozvani_id = auth.uid() or privatno.je_bibliotekar());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Prava pristupa
 -- ─────────────────────────────────────────────────────────────────────────────
 
-revoke all on public.veze    from anon;
-revoke all on public.blokade from anon;
+revoke all on public.veze, public.blokade from anon, authenticated;
 
 grant select, delete on public.veze to authenticated;
 grant select, insert, delete on public.blokade to authenticated;
 
-revoke all on function public.su_povezani(uuid, uuid) from public, anon;
-revoke all on function public.posalji_poziv(text)     from public, anon;
-revoke all on function public.prihvati_poziv(uuid)    from public, anon;
-revoke all on function public.raskini_vezu(uuid)      from public, anon;
+revoke all on all functions in schema privatno from public, anon;
+grant execute on all functions in schema privatno to authenticated, service_role;
 
-grant execute on function public.su_povezani(uuid, uuid) to authenticated;
-grant execute on function public.posalji_poziv(text)     to authenticated;
-grant execute on function public.prihvati_poziv(uuid)    to authenticated;
-grant execute on function public.raskini_vezu(uuid)      to authenticated;
+-- Javne funkcije (RPC) ove migracije: samo slanje i prihvatanje poziva.
+revoke all on function public.posalji_poziv(text)  from public, anon;
+revoke all on function public.prihvati_poziv(uuid) from public, anon;
+
+grant execute on function public.posalji_poziv(text)  to authenticated;
+grant execute on function public.prihvati_poziv(uuid) to authenticated;

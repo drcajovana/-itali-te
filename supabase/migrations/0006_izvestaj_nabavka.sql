@@ -92,7 +92,7 @@ security definer
 set search_path = public, pg_temp
 as $fn$
 begin
-  if not public.je_bibliotekar() then
+  if not privatno.je_bibliotekar() then
     raise exception 'Samo bibliotekar spaja zapise';
   end if;
 
@@ -139,10 +139,13 @@ begin
 end;
 $fn$;
 
-revoke all on public.izvestaj_nabavka           from anon;
-revoke all on public.izvestaj_dodatni_primerak  from anon;
+revoke all on public.izvestaj_nabavka, public.izvestaj_dodatni_primerak from anon, authenticated;
+
 grant select on public.izvestaj_nabavka          to authenticated;
 grant select on public.izvestaj_dodatni_primerak to authenticated;
 
+-- Pored posalji_poziv i prihvati_poziv ovo je jedina javna funkcija: akcija
+-- bibliotekarskog panela koja nema drugi put do baze. Sama proverava
+-- privatno.je_bibliotekar().
 revoke all on function public.spoji_knjige(uuid, uuid) from public, anon;
 grant execute on function public.spoji_knjige(uuid, uuid) to authenticated;

@@ -1,7 +1,17 @@
 -- 0001 — osnova: pomoćne funkcije, članovi, knjige.
 -- RLS ide u istoj migraciji kao i tabela (plan, tačka 4).
 
-create extension if not exists pg_trgm;
+-- Ekstenzije idu u šemu `extensions`: u `public` bi njihove funkcije postale
+-- javni RPC pozivi kroz API.
+create extension if not exists pg_trgm with schema extensions;
+
+-- Pomoćne funkcije za RLS žive u šemi `privatno`, koja se NE izlaže kroz API
+-- (Supabase podrazumevano izlaže samo `public`). Tako se do njih ne može doći
+-- preko /rpc, a politike ih i dalje koriste. Politike se izvršavaju sa pravima
+-- korisnika, pa authenticated mora da ima USAGE na šemi.
+create schema if not exists privatno;
+revoke all on schema privatno from public, anon;
+grant usage on schema privatno to authenticated, service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Normalizacija teksta
@@ -10,7 +20,7 @@ create extension if not exists pg_trgm;
 -- Ćirilica i latinica se u biblioteci mešaju u istom polju: zapis iz COBISS-a je
 -- ćirilički, čitalac kuca latinicom i bez kvačica. Pretraga zato poredi
 -- normalizovan oblik, pa „Андрић", „Andrić" i „andric" daju isti rezultat.
-create or replace function public.norm_tekst(t text)
+create or replace function privatno.norm_tekst(t text)
 returns text
 language sql
 immutable
@@ -28,7 +38,7 @@ $fn$;
 
 -- Šifra poziva se daje usmeno i prepisuje rukom, pa se poređenje radi bez
 -- razdelnika i bez obzira na veličinu slova: „NEG·4471·KJ" = „neg 4471 kj".
-create or replace function public.norm_sifra(s text)
+create or replace function privatno.norm_sifra(s text)
 returns text
 language sql
 immutable
@@ -60,7 +70,7 @@ create table public.clanovi (
 );
 
 create unique index clanovi_sifra_norm_idx
-  on public.clanovi (public.norm_sifra(sifra_poziva));
+  on public.clanovi (privatno.norm_sifra(sifra_poziva));
 
 comment on column public.clanovi.sifra_poziva is
   'Šifra koju član lično daje drugome. Jedini način da se dođe do nekog člana — nema javnog spiska ni pretrage po imenu.';
@@ -75,7 +85,7 @@ comment on column public.clanovi.datum_rodjenja is
 -- zove samu sebe i Postgres prijavi beskonačnu rekurziju.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-create or replace function public.moja_uloga()
+create or replace function privatno.moja_uloga()
 returns text
 language sql
 stable
@@ -85,27 +95,27 @@ as $fn$
   select uloga from public.clanovi where id = auth.uid() and aktivan;
 $fn$;
 
-create or replace function public.je_bibliotekar()
+create or replace function privatno.je_bibliotekar()
 returns boolean
 language sql
 stable
 security definer
 set search_path = public, pg_temp
 as $fn$
-  select coalesce(public.moja_uloga() in ('bibliotekar', 'administrator'), false);
+  select coalesce(privatno.moja_uloga() in ('bibliotekar', 'administrator'), false);
 $fn$;
 
-create or replace function public.je_administrator()
+create or replace function privatno.je_administrator()
 returns boolean
 language sql
 stable
 security definer
 set search_path = public, pg_temp
 as $fn$
-  select coalesce(public.moja_uloga() = 'administrator', false);
+  select coalesce(privatno.moja_uloga() = 'administrator', false);
 $fn$;
 
-create or replace function public.aktivan_clan()
+create or replace function privatno.aktivan_clan()
 returns boolean
 language sql
 stable
@@ -115,11 +125,28 @@ as $fn$
   select exists (select 1 from public.clanovi where id = auth.uid() and aktivan);
 $fn$;
 
+-- Trigger-i niže štite polja od običnih korisnika, ne od servisnih uloga:
+-- uvoz fonda, prvi administrator i migracije rade kao postgres ili
+-- service_role i moraju da prolaze bez ograničenja.
+--
+-- NAMERNO nije SECURITY DEFINER: u definer funkciji current_user je uvek
+-- vlasnik (postgres), pa bi provera uvek prošla. Kao invoker, current_user je
+-- uloga pod kojom stiže zahtev: authenticated za prijavljenog člana,
+-- service_role za servisni ključ, postgres za SQL editor i migracije.
+create or replace function privatno.servisna_uloga()
+returns boolean
+language sql
+stable
+set search_path = public, pg_temp
+as $fn$
+  select current_user in ('postgres', 'service_role', 'supabase_admin');
+$fn$;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Šifra poziva
 -- ─────────────────────────────────────────────────────────────────────────────
 
-create or replace function public.nova_sifra_poziva()
+create or replace function privatno.nova_sifra_poziva()
 returns text
 language plpgsql
 volatile
@@ -140,7 +167,7 @@ begin
 
     if not exists (
       select 1 from public.clanovi c
-       where public.norm_sifra(c.sifra_poziva) = public.norm_sifra(kod)
+       where privatno.norm_sifra(c.sifra_poziva) = privatno.norm_sifra(kod)
     ) then
       return kod;
     end if;
@@ -153,24 +180,27 @@ $fn$;
 -- Šifra se dodeljuje sama, da ne zavisi od toga da li ju je neko upisao pri
 -- otvaranju naloga. Član bez šifre ne bi mogao nikom da da pozivnicu.
 alter table public.clanovi
-  alter column sifra_poziva set default public.nova_sifra_poziva();
+  alter column sifra_poziva set default privatno.nova_sifra_poziva();
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Zaštita polja koja član ne sme sam da menja
 -- ─────────────────────────────────────────────────────────────────────────────
 
-create or replace function public.clanovi_zastita()
+create or replace function privatno.clanovi_zastita()
 returns trigger
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $fn$
 begin
-  if public.je_administrator() then
+  if privatno.servisna_uloga() then
     return new;
   end if;
 
-  if public.je_bibliotekar() then
+  if privatno.je_administrator() then
+    return new;
+  end if;
+
+  if privatno.je_bibliotekar() then
     new.uloga := old.uloga;          -- uloge dodeljuje samo administrator
     return new;
   end if;
@@ -188,7 +218,7 @@ $fn$;
 
 create trigger clanovi_zastita_bu
   before update on public.clanovi
-  for each row execute function public.clanovi_zastita();
+  for each row execute function privatno.clanovi_zastita();
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- RLS: članovi
@@ -209,21 +239,21 @@ create policy clanovi_svoj_update on public.clanovi
 -- Bibliotekar i administrator vide sve članove.
 create policy clanovi_bibliotekar_select on public.clanovi
   for select to authenticated
-  using (public.je_bibliotekar());
+  using (privatno.je_bibliotekar());
 
 -- Nema samostalne registracije — nalog otvara bibliotekar (plan, tačka 3).
 create policy clanovi_bibliotekar_insert on public.clanovi
   for insert to authenticated
-  with check (public.je_bibliotekar());
+  with check (privatno.je_bibliotekar());
 
 create policy clanovi_bibliotekar_update on public.clanovi
   for update to authenticated
-  using (public.je_bibliotekar())
-  with check (public.je_bibliotekar());
+  using (privatno.je_bibliotekar())
+  with check (privatno.je_bibliotekar());
 
 create policy clanovi_admin_delete on public.clanovi
   for delete to authenticated
-  using (public.je_administrator());
+  using (privatno.je_administrator());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Knjige
@@ -264,21 +294,21 @@ comment on column public.knjige.korice_url is
   'Čuva se URL, ne fajl — uslovi Google Books-a traže prikaz uz link ka njihovom zapisu.';
 
 create index knjige_pretraga_idx on public.knjige using gin (
-  public.norm_tekst(coalesce(naslov, '') || ' ' || coalesce(autor, '')) gin_trgm_ops
+  privatno.norm_tekst(coalesce(naslov, '') || ' ' || coalesce(autor, '')) extensions.gin_trgm_ops
 );
 create index knjige_isbn_idx    on public.knjige (isbn) where isbn is not null;
 create index knjige_u_fondu_idx on public.knjige (u_fondu);
 create index knjige_spojena_idx on public.knjige (spojena_sa_id) where spojena_sa_id is not null;
 
 -- Član sme da upiše naslov koji nemamo, ali ne sme da ga proglasi delom fonda.
-create or replace function public.knjige_unos_clana()
+-- Uvoz fonda (service_role, postgres) i bibliotekar prolaze nepromenjeni.
+create or replace function privatno.knjige_unos_clana()
 returns trigger
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $fn$
 begin
-  if public.je_bibliotekar() then
+  if privatno.servisna_uloga() or privatno.je_bibliotekar() then
     return new;
   end if;
 
@@ -296,47 +326,43 @@ $fn$;
 
 create trigger knjige_unos_clana_bi
   before insert on public.knjige
-  for each row execute function public.knjige_unos_clana();
+  for each row execute function privatno.knjige_unos_clana();
 
 alter table public.knjige enable row level security;
 
 -- Katalog vide svi prijavljeni aktivni članovi.
 create policy knjige_select on public.knjige
   for select to authenticated
-  using (public.aktivan_clan());
+  using (privatno.aktivan_clan());
 
 -- „Naslov koji nemamo" — ključna funkcionalnost (plan, tačka 3).
 -- Pretraga nikad ne sme da bude ćorsokak, pa svaki aktivan član sme da upiše.
 create policy knjige_insert_clan on public.knjige
   for insert to authenticated
-  with check (public.aktivan_clan());
+  with check (privatno.aktivan_clan());
 
 create policy knjige_update_bibliotekar on public.knjige
   for update to authenticated
-  using (public.je_bibliotekar())
-  with check (public.je_bibliotekar());
+  using (privatno.je_bibliotekar())
+  with check (privatno.je_bibliotekar());
 
 create policy knjige_delete_admin on public.knjige
   for delete to authenticated
-  using (public.je_administrator());
+  using (privatno.je_administrator());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Prava pristupa
+--
+-- Supabase novim tabelama podrazumevano daje SVE privilegije ulogama anon i
+-- authenticated. RLS štiti redove, ali ne štiti TRUNCATE ni TRIGGER, pa se
+-- podrazumevano oduzima i daje samo ono što aplikacija zaista radi.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-revoke all on public.clanovi from anon;
-revoke all on public.knjige  from anon;
-grant select, insert, update on public.clanovi to authenticated;
-grant select, insert, update, delete on public.knjige to authenticated;
+revoke all on public.clanovi from anon, authenticated;
+revoke all on public.knjige  from anon, authenticated;
 
-revoke all on function public.moja_uloga()        from public, anon;
-revoke all on function public.je_bibliotekar()    from public, anon;
-revoke all on function public.je_administrator()  from public, anon;
-revoke all on function public.aktivan_clan()      from public, anon;
-revoke all on function public.nova_sifra_poziva() from public, anon;
+grant select, insert, update, delete on public.clanovi to authenticated;
+grant select, insert, update, delete on public.knjige  to authenticated;
 
-grant execute on function public.moja_uloga()        to authenticated;
-grant execute on function public.je_bibliotekar()    to authenticated;
-grant execute on function public.je_administrator()  to authenticated;
-grant execute on function public.aktivan_clan()      to authenticated;
-grant execute on function public.nova_sifra_poziva() to authenticated;
+revoke all on all functions in schema privatno from public, anon;
+grant execute on all functions in schema privatno to authenticated, service_role;
