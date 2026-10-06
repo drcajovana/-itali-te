@@ -1,13 +1,23 @@
-import { tekst } from "./lib/tekst.js";
+import { Navigate, Route, Routes } from "react-router-dom";
+import AuthProvider from "./components/AuthProvider.jsx";
+import ZasticenaRuta from "./components/ZasticenaRuta.jsx";
+import Pocetna from "./pages/Pocetna.jsx";
+import Prijava from "./pages/Prijava.jsx";
+import Pretraga from "./pages/Pretraga.jsx";
+import Profil from "./pages/Profil.jsx";
 
 export default function App() {
   return (
-    <main className="mx-auto max-w-2xl p-6">
-      <h1 className="text-3xl font-semibold text-pecat">
-        {tekst.aplikacija.naziv}
-      </h1>
-      <p className="mt-2 text-mastilo/70">{tekst.aplikacija.ustanova}</p>
-      <p className="mt-8 text-mastilo/60">{tekst.pocetna.uIzradi}</p>
-    </main>
+    <AuthProvider>
+      <Routes>
+        <Route path="/prijava" element={<Prijava />} />
+        <Route element={<ZasticenaRuta />}>
+          <Route path="/" element={<Pocetna />} />
+          <Route path="/pretraga" element={<Pretraga />} />
+          <Route path="/profil" element={<Profil />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }

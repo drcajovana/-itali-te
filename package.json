@@ -8,11 +8,14 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:rls": "node --env-file=.env scripts/test-rls.mjs"
+    "test:rls": "node --env-file=.env scripts/test-rls.mjs",
+    "admin:napravi": "node --env-file=.env scripts/napravi-administratora.mjs",
+    "test:api": "node scripts/test-api.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.0",
     "@tailwindcss/vite": "^4.2.4",
+    "linkedom": "^0.18.13",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-router-dom": "^7.15.0",

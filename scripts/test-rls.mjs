@@ -17,6 +17,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
+import { kartaUEmail, normalizujKarticu } from "../src/lib/kartica.js";
 
 // ───────────────────────── okruženje ─────────────────────────
 
@@ -46,7 +47,9 @@ const anon = noviKlijent(ANON);
 
 const RUN = randomUUID().slice(0, 8);
 const N = (s) => `RLS-TEST ${RUN} ${s}`;
-const OBRAZAC_EMAIL = /^rls-test-.+@citaliste\.test$/;
+// rls-test-*@citaliste.test: nalozi pripreme; rlstest-*@citaliste.local: nalog za
+// proveru prijave, čija je adresa izvedena iz broja karte kao u aplikaciji.
+const OBRAZAC_EMAIL = /^(rls-test-.+@citaliste\.test|rlstest-.+@citaliste\.local)$/;
 const NEPOSTOJECA_SIFRA = "NEG·0000·AA"; // generator ne pravi 0000 (od 1000 do 9999)
 
 // ───────────────────────── ispis i brojanje ─────────────────────────
@@ -118,6 +121,12 @@ async function pokusaj(zahtev) {
 
 // ───────────────────────── čišćenje ─────────────────────────
 
+// Nalozi čija adresa ne liči na test (broj karte sa vodećom nulom, npr.
+// 0101228@citaliste.local) ne mogu da se čiste po obrascu adrese: obrazac bi
+// mogao da pogodi pravog člana. Zato se pamte po id-ju, a ostaci prekinutog
+// pokretanja se nalaze po imenu u clanovi ("RLS Test…").
+const NAPRAVLJENI = [];
+
 async function ocisti() {
   // Knjige i objave nemaju vlasnika koji bi ih pokupio kaskadom.
   const o = await S.from("objave").delete().like("naslov", "RLS-TEST%");
@@ -128,18 +137,21 @@ async function ocisti() {
   // Brisanje auth naloga kaskadno briše clanovi, a ona polica, utisci, veze,
   // blokade, preporuke, prijave i rezervacije. Prvo sakupi, pa briši (strane
   // se pomeraju dok se briše).
-  const ids = [];
+  const ids = new Set(NAPRAVLJENI);
   for (let strana = 1; ; strana++) {
     const { data, error } = await S.auth.admin.listUsers({ page: strana, perPage: 200 });
     if (error) throw new Error(`čišćenje naloga (lista): ${error.message}`);
-    for (const u of data.users) if (OBRAZAC_EMAIL.test(u.email ?? "")) ids.push(u.id);
+    for (const u of data.users) if (OBRAZAC_EMAIL.test(u.email ?? "")) ids.add(u.id);
     if (data.users.length < 200) break;
   }
+  const poImenu = await S.from("clanovi").select("id").like("ime", "RLS Test%");
+  if (poImenu.error) throw new Error(`čišćenje naloga (po imenu): ${poImenu.error.message}`);
+  for (const c of poImenu.data) ids.add(c.id);
   for (const id of ids) {
     const { error } = await S.auth.admin.deleteUser(id);
     if (error) throw new Error(`čišćenje naloga: ${error.message}`);
   }
-  return ids.length;
+  return ids.size;
 }
 
 let cistiSe = false;
@@ -290,6 +302,74 @@ async function main() {
       if (!nedostupna(r)) izvrsene.push(`${ime} (${opis(r)})`);
     }
     return izvrsene.length ? `dostupne kao RPC: ${izvrsene.join("; ")}` : true;
+  });
+
+  // ───────────────────────── 1b. prijava članskom kartom ─────────────────────────
+  faza("1b. Prijava članskom kartom (ista normalizacija kao u aplikaciji)");
+
+  const KARTICA = `RLSTEST-${RUN}-PRIJAVA`.toUpperCase();
+  const PIN = "482916";
+  const nalogKarte = await S.auth.admin.createUser({ email: kartaUEmail(KARTICA), password: PIN, email_confirm: true });
+  const idKarte = mora(nalogKarte, "nalog za proveru prijave").user.id;
+  await ubaci("clanovi", { id: idKarte, broj_kartice: KARTICA, ime: "RLS Test prijava", uloga: "citalac" });
+
+  const prijavaKarticom = (kartica, pin) => noviKlijent(ANON).auth.signInWithPassword({ email: kartaUEmail(kartica), password: pin });
+  const potpisPrijave = (r) => JSON.stringify([r.error?.name, r.error?.code, r.error?.message, r.error?.status]);
+
+  await provera("normalizacija: razmaci i veličina slova ne menjaju broj karte", async () => {
+    const a = normalizujKarticu("  nb 12-34 ");
+    const b = kartaUEmail("NB12-34");
+    return a === "NB12-34" && b === "nb12-34@citaliste.local" ? true : `normalizujKarticu: ${a}; kartaUEmail: ${b}`;
+  });
+  await provera("prijava tačnom kartom i PIN-om uspeva, i kad je karta uneta nehajno (razmaci, mala slova)", async () => {
+    const nehajno = ` ${KARTICA.toLowerCase().replaceAll("-", " - ")} `;
+    const r = await prijavaKarticom(nehajno, PIN);
+    return !r.error && r.data.session ? true : `prijava: ${r.error?.code} ${r.error?.message}`;
+  });
+  await provera("nepostojeći broj karte i pogrešan PIN daju ISTI odgovor", async () => {
+    const pogresanPin = await prijavaKarticom(KARTICA, "000000");
+    const nepostojecaKarta = await prijavaKarticom(`RLSTEST-${RUN}-NEMA`, PIN);
+    if (!pogresanPin.error || !nepostojecaKarta.error) {
+      return `prijava je uspela, a nije smela: pogrešan PIN: ${potpisPrijave(pogresanPin)}; nepostojeća karta: ${potpisPrijave(nepostojecaKarta)}`;
+    }
+    const a = potpisPrijave(pogresanPin);
+    const b = potpisPrijave(nepostojecaKarta);
+    const otkriva = [a, b].some((p) => p.toLowerCase().includes(KARTICA.toLowerCase()) || p.includes("citaliste.local"));
+    if (otkriva) return `odgovor sadrži broj karte ili sintetičku adresu: ${a} / ${b}`;
+    return a === b ? true : `odgovori se razlikuju: pogrešan PIN ${a}; nepostojeća karta ${b}`;
+  });
+
+  // Broj karte koji počinje nulom (npr. 0101228) mora ostati TEKST na celom putu:
+  // Auth adresa, red u clanovi i prijava. Slučajan je, da ne pogodi pravu kartu.
+  const KARTICA0 = `0${String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0")}`;
+  const PIN0 = "012345"; // i PIN može da počinje nulom
+  const nalog0 = await S.auth.admin.createUser({ email: kartaUEmail(KARTICA0), password: PIN0, email_confirm: true });
+  const id0 = mora(nalog0, "nalog sa vodećom nulom").user.id;
+  NAPRAVLJENI.push(id0);
+  await ubaci("clanovi", { id: id0, broj_kartice: KARTICA0, ime: "RLS Test vodeća nula", uloga: "citalac" });
+
+  await provera("vodeća nula: broj karte ostaje tekst u bazi i u Auth adresi (0xxxxxx, ne xxxxxx)", async () => {
+    const red = await stanje("clanovi", id0);
+    const auth = await S.auth.admin.getUserById(id0);
+    if (auth.error) return `getUserById: ${auth.error.message}`;
+    return red.broj_kartice === KARTICA0 && typeof red.broj_kartice === "string" && red.broj_kartice.length === 7 &&
+      auth.data.user.email === `${KARTICA0}@citaliste.local`
+      ? true
+      : `u bazi: ${JSON.stringify(red.broj_kartice)}; Auth adresa: ${auth.data.user.email}; očekivano ${KARTICA0}`;
+  });
+  await provera("vodeća nula: prijava radi i kad se karta unese sa razmacima (0 1 0 1 2 2 8)", async () => {
+    const sRazmacima = KARTICA0.split("").join(" ");
+    const r = await prijavaKarticom(sRazmacima, PIN0);
+    return !r.error && r.data.session ? true : `prijava (${sRazmacima.length} znakova): ${r.error?.code} ${r.error?.message}`;
+  });
+  await provera("vodeća nula: karta bez nule (kao broj) i PIN bez nule nisu iste kao prave", async () => {
+    const kartaKaoBroj = String(Number.parseInt(KARTICA0, 10)); // šta bi ostalo da se karta pretvori u broj
+    const pinKaoBroj = String(Number.parseInt(PIN0, 10));
+    const a = await prijavaKarticom(kartaKaoBroj, PIN0);
+    const b = await prijavaKarticom(KARTICA0, pinKaoBroj);
+    return a.error && b.error && !a.data.session && !b.data.session
+      ? true
+      : `prijava je uspela: karta bez nule ${!!a.data.session}, PIN bez nule ${!!b.data.session}`;
   });
 
   // ───────────────────────── 2. pre veze ─────────────────────────

@@ -11,3 +11,6 @@ dist-ssr
 
 # Supabase CLI (lokalno stanje linkovanja)
 supabase/.temp
+
+.vercel
+.env*

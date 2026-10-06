@@ -16,6 +16,3 @@ export const supabase = createClient(url, anonKey, {
   auth: { persistSession: true, autoRefreshToken: true },
 });
 
-// Broj članske karte nije e-adresa, pa Auth radi sa sintetičkom (plan, tačka 4).
-export const kartaUEmail = (brojKartice) =>
-  `${String(brojKartice).trim().toLowerCase()}@citaliste.local`;
