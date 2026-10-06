@@ -43,6 +43,22 @@ Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na
 `privatno.su_povezani()` iz `0002`, a politika na `preporuke` gleda u `prijave`,
 pa `0004` mora pre `0005`.
 
+### Test RLS
+
+```bash
+npm run test:rls
+```
+
+Skripta [`scripts/test-rls.mjs`](scripts/test-rls.mjs) proverava stvarno
+ponašanje politika pod stvarnim prijavama (čitaoci A, B, C, bibliotekar i
+anonimni korisnik). Za razliku od aplikacije, treba joj i
+`SUPABASE_SERVICE_ROLE_KEY` u `.env` (bez `VITE_` prefiksa) za pripremu i čišćenje.
+
+Piše u bazu na koju pokazuje `.env`: pravi naloge `rls-test-*@citaliste.test` i
+knjige čiji naslov počinje sa `RLS-TEST`, a sve briše na kraju, i kad neka
+provera padne. Može da se pokreće više puta. Izlazi sa kodom različitim od
+nule ako ijedna provera padne.
+
 ### Migracije su puštene ručno
 
 Port 5432 je blokiran sa razvojne mreže, pa `supabase db push` ne radi. Svih

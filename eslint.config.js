@@ -22,7 +22,7 @@ export default defineConfig([
   },
   {
     // Vercel serverless funkcije i konfiguracija rade u Node-u, ne u pregledaču.
-    files: ['api/**/*.js', '*.config.js'],
+    files: ['api/**/*.js', 'scripts/**/*.mjs', '*.config.js'],
     extends: [js.configs.recommended],
     languageOptions: {
       ecmaVersion: 'latest',
