@@ -3,15 +3,18 @@
 // Odgovor: { rezultati: [{ naslov, autori, izdavac, godina, isbn, opis, korica, izvor: 'link', url }] }
 //
 // Čita jednu stranicu koju je član sam zalepio (kao pregled linka), uz keš po
-// adresi i ograničenje 30 zahteva na sat. Ovo nije skidanje kataloga.
+// adresi i ograničenje zahteva na sat: 30 za čitaoce, 200 za bibliotekare i
+// administratore (uloga se čita na serveru iz tabele clanovi, ne iz zahteva).
+// Ovo nije skidanje kataloga: jedna stranica po adresi koju je korisnik zalepio.
 import { ApiGreska } from "./_lib/greska.js";
 import { proveriUrl } from "./_lib/bezbedan-fetch.js";
 import { izKesa, kljucKesa, uKes } from "./_lib/kes.js";
 import { izvuciIzLinka } from "./_lib/parser-knjige.js";
-import { obradi } from "./_lib/zajednicko.js";
+import { granicaIzLinka, obradi } from "./_lib/zajednicko.js";
 
 export default function handler(req, res) {
-  return obradi(req, res, "iz-linka", {
+  return obradi(req, res, {
+    ogranicenje: granicaIzLinka,
     proveri(telo) {
       const url = typeof telo.url === "string" ? telo.url.trim() : "";
       if (!url || url.length > 2000) throw new ApiGreska(400, "neispravan_link", "Adresa nije ispravna.");

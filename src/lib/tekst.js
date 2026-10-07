@@ -21,6 +21,7 @@ const lat = {
   meni: {
     pocetna: "Početna",
     pretraga: "Pretraga",
+    unos: "Unos knjiga",
     profil: "Moj profil",
     odjava: "Odjavi se",
   },
@@ -126,10 +127,35 @@ const lat = {
       nijeDodato: "Nije dodato. Pokušajte ponovo.",
     },
 
+    // Pre dodavanja spoljne knjige član vidi izmenljiva polja; upis ide tek na dugme.
+    potvrda: {
+      naslov: "Proverite podatke pre dodavanja",
+      uvodGoogle:
+        "Ovo su podaci koje smo našli na Google Books. Ispravite ih ako treba. Trajno se čuva samo ono što ovde potvrdite: naslov, autor, izdavač, godina i ISBN. Opis i korica sa Google Books se ne čuvaju.",
+      uvodLink:
+        "Ovo su podaci sa stranice koju ste zalepili. Ispravite ih ako treba. Trajno se čuva samo ono što ovde potvrdite: naslov, autor, izdavač, godina i ISBN. Opis sa tog sajta se ne čuva, a korica samo ako je sa sajta izdavača.",
+      polja: {
+        naslov: "Naslov",
+        autor: "Autor (ili autori)",
+        izdavac: "Izdavač",
+        godina: "Godina izdanja",
+        isbn: "ISBN",
+      },
+      potvrdi: "Potvrdi i dodaj na policu",
+      odustani: "Odustani",
+      greske: {
+        naslov_prazno: "Upišite naslov.",
+        godina_neispravno: "Godina mora da ima 4 cifre (od 1400 do 2200).",
+        isbn_neispravno: "ISBN nije ispravan. Proverite cifre ili obrišite polje.",
+        predugo: "Neko polje je predugačko.",
+      },
+    },
+
     greske: {
       nije_prijavljen: "Sesija je istekla. Prijavite se ponovo.",
       clanstvo_nije_aktivno: "Vaše članstvo nije aktivno. Javite se bibliotekaru.",
       previse_zahteva: "Previše pretraga u poslednjih sat vremena. Pokušajte ponovo za {minuta} min.",
+      izmenjeno_u_medjuvremenu: "Zapis je u međuvremenu promenjen. Proverite ga ponovo.",
       mreza: "Ne mogu da se povežem. Proverite internet i pokušajte ponovo.",
       api_nedostupan: "Pretraga na internetu ovde nije dostupna.",
       google_nije_podeseno: "Pretraga na Google Books trenutno nije podešena. Obavestite bibliotekara.",
@@ -149,6 +175,90 @@ const lat = {
       prazan_upit: "Upišite naslov, autora ili ISBN.",
       neispravan_upit: "Upit nije ispravan.",
       greska_servera: "Nešto je pošlo naopako. Pokušajte ponovo.",
+    },
+  },
+
+  // Ekran za bibliotekare: unos knjiga linkovima (/bibliotekar/unos).
+  unos: {
+    naslov: "Unos knjiga linkovima",
+    uvod: "Nalepite adrese knjiga sa sajtova izdavača, jednu u svakom redu (najviše 20). Obrađuju se jedna po jedna, redom, a za svaku se čita samo ta jedna stranica. Opis se ne preuzima: njega piše bibliotekar.",
+    polje: "Adrese knjiga (jedna u svakom redu)",
+    procitaj: "Pročitaj adrese",
+    citam: "Čitam adrese…",
+    prekini: "Prekini obradu",
+    obradjeno: "Obrađeno {n} od {ukupno}.",
+    prekinuto: "Obrada je prekinuta. Preostale adrese nisu poslate.",
+    ogranicenje: "Dostignut je dozvoljeni broj zahteva na sat. Preostale adrese nisu obrađene. Pokušajte ponovo za {minuta} min.",
+    ponovljene: "Ponovljene adrese su izbačene: {n}.",
+    greske: {
+      prazno: "Nalepite bar jednu adresu.",
+      previse: "Najviše 20 adresa odjednom. Ostavite prvih 20 u polju, ostale unesite posle.",
+    },
+    status: {
+      ceka: "Čeka",
+      trazi: "Čitam…",
+      prepoznato: "Prepoznato",
+      delimicno: "Delimično",
+      nije_uspelo: "Nije uspelo",
+      preskoceno: "Preskočeno",
+      sacuvano: "Sačuvano",
+    },
+    delimicnoPomoc: "Nije pronađeno sve. Proverite i dopunite podatke.",
+    nijeUspeloPomoc: "Ručni unos je na ekranu „Pretraga”.",
+
+    kartica: {
+      naslov: "Naslov",
+      autori: "Autor (ili autori)",
+      izdavac: "Izdavač",
+      godina: "Godina izdanja",
+      isbn: "ISBN",
+      zanr: "Žanr (više njih odvojite zarezom)",
+      opis: "Opis (piše bibliotekar; ne preuzima se sa sajta)",
+      stanje: "Stanje",
+      uFondu: "U fondu",
+      zaNabavku: "Za nabavku",
+      primerci: "Broj primeraka",
+      signatura: "Signatura (po želji)",
+      potvrdjeno: "Potvrđeno, uključi u „Sačuvaj sve”",
+      sacuvaj: "Sačuvaj",
+      cuvam: "Čuvam…",
+      koricaNapomena: "Korica se čuva samo ako je sa sajta izdavača sa liste dozvoljenih.",
+    },
+
+    sacuvajSve: {
+      dugme: "Sačuvaj sve potvrđene ({n})",
+      nema: "Nijedna kartica nije označena kao potvrđena.",
+      zbir: "Sačuvano: {n}. Čeka vašu odluku (već postoji ili ima grešku): {m}.",
+    },
+
+    sacuvano: "Sačuvano u bazu.",
+    sacuvanoPrimerci: "Broj primeraka je povećan.",
+    otvori: "Otvori",
+
+    duplikat: {
+      naslov: "Ova knjiga već postoji u bazi",
+      isbn: "Isti ISBN",
+      slican: "Sličan naslov i autor",
+      otvori: "Otvori",
+      dodajPrimerke: "Dodaj {primeraka} ovom zapisu",
+      ipak: "Ipak sačuvaj kao novi zapis",
+      stanjeFond: "U fondu: {primeraka}",
+      stanjeNije: "Nije u fondu",
+      izmenjeno: "Zapis je u međuvremenu promenjen. Proverite ga ponovo.",
+    },
+
+    greskeKartice: {
+      naslov_prazno: "Upišite naslov.",
+      godina_neispravno: "Godina mora da ima 4 cifre (od 1400 do 2200).",
+      isbn_neispravno: "ISBN nije ispravan. Proverite cifre ili obrišite polje.",
+      zanr_previse: "Najviše 5 žanrova.",
+      zanr_predugo: "Žanr je predugačak.",
+      opis_predugo: "Opis je predugačak (najviše 2000 znakova).",
+      primerci_prazno: "Upišite broj primeraka.",
+      primerci_neispravno: "Broj primeraka mora biti ceo broj od 1 do 999.",
+      signatura_predugo: "Signatura je predugačka.",
+      predugo: "Neko polje je predugačko.",
+      upis: "Nije sačuvano. Pokušajte ponovo.",
     },
   },
 

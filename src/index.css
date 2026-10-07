@@ -20,11 +20,12 @@ body {
   color: var(--color-mastilo);
 }
 
-/* Nijedna dodirna meta ispod 44px. */
+/* Nijedna dodirna meta ispod 44px. Za polja za izbor (checkbox, radio) cilj dodira je
+   cela labela (min-h-11 u komponentama), a ne sam kvadratić. */
 button,
 [role="button"],
 a.dugme,
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
   min-height: 2.75rem;

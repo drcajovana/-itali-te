@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import RezultatKnjige from "../components/RezultatKnjige.jsx";
 import { porukaGreske } from "../lib/api.js";
 import { useAuth } from "../lib/auth-context.js";
@@ -44,7 +45,10 @@ export default function Pretraga() {
   const dodaj = (knjiga, status) => dodajNaPolicu(clan.id, knjiga, status);
 
   // 1. naša baza
-  const [upit, setUpit] = useState("");
+  // ?upit=... (npr. „Otvori" sa ekrana za unos bibliotekara) odmah pokreće pretragu
+  const [parametri] = useSearchParams();
+  const polazniUpit = (parametri.get("upit") ?? "").trim();
+  const [upit, setUpit] = useState(polazniUpit);
   const [trazi, setTrazi] = useState(false);
   const [nase, setNase] = useState(null); // { upit, rezultati }
   const [greskaNase, setGreskaNase] = useState(null);
@@ -58,10 +62,7 @@ export default function Pretraga() {
   const [rucnoAutor, setRucnoAutor] = useState("");
   const [rucno, setRucno] = useState({ saljem: false, poruka: null, greska: false });
 
-  async function pretrazi(e) {
-    e.preventDefault();
-    const q = upit.trim();
-    if (trazi) return;
+  async function izvrsiPretragu(q) {
     setGreskaNase(null);
     if (q.length < 2) return setGreskaNase(T.prekratko);
     setTrazi(true);
@@ -75,6 +76,25 @@ export default function Pretraga() {
     }
     setTrazi(false);
   }
+
+  function pretrazi(e) {
+    e.preventDefault();
+    if (!trazi) izvrsiPretragu(upit.trim());
+  }
+
+  // Pretraga iz adrese (?upit=...) kreće jednom, pri otvaranju strane.
+  useEffect(() => {
+    if (polazniUpit.length < 2) return undefined;
+    let otkazano = false;
+    // odloženo do sledećeg ciklusa: stanje se ne postavlja sinhrono iz efekta
+    Promise.resolve().then(() => {
+      if (!otkazano) izvrsiPretragu(polazniUpit);
+    });
+    return () => {
+      otkazano = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- samo pri otvaranju strane
+  }, []);
 
   async function pretraziNaGoogle() {
     setGoogle({ ...MIRNO, stanje: "trazi" });

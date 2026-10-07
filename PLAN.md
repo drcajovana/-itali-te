@@ -111,6 +111,8 @@ naslova nema u bazi, gubi se upravo ono zbog čega se sve i pravi.
   vidi prijave i može da raskine vezu i zaključa nalog
 
 **Bibliotekarski panel**
+- Unos knjiga linkovima (`/bibliotekar/unos`): adrese sa sajtova izdavača, redom, uz
+  izmenljivu karticu po knjizi; stanje „U fondu" ili „Za nabavku"; opis piše bibliotekar
 - „Preporuka bibliotekara" — istaknuta knjiga sa obrazloženjem
 - Objave/vesti (promocije knjiga, gostovanja, radionice)
 - Moderacija: prijavljene poruke, skrivanje neprimerenog utiska
@@ -177,13 +179,19 @@ već koristimo, sa korisničkom podrškom IZUM-a. Jednokratni izvoz monografskih
 publikacija → uvoz u Supabase kao seed. Ponavlja se ručno posle veće nabavke,
 npr. dva puta godišnje.
 
-**Dopuna — Google Books API.** Besplatan, bez ključa za osnovnu upotrebu,
-pretraga po ISBN-u. Koristi se za opis i sliku korica kod novijih izdanja velikih
-izdavača. Nikad kao osnova — pokrivenost starijih izdanja, malih izdavača i
-zavičajne građe je slaba.
+**Pomoć pri pretrazi uživo — Google Books API.** Zvaničan API, besplatan, ali traži
+API ključ (bez njega Google vraća grešku). To je **pomoć pri pretrazi uživo, ne izvor
+podataka**: njegovi uslovi (Google APIs ToS, odeljak 5e) ne dozvoljavaju pravljenje
+baze ni trajnih kopija sadržaja iz API-ja. Zato se rezultati samo prikazuju (korica uz
+oznaku „Google Books" i vezu ka njihovoj stranici za tu knjigu), a **trajno se čuva samo
+ono što član potvrdi: ISBN-13, naslov, autor, godina, izdavač. Nikad opis, nikad
+korica, nikad masovno** (nema uvoza ni seed-a iz Google-a). Nikad kao osnova —
+pokrivenost starijih izdanja, malih izdavača i zavičajne građe je slaba.
 
 **Popunjavanje rupa — unos uz skeniranje bar-koda.** Bibliotekar telefonom
-skenira ISBN, forma se popuni iz Google Books-a, dopuni se signatura i sačuva.
+skenira ISBN, forma se popuni iz Google Books-a, bibliotekar proveri i potvrdi naslov,
+autora, izdavača, godinu i ISBN, dopuni se signatura i sačuva (opis i korica iz Google-a
+se ne čuvaju).
 Za nov naslov 20-ak sekundi. Ako naslov ulazi u bazu kad ga neko prvi put
 zatraži, baza se popuni sama za nekoliko meseci.
 
@@ -197,7 +205,8 @@ se pokaže da izvori ispod ne pokrivaju dovoljno.
 Redosled kojim se knjiga nalazi:
 
 1. **Naša baza** (seed iz fonda + sve što je do sad uneto)
-2. **Google Books API** po naslovu ili ISBN-u — zvaničan API, ne kvari se
+2. **Google Books API** po naslovu ili ISBN-u — zvaničan API, ne kvari se; samo pomoć
+   pri pretrazi uživo, trajno se čuva samo ono što član potvrdi
 3. **Unos linkom** — član zalepi link sa sajta izdavača ili knjižare, serverless
    funkcija pročita Open Graph i JSON-LD (`schema.org/Book`). Postojeći softver
    koji je Jovana već napisala za spiskove nabavke; prilagoditi, ne pisati nanovo.
@@ -208,15 +217,18 @@ Redosled kojim se knjiga nalazi:
 
 Isti princip — više izvora, redom, sa pouzdanim rezervnim rešenjem:
 
-1. Korica iz naše baze (uneta ranije ili fotografisana)
-2. `imageLinks` iz Google Books odgovora — **čuva se URL, ne fajl**; njihovi
-   uslovi traže prikaz uz link ka Google Books zapisu
-3. Open Library Covers po ISBN-u — bez ključa i registracije
-4. `og:image` sa linka koji je član zalepio
-5. **Rezervno rešenje: složena pločica** sa naslovom i autorom u bojama
+1. Korica iz naše baze (fotografisana, u Supabase Storage-u, ili sa sajta izdavača)
+2. Open Library Covers po ISBN-u — bez ključa i registracije (prikazuje se uživo)
+3. `og:image` sa linka koji je član zalepio — čuva se samo ako je domen na listi
+   dozvoljenih (izdavači, Open Library, naš Storage)
+4. **Rezervno rešenje: složena pločica** sa naslovom i autorom u bojama
    aplikacije
 
-Peta stavka nije sporedna. Za zavičajnu građu i starija izdanja korica ne
+**Google Books korica** se prikazuje samo u rezultatima pretrage uživo, uz oznaku
+„Google Books" i vezu ka njihovoj stranici za tu knjigu. Ne čuva se nigde: ni kao
+fajl, ni kao adresa u bazi (uslovi Google-a ne dozvoljavaju trajne kopije).
+
+Poslednja stavka nije sporedna. Za zavičajnu građu i starija izdanja korica ne
 postoji nigde i to je normalno stanje, ne greška. Ako je pločica lepo odrađena,
 polica izgleda uredno i kad trećina knjiga nema sliku.
 
@@ -241,7 +253,7 @@ COBISS.
 clanovi        id, broj_kartice, ime, nadimak, uloga, aktivan, telefon
 knjige         id, naslov, autor, izdavac, godina, isbn, signatura,
                zanrovi[], cobiss_id, opis, korice_url, u_fondu, broj_primeraka,
-               izvor(fond|google_books|clan), uneo_id, spojena_sa_id
+               izvor(fond|clan; google_books se više ne upisuje), uneo_id, spojena_sa_id
 polica         id, clan_id, knjiga_id, status, datum_pocetka, datum_kraja
 utisci         id, clan_id, knjiga_id, ocena, tekst, vidljivost, spojler,
                skriven, kreiran
@@ -289,7 +301,7 @@ objave         id, autor_id, naslov, tekst, slika_url, objavljena
 |---|---|
 | Prazna platforma na startu | Bibliotekari unose prvih 50 utisaka pre objave; prvi krug članova se poziva lično |
 | Neprimeren kontakt sa maloletnima | Veza samo pozivnicom uz obostranu potvrdu, poruke vezane za knjigu, prijava i blokiranje, uvid bibliotekara |
-| Izvoz iz COBISS3 nije izvodljiv | Unos skeniranjem bar-koda + Google Books; baza se puni postupno |
+| Izvoz iz COBISS3 nije izvodljiv | Unos skeniranjem bar-koda (Google Books samo kao pomoć pri unosu, uz potvrdu bibliotekara); baza se puni postupno |
 | Stariji članovi ne koriste | Bibliotekar unosi utiske sa pulta; štampani QR na članskoj karti |
 | Neprimereni sadržaj | Moderacija + pravila korišćenja, utisci se mogu skriti |
 | Lični podaci članova | Minimalno prikupljanje, saglasnost pri otvaranju naloga, ZZPL |

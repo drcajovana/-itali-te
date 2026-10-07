@@ -16,6 +16,7 @@
 
 import { parseHTML } from "linkedom";
 import { uIsbn13 } from "../../src/lib/isbn.js";
+import { koricaJeDozvoljena } from "./bela-lista.js";
 import { ApiGreska } from "./greska.js";
 import { preuzmi, proveriUrl } from "./bezbedan-fetch.js";
 
@@ -68,14 +69,16 @@ function godinaIz(v) {
   return m ? Number(m[1]) : null;
 }
 
-// Samo https; relativne adrese se razrešavaju prema stranici.
+// Samo https i samo domeni dozvoljeni za korice (isto pravilo kao u bazi, migracija
+// 0009: slika sa tuđeg servera bi dozvolila praćenje ko gleda koju knjigu);
+// relativne adrese se razrešavaju prema stranici.
 function https(v, osnova) {
   const prva = Array.isArray(v) ? v[0] : v;
   const sirova = typeof prva === "object" && prva ? prva.url ?? prva.contentUrl : prva;
   if (!sirova || typeof sirova !== "string") return null;
   try {
     const u = new URL(sirova.trim(), osnova);
-    return u.protocol === "https:" && u.href.length <= 500 ? u.href : null;
+    return koricaJeDozvoljena(u.href) ? u.href : null;
   } catch {
     return null;
   }

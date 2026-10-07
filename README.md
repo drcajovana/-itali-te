@@ -14,9 +14,9 @@ Aplikacija još nema ekrane.
 | 1. Šema + RLS | ✅ puštena ručno u SQL Editoru (vidi „Migracije su puštene ručno"); RLS **još nije testiran** |
 | 1. Seed ~200 knjiga iz fonda | ⛔ čeka izvoz iz COBISS3 (plan, tačka 7) |
 | 2. Prijava članskom kartom, profil | ✅ prijava, zaštićene rute, odjava, `/profil` (izmena nadimka); proveren sa lažnim serverom, **ne** sa pravom bazom |
-| 3. Pretraga knjiga | ✅ `/pretraga`: naša baza, Google Books, link, ručni upis; dodavanje na policu. **0007 i 0008 još nisu u bazi**, a Google Books traži API ključ (vidi niže) |
+| 3. Pretraga knjiga | ✅ `/pretraga`: naša baza, Google Books, link, ručni upis; dodavanje na policu. Pre dodavanja spoljne knjige član potvrđuje izmenljiva polja. **0007 do 0012 još nisu u bazi**, a Google Books traži API ključ (vidi niže) |
 | 3a. Unos linkom | ✅ `api/iz-linka.js`, parser prenet iz `docs/nabavka-extract.js` |
-| 3b. Korice | ✅ lanac: naša baza → Google Books → Open Library → slika sa linka → pločica |
+| 3b. Korice | ✅ lanac: naša baza → Open Library → slika sa linka (samo domeni sa liste) → pločica. Google korica se samo prikazuje u rezultatima, ne čuva se |
 | 4–11. | ⬜ |
 
 ## Pokretanje
@@ -41,6 +41,10 @@ Migracije se puštaju redom, brojevima:
 | `0006_izvestaj_nabavka.sql` | izveštaji za nabavku, spajanje duplikata |
 | `0007_kes_i_ogranicenje.sql` | `kes_linkova`, `zahtevi_api` (samo service_role), `uzmi_zahtev()` |
 | `0008_pretraga_knjiga.sql` | `trazi_knjige()`, pretraga naše baze (ćirilica i latinica) |
+| `0009_korice_domeni.sql` | `knjige.korice_url`: samo https, do 500 znakova, samo dozvoljeni domeni (`privatno.domeni_korica`); drugo postaje NULL |
+| `0010_isbn13.sql` | `privatno.isbn13()`, okidač koji čuva ISBN kao ISBN-13, pretraga po ISBN-u |
+| `0011_ukloni_google_sadrzaj.sql` | čisti Google opis i Google koricu koji su već u bazi (podaci, ne šema) |
+| `0012_ogranicenje_po_kanti.sql` | `uzmi_zahtev()` broji po kanti: opšta (30 na sat) i bibliotekarska za iz-linka (200 na sat) |
 
 Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na
 `privatno.su_povezani()` iz `0002`, a politika na `preporuke` gleda u `prijave`,
@@ -49,8 +53,8 @@ pa `0004` mora pre `0005`.
 ### Pretraga, unos linkom i API funkcije
 
 Strana `/pretraga` traži redom: naša baza (`trazi_knjige`, ćirilica i latinica
-daju iste rezultate) → Google Books → polje „zalepi link" → ručni upis naslova i
-autora, koji je uvek dostupan. Ručno upisana knjiga ide na policu kao „nije u
+daju iste rezultate) → Google Books (pomoć pri pretrazi uživo) → polje „zalepi link" →
+ručni upis naslova i autora, koji je uvek dostupan. Ručno upisana knjiga ide na policu kao „nije u
 fondu" i ulazi u izveštaj za nabavku.
 
 Dve funkcije na Vercel-u (`api/`), obe: samo POST, proveravaju Supabase JWT iz
@@ -92,6 +96,31 @@ sajt može da odbije; tada član upisuje knjigu ručno.
 - Samo `npm run dev` (Vite) nema `/api`: pretraga naše baze i ručni upis rade, a
   Google Books i link javljaju da nisu dostupni.
 
+### Za bibliotekara: unos knjiga linkovima
+
+Stavka **Unos knjiga** u meniju (vide je samo bibliotekar i administrator; ostale vraća na
+početnu) služi da se knjiga upiše iz stranice izdavača, bez kucanja:
+
+1. **Nalepite adrese** knjiga sa sajtova izdavača, jednu u svakom redu (najviše 20), i
+   kliknite „Pročitaj adrese". Čitaju se **jedna po jedna, redom**, uz kratku pauzu, i
+   svaka dobija status: *Prepoznato*, *Delimično* ili *Nije uspelo*. „Prekini obradu"
+   zaustavlja ostatak. Čita se samo ta jedna stranica po adresi, a sajt mora biti na listi
+   dozvoljenih (`api/_lib/bela-lista.js`).
+2. **Svaka kartica se menja**: naslov, autor, izdavač, godina, ISBN (ispravan ISBN-10 ili
+   ISBN-13; čuva se kao ISBN-13) i žanr. **Opis se ne preuzima sa sajta**: ako ga želite,
+   upišite ga sami.
+3. **Stanje**: *U fondu* (obavezan broj primeraka, signatura po želji) ili *Za nabavku*
+   (knjiga nije u fondu, bez primeraka, i ulazi u izveštaj za nabavku).
+4. **Sačuvaj** čuva jednu karticu. Ako knjiga već postoji (isti ISBN, ili sličan naslov i
+   autor), prikazuje se postojeći zapis i nudi: *Otvori*, *Dodaj primerke ovom zapisu* (samo
+   za „U fondu") ili *Ipak sačuvaj kao novi zapis*. Označite „Potvrđeno" na više kartica pa
+   **Sačuvaj sve potvrđene**: čuvaju se redom, a kartice sa duplikatom ili greškom čekaju vašu odluku.
+5. **Korica** se čuva samo ako je sa sajta izdavača sa liste dozvoljenih domena; inače se
+   prikazuje pločica sa naslovom i autorom. Ništa drugo sa sajta se ne čuva.
+
+Ograničenje: **200 pročitanih adresa na sat** za bibliotekare (čitaoci imaju 30). Kad se
+dostigne, ostale adrese nisu poslate; pokušajte ponovo kasnije.
+
 ### Prvi administrator
 
 ```bash
@@ -104,6 +133,24 @@ pri kucanju i traži se dvaput), pa pravi Auth nalog i red u `clanovi` sa
 ulogom `administrator`. Podaci se ne daju kao argumenti komande, da ne ostanu u
 istoriji ljuske. Treba joj `SUPABASE_SERVICE_ROLE_KEY` u `.env`. Ako upis u
 `clanovi` ne uspe, Auth nalog se poništava.
+
+### Test migracija (test:db)
+
+```bash
+npm run test:db
+```
+
+[`scripts/test-db.mjs`](scripts/test-db.mjs) pušta **sve** migracije redom na pravom
+Postgresu u procesu ([PGlite](https://pglite.dev), bez Docker-a, bez mreže, bez ključeva) i proverava:
+pretragu (ćirilica/latinica, ISBN, džokeri), ograničenje zahteva, tabele samo za
+`service_role`, pravila za korice i ISBN, i opšta pravila (svaka tabela ima RLS i
+politiku, svaka `SECURITY DEFINER` funkcija ima `search_path`, tačan spisak javnih
+funkcija). Podatke koji su mogli da postoje pre `0009` i `0010` ubacuje pre njih, pa
+proverava i čišćenje postojećih redova.
+
+Ograničenje: ovo nije Supabase. Uloge, `auth.uid()` i podrazumevane privilegije su
+zamene; test ne proverava ni istovremene zahteve (jedna veza). Prolaz znači da SQL radi
+i da pravila važe, ne da je tvoj projekat u tom stanju.
 
 ### Test RLS
 
@@ -124,12 +171,12 @@ nule ako ijedna provera padne.
 ### Migracije su puštene ručno
 
 Port 5432 je blokiran sa razvojne mreže, pa `supabase db push` ne radi. Migracije
-se lepe u SQL Editor, redom (0001 do 0006 su tamo; 0007 i 0008 treba zalepiti). Zato je tabela
+se lepe u SQL Editor, redom (0001 do 0006 su tamo; 0007 do 0012 treba zalepiti, tim redom). Zato je tabela
 `supabase_migrations.schema_migrations` u bazi **prazna** i CLI misli da ništa
 nije primenjeno. Kad se ostvari veza, uskladiti:
 
 ```bash
-npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008
+npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012
 ```
 
 Do tada: izmena postojeće migracije u repozitorijumu **nije** u bazi dok se

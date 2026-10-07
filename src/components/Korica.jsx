@@ -28,29 +28,42 @@ function Plocica({ naslov, autor }) {
   );
 }
 
-// Lanac (PLAN.md): korica iz naše baze → Google Books → Open Library po ISBN-u →
-// slika sa linka → pločica. Prve tri adrese stižu kroz adreseKorica; svaka koja se
-// ne učita (404) prelazi na sledeću. Pozivalac daje `key` po knjizi, da se
-// brojač vrati na početak kad se knjiga promeni.
-export default function Korica({ knjiga, autor }) {
+// Lanac (PLAN.md): korica iz naše baze (ili iz rezultata, za prikaz) → Open Library po
+// ISBN-u → pločica. Svaka adresa koja se ne učita (404) prelazi na sledeću. Pozivalac
+// daje `key` po knjizi, da se brojač vrati na početak kad se knjiga promeni.
+//
+// `google`: rezultat je iz Google Books. Korica se tada samo prikazuje (nikad se ne
+// čuva) i obavezno ide uz oznaku „Google Books" i vezu ka njihovoj stranici za tu knjigu
+// (smernice za brendiranje: Google se navodi uz svaki prikaz njihovog sadržaja).
+export default function Korica({ knjiga, autor, google = null }) {
   const adrese = adreseKorica(knjiga);
   const [neuspele, setNeuspele] = useState(0);
   const adresa = adrese[neuspele];
 
   return (
-    <div className="h-28 w-20 shrink-0 overflow-hidden rounded border border-ivica bg-white">
-      {adresa ? (
-        <img
-          src={adresa}
-          alt={`${tekst.pretraga.knjiga.koricaZa} ${knjiga.naslov}`}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onError={() => setNeuspele((n) => n + 1)}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <Plocica naslov={knjiga.naslov} autor={autor} />
-      )}
+    <div className="w-20 shrink-0">
+      <div className="h-28 w-20 overflow-hidden rounded border border-ivica bg-white">
+        {adresa ? (
+          <img
+            src={adresa}
+            alt={`${tekst.pretraga.knjiga.koricaZa} ${knjiga.naslov}`}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setNeuspele((n) => n + 1)}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <Plocica naslov={knjiga.naslov} autor={autor} />
+        )}
+      </div>
+      {google &&
+        (google.url ? (
+          <a href={google.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-center text-xs font-medium text-pecat underline">
+            {tekst.pretraga.knjiga.googleBooks}
+          </a>
+        ) : (
+          <span className="mt-1 block text-center text-xs text-mastilo/70">{tekst.pretraga.knjiga.googleBooks}</span>
+        ))}
     </div>
   );
 }

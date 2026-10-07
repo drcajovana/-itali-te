@@ -18,6 +18,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { kartaUEmail, normalizujKarticu } from "../src/lib/kartica.js";
+import { uIsbn13 } from "../src/lib/isbn.js";
 
 // ───────────────────────── okruženje ─────────────────────────
 
@@ -679,6 +680,88 @@ async function main() {
       ? true
       : `u bazi: izvor=${k.izvor}, u_fondu=${k.u_fondu}, primeraka=${k.broj_primeraka}, signatura=${k.signatura}`;
   });
+  // ───────── ekran za unos bibliotekara: ono što sme samo bibliotekar ─────────
+  // (Provere duplikata traže migracije 0008 i 0010 u bazi, a ograničenja 0007 i 0012.)
+  const isbnBib = (() => {
+    const osnova = `978${String(Math.floor(Math.random() * 1e9)).padStart(9, "0")}`;
+    const zbir = [...osnova].reduce((z, c, i) => z + Number(c) * (i % 2 ? 3 : 1), 0);
+    return osnova + ((10 - (zbir % 10)) % 10);
+  })();
+  let unosFond = null;
+  let unosNabavka = null;
+  await provera("bibliotekar „U fondu”: izvor 'fond', u_fondu, primerci i signatura ostaju; ISBN i uneo_id kako treba", async () => {
+    const r = await BIB.db.from("knjige")
+      .insert({ naslov: N("BIB-fond"), autor: "Neko", isbn: isbnBib, zanrovi: ["roman"], opis: "Opis bibliotekara", u_fondu: true, izvor: "fond", broj_primeraka: 3, broj_slobodnih: 3, signatura: "X-3", uneo_id: BIB.id })
+      .select()
+      .single();
+    if (r.error) return opis(r);
+    unosFond = r.data;
+    const k = r.data;
+    return k.u_fondu === true && k.izvor === "fond" && k.broj_primeraka === 3 && k.broj_slobodnih === 3 && k.signatura === "X-3" && k.isbn === isbnBib && k.uneo_id === BIB.id && k.opis === "Opis bibliotekara"
+      ? true
+      : `u bazi: izvor=${k.izvor}, u_fondu=${k.u_fondu}, primeraka=${k.broj_primeraka}, signatura=${k.signatura}, isbn=${k.isbn}`;
+  });
+  await provera("bibliotekar „Za nabavku”: izvor 'link', u_fondu=false i 0 primeraka ostaju (okidač ne vraća izvor na 'clan')", async () => {
+    const r = await BIB.db.from("knjige")
+      .insert({ naslov: N("BIB-nabavka"), autor: "Neko", u_fondu: false, izvor: "link", broj_primeraka: 0, broj_slobodnih: 0, uneo_id: BIB.id })
+      .select()
+      .single();
+    if (r.error) return opis(r);
+    unosNabavka = r.data;
+    const k = r.data;
+    return k.u_fondu === false && k.izvor === "link" && k.broj_primeraka === 0 ? true : `u bazi: izvor=${k.izvor}, u_fondu=${k.u_fondu}, primeraka=${k.broj_primeraka}`;
+  });
+  await provera("čitalac ne može da poveća broj primeraka ni da prebaci knjigu u fond (izmena ne pogađa nijedan red)", async () => {
+    const p = await pokusaj(A.db.from("knjige").update({ u_fondu: true, broj_primeraka: 99, broj_slobodnih: 99 }).eq("id", unosNabavka.id).select());
+    const k = await stanje("knjige", unosNabavka.id);
+    return p.pogodjeno === 0 && k.u_fondu === false && k.broj_primeraka === 0 ? true : `pogođeno: ${p.pogodjeno}, u bazi: u_fondu=${k.u_fondu}, primeraka=${k.broj_primeraka}`;
+  });
+  await provera("bibliotekar povećava broj primeraka; ista izmena sa zastarelom vrednošću ne menja ništa", async () => {
+    const izmena = () => BIB.db.from("knjige").update({ broj_primeraka: 5, broj_slobodnih: 5 }).eq("id", unosFond.id).eq("broj_primeraka", 3).eq("broj_slobodnih", 3).select("id");
+    const prva = await izmena();
+    const druga = await izmena();
+    const k = await stanje("knjige", unosFond.id);
+    return !prva.error && prva.data.length === 1 && !druga.error && druga.data.length === 0 && k.broj_primeraka === 5
+      ? true
+      : `prva: ${opis(prva)}; druga: ${opis(druga)}; primeraka u bazi: ${k.broj_primeraka}`;
+  });
+  await provera("bibliotekar prebacuje zapis „nije u fondu” u fond (2 primerka)", async () => {
+    const r = await BIB.db.from("knjige").update({ u_fondu: true, broj_primeraka: 2, broj_slobodnih: 2 }).eq("id", unosNabavka.id).select("id");
+    const k = await stanje("knjige", unosNabavka.id);
+    return !r.error && r.data.length === 1 && k.u_fondu === true && k.broj_primeraka === 2 ? true : `${opis(r)}; u bazi: ${JSON.stringify(k)}`;
+  });
+  await provera("provera duplikata: bibliotekar nalazi knjigu po ISBN-u (i kad ga kuca kao ISBN-10 ili sa crticama)", async () => {
+    const isbn10 = (() => {
+      // ISBN-10 koji odgovara probnom ISBN-13 postoji samo za prefiks 978
+      const d = isbnBib.slice(3, 12);
+      const z = [...d].reduce((s, c, i) => s + Number(c) * (10 - i), 0);
+      const c = (11 - (z % 11)) % 11;
+      return d + (c === 10 ? "X" : String(c));
+    })();
+    if (uIsbn13(isbn10) !== isbnBib) return `pripremni ISBN-10 (${isbn10}) ne odgovara ISBN-u-13`;
+    const a = await BIB.db.rpc("trazi_knjige", { upit: isbnBib, najvise: 20 });
+    const b = await BIB.db.rpc("trazi_knjige", { upit: isbn10, najvise: 20 });
+    const c = await BIB.db.rpc("trazi_knjige", { upit: `${isbnBib.slice(0, 3)}-${isbnBib.slice(3)}`, najvise: 20 });
+    const nalazi = (r) => !r.error && r.data.some((k) => k.id === unosFond.id);
+    return nalazi(a) && nalazi(b) && nalazi(c) ? true : `ISBN-13: ${opis(a)}; ISBN-10: ${opis(b)}; sa crticom: ${opis(c)}`;
+  });
+  await provera("provera duplikata: bibliotekar nalazi knjigu po naslovu i autoru", async () => {
+    const r = await BIB.db.rpc("trazi_knjige", { upit: `${N("BIB-fond")} Neko`, najvise: 20 });
+    return !r.error && r.data.some((k) => k.id === unosFond.id) ? true : opis(r);
+  });
+  await provera("niko iz klijenta ne može da zove uzmi_zahtev (ni čitalac ni bibliotekar): ograničenje se ne zaobilazi ni ne izmišlja veće", async () => {
+    const a = await A.db.rpc("uzmi_zahtev", { p_clan: A.id, p_akcija: "iz-linka:bibliotekar", p_najvise: 200000, p_prozor_sekundi: 3600 });
+    const b = await BIB.db.rpc("uzmi_zahtev", { p_clan: BIB.id, p_akcija: "iz-linka:bibliotekar", p_najvise: 200000, p_prozor_sekundi: 3600 });
+    return nedostupna(a) && nedostupna(b) ? true : `čitalac: ${opis(a)}; bibliotekar: ${opis(b)}`;
+  });
+  await provera("ni bibliotekar ne čita tabele zahtevi_api i kes_linkova (samo servis)", async () => {
+    const a = await BIB.db.from("zahtevi_api").select("*");
+    const b = await BIB.db.from("kes_linkova").select("*");
+    const c = await A.db.from("zahtevi_api").select("*");
+    const zabranjeno = (r) => r.error?.code === "42501" || (!r.error && r.data.length === 0);
+    return [a, b, c].every(zabranjeno) && a.error && b.error && c.error ? true : `bibliotekar zahtevi: ${opis(a)}; keš: ${opis(b)}; čitalac zahtevi: ${opis(c)}`;
+  });
+
   await provera("autor ne može sam da otkrije svoj sakriveni utisak", async () => {
     await A.db.from("utisci").update({ skriven: false }).eq("id", uA4.id).select();
     const u = await stanje("utisci", uA4.id);

@@ -2,16 +2,34 @@
 //   1. samo POST;
 //   2. Supabase JWT u Authorization zaglavlju se PROVERAVA (bez njega: 401);
 //   3. oblik zahteva se proverava (neispravan zahtev ne troši ograničenje);
-//   4. ograničenje 30 zahteva na sat po članu (tabela u bazi, jer funkcije
-//      nemaju stanje);
+//   4. ograničenje zahteva na sat po članu (tabela u bazi, jer funkcije nemaju
+//      stanje): 30 za čitaoce, a za iz-linka 200 za bibliotekare i administratore.
+//      Uloga se čita NA SERVERU iz tabele clanovi (service_role), nikad iz zahteva;
 //   5. posao funkcije.
 
 import { createClient } from "@supabase/supabase-js";
 import { ApiGreska, posalji, posaljiGresku } from "./greska.js";
 import { anonKljuc, lokalnoBezBaze, servisniKljuc, supabaseUrl } from "./okruzenje.js";
 
-export const NAJVISE_ZAHTEVA = 30;
+export const NAJVISE_ZAHTEVA = 30; // čitaoci, i Google pretraga za sve
+export const NAJVISE_ZAHTEVA_BIBLIOTEKAR = 200; // iz-linka za bibliotekare i administratore
 export const PROZOR_SEKUNDI = 3600;
+
+// Kante u kojima se broje zahtevi (public.uzmi_zahtev, migracija 0012). Svaka kanta
+// ima svoje brojanje, pa veći limit za bibliotekare ne dira Google ni čitaoce.
+export const KANTA_OPSTA = "api"; // čitaoci (obe funkcije zajedno) i Google pretraga
+export const KANTA_BIBLIOTEKAR = "iz-linka:bibliotekar";
+
+const ULOGE_SA_VECIM_LIMITOM = ["bibliotekar", "administrator"];
+export const jeBibliotekarskaUloga = (uloga) => ULOGE_SA_VECIM_LIMITOM.includes(uloga);
+
+// Granica za iz-linka: bibliotekar i administrator imaju 200 u svojoj kanti, svi ostali
+// ostaju na opštoj (30). Prosleđuje se obradi kao ogranicenje(uloga).
+export function granicaIzLinka(uloga) {
+  return jeBibliotekarskaUloga(uloga)
+    ? { kanta: KANTA_BIBLIOTEKAR, najvise: NAJVISE_ZAHTEVA_BIBLIOTEKAR }
+    : { kanta: KANTA_OPSTA, najvise: NAJVISE_ZAHTEVA };
+}
 
 const OPCIJE = { auth: { persistSession: false, autoRefreshToken: false } };
 
@@ -53,13 +71,30 @@ export async function proveriClana(req) {
 
 // Zatvoreno kad baza nije dostupna: bez ograničenja se ne radi (osim lokalno,
 // uz ZAHTEVI_BEZ_BAZE=1; vidi okruzenje.js).
-export async function ogranici(clanId, akcija) {
-  if (lokalnoBezBaze()) return { preostalo: NAJVISE_ZAHTEVA };
+// Uloga člana, pročitana u bazi pomoću service_role. Ne veruje se ničemu iz zahteva
+// (telo, zaglavlja): čitalac koji pošalje { uloga: "bibliotekar" } dobija 30, ne 200.
+// Zatvoreno: ako se uloga ne može pročitati, zahtev se odbija.
+export async function ulogaClana(clanId) {
+  const { data, error } = await servisniKlijent()
+    .from("clanovi")
+    .select("uloga")
+    .eq("id", clanId)
+    .eq("aktivan", true)
+    .maybeSingle();
+  if (error) {
+    console.error("čitanje uloge nije uspelo:", error.message);
+    throw new ApiGreska(503, "ogranicenje_nedostupno", "Ograničenje zahteva trenutno nije dostupno.");
+  }
+  return data?.uloga ?? "citalac";
+}
+
+export async function ogranici(clanId, kanta = KANTA_OPSTA, najvise = NAJVISE_ZAHTEVA) {
+  if (lokalnoBezBaze()) return { preostalo: najvise };
 
   const { data, error } = await servisniKlijent().rpc("uzmi_zahtev", {
     p_clan: clanId,
-    p_akcija: akcija,
-    p_najvise: NAJVISE_ZAHTEVA,
+    p_akcija: kanta,
+    p_najvise: najvise,
     p_prozor_sekundi: PROZOR_SEKUNDI,
   });
   if (error) {
@@ -90,8 +125,10 @@ export function procitajTelo(req) {
 }
 
 // proveri(telo) → parametri za radi (baca ApiGreska za neispravan zahtev);
-// radi(parametri, clan) → niz rezultata.
-export async function obradi(req, res, akcija, { proveri, radi }) {
+// radi(parametri, clan) → niz rezultata;
+// ogranicenje(uloga) → { kanta, najvise } (neobavezno): kad ga funkcija zada, uloga se
+// čita u bazi; bez njega važi opšta kanta (30 na sat) i uloga se ne čita.
+export async function obradi(req, res, { proveri, radi, ogranicenje: granicaZa }) {
   try {
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
@@ -99,7 +136,9 @@ export async function obradi(req, res, akcija, { proveri, radi }) {
     }
     const clan = await proveriClana(req);
     const parametri = proveri(procitajTelo(req));
-    const ogranicenje = await ogranici(clan.id, akcija);
+    let granica = { kanta: KANTA_OPSTA, najvise: NAJVISE_ZAHTEVA };
+    if (granicaZa && !lokalnoBezBaze()) granica = granicaZa(await ulogaClana(clan.id));
+    const ogranicenje = await ogranici(clan.id, granica.kanta, granica.najvise);
     const rezultati = await radi(parametri, clan);
     posalji(res, 200, { rezultati }, { "X-RateLimit-Remaining": String(ogranicenje.preostalo) });
   } catch (e) {

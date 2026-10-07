@@ -36,6 +36,13 @@ transliterovati je.
 - **Ne skidaju se podaci sa sajtova izdavača i knjižara** (Delfi, Laguna,
   Vulkan). Uslovi korišćenja to po pravilu zabranjuju i ustanova ne treba da
   nosi taj rizik. Linkovanje ka COBISS+ zapisu i sajtu izdavača ostaje.
+- **Google Books je pomoć pri pretrazi uživo, ne izvor podataka.** Iz Google-a se
+  trajno čuva samo ono što član potvrdi (ISBN-13, naslov, autor, godina, izdavač);
+  **nikad opis, nikad korica, nikad masovno.** Nema skripti za uvoz iz Google-a
+  (ni seed, ni bulk, ni „popuni opise"). Uslovi (Google APIs ToS, odeljak 5e) ne
+  dozvoljavaju pravljenje baze ni trajnih kopija sadržaja iz API-ja; korica se
+  prikazuje uz oznaku „Google Books" i vezu ka njihovoj stranici, nikad se ne čuva.
+  Isto važi za opis sa tuđeg sajta (link): ne čuva se.
 - **Ne piše se ništa u COBISS.** COBISS je izvor istine za katalog i
   zaduženja; „Rezerviši" je obaveštenje bibliotekaru, ništa više.
 - **Nema samostalne registracije.** Nalog postoji samo ako je članstvo
@@ -96,6 +103,40 @@ Polja koja korisnik ne sme da menja (`uloga`, `aktivan`, `skriven`,
 `u_fondu`, …) čuvaju BEFORE triggeri, ne aplikacija. RLS ume da kaže „smeš da
 menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 
+## Korice i ISBN
+
+- **Korica** (`knjige.korice_url`): samo https, do 500 znakova, samo domeni sa liste:
+  izdavači (`bela-lista.js`), Open Library i naš Supabase Storage. **Google nije na
+  listi** (ne sme da se čuva). Lista je u JS-u (`DOZVOLJENI_DOMENI_KORICA` u `api/_lib/bela-lista.js`) I u bazi
+  (`privatno.domeni_korica`); `npm run test:db` pada ako se razilaze. Novi domen se dodaje
+  na oba mesta: JS niz i nova migracija sa INSERT-om. Nedozvoljena adresa se **ne odbija,
+  nego postaje NULL** (i `korice_izvor`), jer je korica dopuna, a odbijanje bi uništilo
+  upis knjige. Servisna uloga je izuzeta. Domen našeg Storage-a je već na listi
+  (`SUPABASE_STORAGE_DOMEN`), da fotografija koju okači bibliotekar ne postane NULL; pri
+  prelasku na drugi Supabase projekat menja se u JS-u i u novoj migraciji.
+- **ISBN** se čuva i traži kao ISBN-13. Pravilo je na dva mesta koja moraju da se slažu:
+  `src/lib/isbn.js` (`uIsbn13`) i `privatno.isbn13()`; `test:db` ih poredi na fiksnim i
+  slučajnim primerima. Ne pisati treću implementaciju. Neispravan ISBN odbija baza (osim
+  servisne uloge, koja ga čuva: uvoz fonda ne sme da izgubi zapis).
+- Svaka izmena migracija prolazi `npm run test:db` (puštanje svih migracija od nule).
+
+## Ekran za bibliotekare (/bibliotekar/unos)
+
+- **Ruta** je za ulogu `bibliotekar` i `administrator` (`RutaZaBibliotekare`, `src/lib/uloge.js`).
+  To je samo udobnost u interfejsu: upis štiti RLS i okidači, a ograničenje čita ulogu na
+  serveru. Na interfejs se bezbednost ne oslanja.
+- **Adrese se čitaju REDOM, jedna po jedna, najviše 20, sa pauzom** (`obradiRedom` u
+  `src/lib/unos-knjiga.js`). Nikad paralelno, nikad „pretraga" kataloga izdavača: samo adrese
+  koje je korisnik nalepio, jedna stranica po adresi. Kad server javi ograničenje, ostatak se ne šalje.
+- **Opis se ne povlači sa sajta.** `pocetnaForma` ga ostavlja praznim, a piše ga bibliotekar.
+  `npm run test:api` proverava da opis sa sajta nikad ne dospe u formu ni u red za upis.
+- **Upis** ide običnim klijentom kao prijavljeni bibliotekar, nikad kroz `service_role`. Izvor je
+  `fond` za „U fondu" i `link` za „Za nabavku"; okidač `knjige_unos_clana` za bibliotekare ne dira
+  `izvor`, `u_fondu` ni broj primeraka (čitaocima ih vraća na `clan`, `false`, 0). `test:db` i `test:rls` to proveravaju.
+- **Duplikati** se proveravaju neposredno pre upisa preko `trazi_knjige` (ISBN-13, pa naslov i
+  autor; normalizaciju radi baza). Povećanje primeraka je izmena sa uslovom na staro stanje, pa
+  istovremena izmena ne daje pogrešan broj.
+
 ## API funkcije (api/)
 
 Vercel funkcije su jedino mesto gde se zovu spoljni servisi (Google Books, stranice
@@ -115,11 +156,24 @@ izdavača) i gde se koristi `SUPABASE_SERVICE_ROLE_KEY`. Pravila:
   veličina. Novi domen se dodaje samo u `bela-lista.js`, uz proveru da sajt dozvoljava
   čitanje jedne stranice koju je član zalepio. Ovo je pregled linka, ne skidanje
   kataloga (`Šta se ne radi`).
+- **Ograničenje zavisi od uloge**: `iz-linka` ima 30 na sat za čitaoce i 200 za bibliotekare i
+  administratore; Google pretraga je 30 za sve. Uloga se čita **na serveru iz tabele `clanovi`
+  pomoću `service_role`** (`ulogaClana`), nikad iz tela ni zaglavlja zahteva. Zahtevi se broje po
+  kanti (`uzmi_zahtev`, migracija 0012): `api` (čitaoci i Google) i `iz-linka:bibliotekar`.
+  Kad se uloga ne može pročitati, zahtev se odbija.
 - Svaka promena u ovim funkcijama prolazi `npm run test:api`.
 
-Član koji dodaje knjigu iz Google-a ili sa linka upisuje je običnim INSERT-om: okidač
-`knjige_unos_clana` uvek postavlja `izvor='clan'` i `u_fondu=false`. Odakle je korica
-čuva se u `korice_izvor`. (Zato izvor knjige ne razlikuje Google od ručnog upisa.)
+Član koji dodaje knjigu iz Google-a ili sa linka prvo vidi **izmenljiva polja** sa
+vrednostima iz rezultata; upis ide tek na dugme „Potvrdi" (`RezultatKnjige.jsx`).
+Upisuje se običnim INSERT-om, i to **samo** naslov, autor, izdavač, godina i ISBN-13, plus
+korica sa linka kad je domen na listi (`urediPotvrdu` i `redZaUpis` u
+`src/lib/red-knjige.js`; `npm run test:api` proverava da u red nikad ne uđu opis ni
+Google-ova korica). Okidač `knjige_unos_clana` uvek postavlja `izvor='clan'` i
+`u_fondu=false`, pa izvor knjige ne razlikuje Google od ručnog upisa.
+
+Google-ov `korica` u rezultatu služi samo za prikaz (`api/_lib/google-books.js` ga vraća
+samo sa Google-ovih domena za slike). Migracija 0009 (okidač i lista domena) sprečava novo
+čuvanje, a 0011 je očistila ono što je već bilo upisano.
 
 ## Klijent
 

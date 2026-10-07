@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test:rls": "node --env-file=.env scripts/test-rls.mjs",
     "admin:napravi": "node --env-file=.env scripts/napravi-administratora.mjs",
-    "test:api": "node scripts/test-api.mjs"
+    "test:api": "node scripts/test-api.mjs",
+    "test:db": "node scripts/test-db.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.0",
@@ -22,6 +23,7 @@
     "tailwindcss": "^4.2.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@eslint/js": "^10.0.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

@@ -12,7 +12,7 @@ const tekst = (v) => {
 };
 
 export default function handler(req, res) {
-  return obradi(req, res, "pretraga-google", {
+  return obradi(req, res, {
     proveri(telo) {
       const p = { naslov: tekst(telo.naslov), autor: tekst(telo.autor), isbn: tekst(telo.isbn), q: tekst(telo.q) };
       if (!Object.values(p).some((v) => v.trim())) {

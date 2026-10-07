@@ -1,6 +1,9 @@
-// Google Books API (zvanični, ne kvari se). Koristi se za opis i korice novijih
-// izdanja, nikad kao osnova: pokrivenost starijih izdanja i zavičajne građe je
-// slaba (PLAN.md, tačka 4).
+// Google Books API (zvanični, ne kvari se). Pomoć pri pretrazi UŽIVO, ne izvor
+// podataka: pokrivenost starijih izdanja i zavičajne građe je slaba, a uslovi
+// Google-a (Google APIs ToS, odeljak 5e) ne dozvoljavaju pravljenje baze ni trajnih
+// kopija sadržaja iz API-ja. Zato se rezultati samo prikazuju; trajno se čuva samo
+// ono što član potvrdi (ISBN-13, naslov, autor, godina, izdavač; src/lib/red-knjige.js),
+// nikad opis, nikad korica, nikad masovno.
 //
 // VAŽNO: bez API ključa Google trenutno vraća 429 (dnevna kvota za anonimne
 // zahteve je 0). Treba GOOGLE_BOOKS_API_KEY (besplatan; Books API se uključuje
@@ -57,16 +60,21 @@ const bezOznaka = (s) =>
     .replace(/\s+/g, " ")
     .trim();
 
-// Korica ostaje na Google-ovom serveru (čuva se URL, ne fajl): njihovi uslovi
-// traže prikaz uz vezu ka njihovom zapisu. Samo https i samo njihovi domeni.
-function koricaIz(imageLinks) {
+// Korica služi SAMO ZA PRIKAZ u rezultatima (uz oznaku „Google Books" i vezu ka
+// njihovoj stranici). Ne čuva se nigde: ni kao fajl, ni kao adresa u bazi, a baza bi
+// je svakako postavila na NULL (Google nije na listi domena za korice, migracija 0009).
+// Samo https i samo Google-ovi domeni za slike knjiga.
+const DOMENI_ZA_PRIKAZ = ["books.google.com", "books.googleusercontent.com"];
+
+function koricaZaPrikaz(imageLinks) {
   const sirova = imageLinks?.thumbnail ?? imageLinks?.smallThumbnail;
   if (!sirova) return null;
   try {
     const u = new URL(String(sirova).replace(/^http:\/\//i, "https://"));
-    if (u.protocol !== "https:" || !/(^|\.)(google\.com|googleusercontent\.com)$/.test(u.hostname)) return null;
     u.searchParams.delete("edge"); // „edge=curl" savija ćošak slike
-    return u.href.length <= 500 ? u.href : null;
+    const host = u.hostname.toLowerCase();
+    const dozvoljen = DOMENI_ZA_PRIKAZ.some((d) => host === d || host.endsWith(`.${d}`));
+    return u.protocol === "https:" && dozvoljen && u.href.length <= 500 ? u.href : null;
   } catch {
     return null;
   }
@@ -88,7 +96,7 @@ export function normalizujStavku(stavka) {
     godina: godina ? Number(godina[1]) : null,
     isbn,
     opis: bezOznaka(v.description).slice(0, 2000),
-    korica: koricaIz(v.imageLinks),
+    korica: koricaZaPrikaz(v.imageLinks), // samo za prikaz, ne čuva se
     izvor: "google_books",
     url: typeof v.infoLink === "string" && v.infoLink.startsWith("https://") ? v.infoLink : null,
   };
