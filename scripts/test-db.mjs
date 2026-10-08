@@ -93,7 +93,9 @@ try {
   const POSLEDNJA = fajlovi.filter((f) => /^0011_/.test(f));
   const NAKON = fajlovi.filter((f) => /^0012_/.test(f));
   const STORAGE = fajlovi.filter((f) => /^001[34]_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x))) await pusti(f);
+  const ISPRAVKA = fajlovi.filter((f) => /^0015_/.test(f));
+  const PUTANJA = fajlovi.filter((f) => /^0016_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -150,6 +152,64 @@ try {
 
   faza("Migracije 0013 i 0014 (Storage: bucket i politike; korica preuzeta sa linka)");
   for (const f of STORAGE) await pusti(f);
+
+  faza("Migracija 0015: ispravka liste domena za korice (baza sa starom i sa ispravnom listom)");
+  const listaDomena = async () => (await db.query("select domen from privatno.domeni_korica order by 1")).rows.map((x) => x.domen);
+  const ocekivana = [...new Set(DOZVOLJENI_DOMENI_KORICA)].sort();
+  const pre0015 = await listaDomena();
+  ok(JSON.stringify(pre0015) === JSON.stringify(ocekivana), "baza napravljena iz 0001–0014 već ima ispravnu listu (kao 0009 i bela-lista.js)", pre0015);
+  for (const f of ISPRAVKA) await pusti(f);
+  ok(JSON.stringify(await listaDomena()) === JSON.stringify(pre0015), "0015 na već ispravnoj bazi ne menja ništa", await listaDomena());
+
+  // stara baza: Google domeni, bez našeg Supabase domena (stanje pre ručne ispravke)
+  await db.query("delete from privatno.domeni_korica where domen = 'jrmzgulxvxtpghwbhmrc.supabase.co'");
+  await db.query("insert into privatno.domeni_korica (domen) values ('books.google.com'), ('books.googleusercontent.com')");
+  const STORAGE_ADRESA = "https://jrmzgulxvxtpghwbhmrc.supabase.co/storage/v1/object/public/korice/x/1.jpg";
+  const staro = await db.query("select privatno.korice_dozvoljena('https://books.google.com/books/content?id=1') as g, privatno.korice_dozvoljena($1) as s", [STORAGE_ADRESA]);
+  ok(staro.rows[0].g === true && staro.rows[0].s === false, "pre 0015 (stara lista): Google adresa je dozvoljena, a naš Storage nije", staro.rows[0]);
+  for (const f of ISPRAVKA) await pusti(f);
+  ok(JSON.stringify(await listaDomena()) === JSON.stringify(ocekivana), "0015 na staroj bazi: lista je tačno kao u bela-lista.js (Google domeni obrisani, Supabase domen dodat)", await listaDomena());
+  const novo = await db.query("select privatno.korice_dozvoljena('https://books.google.com/books/content?id=1') as g, privatno.korice_dozvoljena('https://books.googleusercontent.com/x.jpg') as g2, privatno.korice_dozvoljena($1) as s, privatno.korice_dozvoljena('https://covers.openlibrary.org/b/isbn/1-M.jpg') as ol", [STORAGE_ADRESA]);
+  ok(novo.rows[0].g === false && novo.rows[0].g2 === false && novo.rows[0].s === true && novo.rows[0].ol === true, "posle 0015: Google adrese su odbijene, naš Storage i Open Library su dozvoljeni", novo.rows[0]);
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, ISPRAVKA[0]), "utf8"));
+  ok(JSON.stringify(await listaDomena()) === JSON.stringify(ocekivana), "0015 je idempotentna: drugo puštanje ne menja listu", await listaDomena());
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, ISPRAVKA[0]), "utf8"));
+
+  faza("Migracija 0016: search_path = pg_catalog za norm_tekst, norm_sifra, dodirni_izmenjeno i isbn13");
+  const POMOCNE = ["norm_tekst", "norm_sifra", "dodirni_izmenjeno", "isbn13"];
+  const putanje = async () => Object.fromEntries((await db.query(
+    `select p.proname, p.proconfig, p.provolatile, pg_get_function_identity_arguments(p.oid) as args from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'privatno' and p.proname = any($1) order by 1`, [POMOCNE])).rows.map((r) => [r.proname, r]));
+  const pre16 = await putanje();
+  ok(POMOCNE.every((n) => !(pre16[n]?.proconfig ?? []).some((c) => c.startsWith("search_path="))), "pre 0016: ove četiri funkcije nemaju postavljen search_path (stanje iz 0001, 0003 i 0010)", pre16);
+  const UZORCI = ["Андрић Иво", "Đorđe Čolić", "ŠĆŽ ljubav Његош Џ", "", "A1 b2"];
+  const SIFRE = ["NEG·4471·KJ", "neg 4471 kj", "  x-y_z 9 "];
+  const izlazFunkcija = async () => ({
+    tekst: (await db.query("select privatno.norm_tekst(t) as r from unnest($1::text[]) as t", [UZORCI])).rows.map((r) => r.r),
+    sifre: (await db.query("select privatno.norm_sifra(t) as r from unnest($1::text[]) as t", [SIFRE])).rows.map((r) => r.r),
+  });
+  // isbn13 na ~2000 ulaza: ispravni i neispravni ISBN-10 i ISBN-13, sa X, sa crticama, smeće
+  const ISBN_ULAZI = `select x from (
+      select lpad(g::text, 10, '0') as x from generate_series(0, 9999999, 4999) g
+      union all select '978' || lpad(g::text, 10, '0') from generate_series(0, 9999999, 4999) g
+      union all select lpad((g % 1000000000)::text, 9, '0') || 'X' from generate_series(0, 9999999, 4999) g
+      union all select unnest(array['978-86-521-2603-3', '0-306-40615-2', '0-8044-2957-X', '080442957x', 'ISBN 0-306-40615-2', '978-86-521-2603-4', '123', '', 'abc'])
+    ) t`;
+  const isbnOtisak = async () => (await db.query(`select count(*)::int as n, count(privatno.isbn13(x))::int as ispravnih, md5(string_agg(x || '=' || coalesce(privatno.isbn13(x), '-'), ',' order by x)) as otisak from (${ISBN_ULAZI}) q`)).rows[0];
+  const isbnPre = await isbnOtisak();
+  ok(isbnPre.n > 1500 && isbnPre.ispravnih > 100 && isbnPre.ispravnih < isbnPre.n - 100, "uzorak za isbn13 ima i ispravnih i neispravnih ulaza (provera nije prazna)", isbnPre);
+  const izlazPre = await izlazFunkcija();
+  for (const f of PUTANJA) await pusti(f);
+  const posle16 = await putanje();
+  ok(POMOCNE.every((n) => JSON.stringify(posle16[n]?.proconfig) === JSON.stringify(["search_path=pg_catalog"])), "posle 0016: sve četiri imaju search_path=pg_catalog", POMOCNE.map((n) => [n, posle16[n]?.proconfig]));
+  ok(POMOCNE.every((n) => posle16[n].provolatile === pre16[n].provolatile && posle16[n].args === pre16[n].args), "volatilnost i potpis ostaju isti (norm_* su i dalje immutable, pa mogu u indeksima)", POMOCNE.map((n) => [n, posle16[n].provolatile, posle16[n].args]));
+  const isbnPosle = await isbnOtisak();
+  ok(JSON.stringify(isbnPosle) === JSON.stringify(isbnPre), "isbn13 daje iste rezultate kao pre 0016 na istim ulazima (broj, broj ispravnih i otisak svih rezultata)", { pre: isbnPre, posle: isbnPosle });
+  ok(JSON.stringify(await izlazFunkcija()) === JSON.stringify(izlazPre), "norm_tekst i norm_sifra daju iste rezultate kao pre (ćirilica, latinica, kvačice, razdelnici)", await izlazFunkcija());
+  const izvor16 = fs.readFileSync(path.join(MIGRACIJE, PUTANJA[0]), "utf8").replace(/^--.*$/gm, "");
+  ok(!/create\s+(or\s+replace\s+)?function|drop\s/i.test(izvor16) && (izvor16.match(/alter function/g) ?? []).length === 4, "0016 samo menja postojeće funkcije (alter function), ne piše ih iznova", izvor16);
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, PUTANJA[0]), "utf8"));
+  ok(JSON.stringify(await putanje()) === JSON.stringify(posle16), "0016 je idempotentna: drugo puštanje ništa ne menja", await putanje());
 
   // ───────── podaci za dalje provere ─────────
   const A = "11111111-1111-4111-8111-111111111111";

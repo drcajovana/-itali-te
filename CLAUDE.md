@@ -140,6 +140,9 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   slučajnim primerima. Ne pisati treću implementaciju. Neispravan ISBN odbija baza (osim
   servisne uloge, koja ga čuva: uvoz fonda ne sme da izgubi zapis).
 - Svaka izmena migracija prolazi `npm run test:db` (puštanje svih migracija od nule).
+- **Migracija koja je puštena u bazu se ne menja na mestu**: ispravka je nova migracija (sledeći
+  broj), idempotentna, da radi i na bazi koja je ispravljena rukom i na onoj koja nije (primer:
+  0015 za listu domena za korice). Baza ne pamti koju je verziju fajla dobila.
 
 ## Ekran za bibliotekare (/bibliotekar/unos)
 

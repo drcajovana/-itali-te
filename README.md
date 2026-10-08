@@ -47,6 +47,8 @@ Migracije se puštaju redom, brojevima:
 | `0012_ogranicenje_po_kanti.sql` | `uzmi_zahtev()` broji po kanti: opšta (30 na sat) i bibliotekarska za iz-linka (200 na sat) |
 | `0013_storage_korice.sql` | Storage bucket `korice` (javno čitanje, jpeg/png/webp) i politike na `storage.objects`: upis i brisanje samo bibliotekar i administrator |
 | `0014_korice_preuzeto.sql` | `knjige.korice_poreklo`, izvor korice `'preuzeto'`, okidač koji čuva poreklo, i granica bucket-a podignuta na 1.5 MB. Puštati posle 0013 (ponovno puštanje 0013 vraća 1 MB, pa tada ponoviti i 0014) |
+| `0015_domeni_korica_ispravka.sql` | ispravka liste domena za korice u bazi: briše `books.google.com` i `books.googleusercontent.com`, dodaje naš Supabase domen; idempotentna (može i na već ispravljenoj bazi) |
+| `0016_search_path_pomocne_funkcije.sql` | `search_path = pg_catalog` za `privatno.norm_tekst`, `norm_sifra`, `dodirni_izmenjeno` i `isbn13` (`alter function`, idempotentno) |
 
 Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na
 `privatno.su_povezani()` iz `0002`, a politika na `preporuke` gleda u `prijave`,
@@ -222,16 +224,26 @@ nule ako ijedna provera padne.
 ### Migracije su puštene ručno
 
 Port 5432 je blokiran sa razvojne mreže, pa `supabase db push` ne radi. Migracije
-se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 i 0014 treba zalepiti, tim redom). Zato je tabela
+se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0016 treba zalepiti, tim redom). Zato je tabela
 `supabase_migrations.schema_migrations` u bazi **prazna** i CLI misli da ništa
 nije primenjeno. Kad se ostvari veza, uskladiti:
 
 ```bash
-npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014
+npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016
 ```
 
 Do tada: izmena postojeće migracije u repozitorijumu **nije** u bazi dok se
 ručno ne ponovi u SQL Editoru.
+
+**Migracija koja je već puštena u bazu se ne menja na mestu: dodaje se nova.** Baza ne pamti
+koju verziju fajla je dobila (tabela `schema_migrations` je prazna), pa izmena fajla na mestu tiho
+ostavlja bazu drugačijom od repozitorijuma, a to se otkrije tek kad nešto zakaže. Ispravka je
+nova migracija sa sledećim brojem, napisana idempotentno (`create or replace`, `if not exists`,
+`delete … where`, `insert … on conflict do nothing`) da može da se pusti i na bazi koja je već
+ispravljena rukom i na onoj koja nije. Tako je bilo sa listom domena za korice: u bazu je ušla
+starija verzija `0009` (sa Google domenima, bez našeg Supabase domena), a ispravlja je `0015`.
+`npm run test:db` poredi listu u bazi sa `api/_lib/bela-lista.js` i puštanjem `0015` na staroj i
+ispravnoj bazi. Istoriju fajla pokazuje `git log --follow supabase/migrations/<fajl>`.
 
 ### Tri pravila koja drže celu zaštitu
 
