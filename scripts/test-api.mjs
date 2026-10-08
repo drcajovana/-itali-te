@@ -656,6 +656,139 @@ faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-s
     unos.trebaPaznju({ forma: {}, sacuvano: { uFondu: true, korica: null, bezKorice: true } }) === false && unos.trebaPaznju({ forma: {}, sacuvano: { uFondu: true, korica: null, bezKorice: false } }) === true);
   provera("„Otvori” vodi na stranicu knjige kad postoji id, a bez id-a na pretragu", unos.adresaZaOtvaranje({ id: KID, naslov: "X" }) === `/knjiga/${KID}` && unos.adresaZaOtvaranje({ naslov: "X" }) === "/pretraga?upit=X");
 
+  // ── korica uz čuvanje knjige (korica-tok.js): klijentska logika bez mreže ──
+  {
+    const tok = await import("../src/lib/korica-tok.js");
+    const KOR = "https://cdn.laguna.rs/slike/k.jpg";
+    const greskaSaKodom = (kod, dodatno = {}) => Object.assign(new Error(kod), { kod, ...dodatno });
+    const nova = () => {
+      const s = { baza: [], preuzmi: [], otpremi: [], stanja: [] };
+      s.upisi = (status = "sacuvano") => async () => {
+        if (status === "sacuvano") s.baza.push(`k${s.baza.length + 1}`);
+        return status === "sacuvano" ? { status, id: s.baza.at(-1) } : { status };
+      };
+      return s;
+    };
+
+    // izbor korice
+    provera("izbor korice: podrazumevano 'preuzmi' kad link daje predlog, inače 'bez'", tok.izborKorice({ rezultat: { korica: KOR } }) === "preuzmi" && tok.izborKorice({ rezultat: {} }) === "bez" && tok.izborKorice({}) === "bez");
+    provera("izbor korice: 'bez' i 'slika' se poštuju; 'slika' bez slike i 'preuzmi' bez predloga se ne računaju",
+      tok.izborKorice({ koricaIzbor: "bez", rezultat: { korica: KOR } }) === "bez" && tok.izborKorice({ koricaIzbor: "slika", slika: { blob: {} }, rezultat: { korica: KOR } }) === "slika" &&
+        tok.izborKorice({ koricaIzbor: "slika", rezultat: { korica: KOR } }) === "preuzmi" && tok.izborKorice({ koricaIzbor: "preuzmi", rezultat: {} }) === "bez");
+
+    // upis, pa korica
+    let s = nova();
+    let r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "preuzmi", predlog: KOR, preuzmi: async (id, url) => (s.preuzmi.push([id, url]), { korica_url: `https://nas/${id}.jpg` }), otpremi: async () => "x", naKorici: (st) => s.stanja.push(st) });
+    provera("upis pa korica: knjiga se prvo upiše, korica se preuzima sa dobijenim ID-jem i nalepljenom adresom", r.upis === "sacuvano" && s.baza.length === 1 && s.preuzmi.length === 1 && s.preuzmi[0][0] === "k1" && s.preuzmi[0][1] === KOR && r.korica.ishod === "preuzeta" && r.korica.korica === "https://nas/k1.jpg" && s.stanja.join() === "radi", { r, preuzmi: s.preuzmi });
+
+    // greška pri preuzimanju NE poništava upis
+    for (const [kod, ocekivano] of [["ne_mogu_da_procitam", "Sajt ne daje sliku"], ["prevelika_slika", "prevelika"], ["slika_nije_podrzana", "Pogrešan tip"], ["nije_bibliotekar", "dozvolu"], ["nije_slika", "ne vodi do slike"], ["preusmerenje_van_liste", "preusmerava"], ["mreza", "povežem"]]) {
+      s = nova();
+      r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "preuzmi", predlog: KOR, preuzmi: async () => { throw greskaSaKodom(kod); }, otpremi: async () => "x" });
+      provera(`neuspelo preuzimanje (${kod}) ne poništava upis: knjiga ostaje sačuvana, razlog je čitljiv`, r.upis === "sacuvano" && s.baza.length === 1 && r.korica.ishod === "greska" && r.korica.razlog.toLowerCase().includes(ocekivano.toLowerCase()) && r.korica.kod === kod, r);
+    }
+    s = nova();
+    r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "preuzmi", predlog: KOR, preuzmi: async () => { throw new TypeError("neočekivano"); }, otpremi: async () => "x" });
+    provera("i neočekivana greška (nije ApiGreska) ne poništava upis i ne ruši tok", r.upis === "sacuvano" && s.baza.length === 1 && r.korica.ishod === "greska" && typeof r.korica.razlog === "string" && r.korica.razlog.length > 5, r);
+    s = nova();
+    r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "preuzmi", predlog: KOR, preuzmi: async () => { throw greskaSaKodom("previse_zahteva", { ponovoZaSekundi: 1234 }); }, otpremi: async () => "x" });
+    provera("ograničenje (previse_zahteva): upis ostaje, ishod 'limit', razlog sadrži minute (1234 s → 21 min)", r.upis === "sacuvano" && r.korica.ishod === "limit" && r.korica.razlog.includes("21 min"), r);
+
+    // isključena kvačica ne šalje zahtev
+    s = nova();
+    r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "bez", predlog: KOR, preuzmi: async () => { s.preuzmi.push("x"); return {}; }, otpremi: async () => { s.otpremi.push("x"); return "x"; } });
+    provera("isključena kvačica („Bez korice”): knjiga se upiše, a zahtev za koricu se NE šalje", r.upis === "sacuvano" && s.baza.length === 1 && s.preuzmi.length === 0 && s.otpremi.length === 0 && r.korica.ishod === "bez", r);
+    s = nova();
+    r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "preuzmi", predlog: null, preuzmi: async () => { s.preuzmi.push("x"); return {}; }, otpremi: async () => "x" });
+    provera("bez predloga nema zahteva ni kad je izbor 'preuzmi'", s.preuzmi.length === 0 && r.korica.ishod === "bez");
+
+    // upis nije uspeo (duplikat ili greška): korica se ne pokušava
+    for (const status of ["duplikat", "greska"]) {
+      s = nova();
+      r = await tok.sacuvajPaKoricu({ upisi: s.upisi(status), izbor: "preuzmi", predlog: KOR, preuzmi: async () => { s.preuzmi.push("x"); return {}; }, otpremi: async () => "x" });
+      provera(`upis '${status}': korica se ne preuzima`, r.upis === status && s.preuzmi.length === 0 && r.korica === null, r);
+    }
+
+    // druga slika
+    s = nova();
+    const BLOB = { velicina: 5 };
+    r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "slika", predlog: KOR, slika: { blob: BLOB }, preuzmi: async () => { s.preuzmi.push("x"); return {}; }, otpremi: async (id, b) => (s.otpremi.push([id, b]), "https://nas/slika.webp") });
+    provera("izabrana druga slika: otprema se ta slika (običan klijent), a preuzimanje sa sajta se NE šalje", r.korica.ishod === "slika" && s.otpremi.length === 1 && s.otpremi[0][1] === BLOB && s.preuzmi.length === 0, r);
+    s = nova();
+    r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "slika", slika: { blob: BLOB }, preuzmi: async () => ({}), otpremi: async () => { throw greskaSaKodom("nema_dozvole"); } });
+    provera("neuspelo slanje izabrane slike (nema dozvole) ne poništava upis i daje razlog", r.upis === "sacuvano" && s.baza.length === 1 && r.korica.ishod === "greska" && r.korica.razlog.includes("dozvolu"), r);
+
+    // „Sačuvaj sve”: redom, pauza između preuzimanja, ograničenje, sažetak
+    {
+      const pauze = [];
+      const zahtevi = [];
+      const baza = [];
+      const stavke = [
+        { id: "a", izbor: "preuzmi", predlog: KOR },
+        { id: "b", izbor: "preuzmi", predlog: KOR }, // neće uspeti
+        { id: "c", izbor: "bez", predlog: KOR }, // kvačica isključena
+        { id: "d", izbor: "preuzmi", predlog: KOR }, // duplikat: ne čuva se
+        { id: "e", izbor: "preuzmi", predlog: KOR }, // ograničenje potrošeno
+        { id: "f", izbor: "preuzmi", predlog: KOR }, // posle ograničenja: bez korice
+        { id: "g", izbor: "bez", predlog: null },
+      ];
+      const dogadjaji = [];
+      const zbir = await tok.sacuvajSve(stavke, {
+        pauzaMs: 77,
+        cekaj: async (ms) => { pauze.push(ms); dogadjaji.push("pauza"); },
+        naStavku: (id, rez) => dogadjaji.push(`${id}:${rez.upis}:${rez.korica?.ishod ?? "-"}`),
+        sacuvaj: (st, { ogranicenjePotroseno, pauza }) =>
+          tok.sacuvajPaKoricu({
+            upisi: async () => {
+              if (st.id === "d") return { status: "duplikat" };
+              baza.push(st.id);
+              return { status: "sacuvano", id: st.id };
+            },
+            izbor: st.izbor,
+            predlog: st.predlog,
+            slika: null,
+            ogranicenjePotroseno,
+            pauza,
+            preuzmi: async (id) => {
+              zahtevi.push(id);
+              if (id === "b") throw greskaSaKodom("ne_mogu_da_procitam");
+              if (id === "e") throw greskaSaKodom("previse_zahteva", { ponovoZaSekundi: 600 });
+              return { korica_url: `https://nas/${id}.jpg` };
+            },
+            otpremi: async () => "x",
+          }),
+      });
+      provera("sačuvaj sve: sve knjige osim duplikata su sačuvane, redom (6 od 7)", JSON.stringify(baza) === JSON.stringify(["a", "b", "c", "e", "f", "g"]) && zbir.sacuvano === 6 && zbir.ostalo === 1, { baza, zbir });
+      provera("sačuvaj sve: zahtev ka serveru samo za a, b i e (c je bez kvačice, d je duplikat, f posle ograničenja se ne šalje)", JSON.stringify(zahtevi) === JSON.stringify(["a", "b", "e"]), zahtevi);
+      provera("sačuvaj sve: pauza (zadata) pre svakog preuzimanja osim prvog; ne i pre ostalih knjiga", JSON.stringify(pauze) === JSON.stringify([77, 77]), { pauze, dogadjaji });
+      provera("sačuvaj sve: zbir — jedna preuzeta, jedna neuspela (sa razlogom), jedna bez kvačice/predloga, dve zbog ograničenja",
+        zbir.preuzeta === 1 && zbir.nijeUspelo.length === 1 && zbir.nijeUspelo[0].id === "b" && zbir.nijeUspelo[0].razlog.includes("Sajt ne daje sliku") && zbir.limit === 2 && zbir.bez === 2, zbir);
+      const sazetak = tok.tekstSazetka(zbir, { a: "Knjiga A", b: "Knjiga B" });
+      provera("sažetak kaže: koliko je sačuvano, koliko korica je preuzeto, koje nije i zašto, ograničenje i ono što čeka odluku",
+        sazetak.includes("Sačuvano knjiga: 6.") && sazetak.includes("Korica preuzeta: 1.") && sazetak.includes("Knjiga B: Sajt ne daje sliku") && sazetak.includes("Ograničenje od 100 preuzimanja na sat je potrošeno. Bez korice je sačuvano knjiga: 2") && sazetak.includes("Čeka vašu odluku (već postoji ili ima grešku): 1."), sazetak);
+      provera("ograničenje je 100 preuzimanja na sat (server: korica-iz-linka, kanta po bibliotekaru)", (await import("../api/_lib/zajednicko.js")).NAJVISE_KORICA === 100 && (await import("../src/lib/tekst.js")).tekst.unos.sazetak.limit.includes("100"));
+    }
+    {
+      // bez ikakvog preuzimanja nema ni pauze
+      const pauze = [];
+      const zbir = await tok.sacuvajSve([{ id: "x", izbor: "bez", predlog: KOR }, { id: "y", izbor: "bez", predlog: KOR }], { cekaj: async (ms) => pauze.push(ms), sacuvaj: (st) => tok.sacuvajPaKoricu({ upisi: async () => ({ status: "sacuvano", id: st.id }), izbor: st.izbor, predlog: st.predlog, preuzmi: async () => { throw new Error("ne sme"); }, otpremi: async () => "x" }) });
+      provera("sačuvaj sve bez preuzimanja: nema pauze i nema zahteva", pauze.length === 0 && zbir.sacuvano === 2 && zbir.bez === 2);
+    }
+
+    const tokIzvor = izvor("src/lib/korica-tok.js");
+    provera("korica-tok.js je čist: ne uvozi supabase ni knjige.js (testira se bez mreže)", !/supabase|knjige\.js|import\.meta/.test(tokIzvor.replace(/\/\/.*$/gm, "")));
+    const unosStrana = izvor("src/pages/BibliotekarUnos.jsx");
+    provera("ekran za unos: i pojedinačno čuvanje i „Sačuvaj sve” idu preko korica-tok.js (upis pa korica)", unosStrana.includes("sacuvajPaKoricu({") && unosStrana.includes("sacuvajSveRedom(") && unosStrana.includes("upisi: () => upisiStavku("));
+    const karticaIzvor = izvor("src/components/KarticaUnosa.jsx");
+    provera("kartica: pre čuvanja je pregled sa kvačicom; posle neuspeha je „Pokušaj ponovo”; „Koristi ovu koricu” se ne nudi dok je izbor 'preuzmi'",
+      karticaIzvor.includes("<KoricaPrePregled") && karticaIzvor.includes("onKoricaPonovi") && karticaIzvor.includes('izborKorice(stavka) !== "preuzmi"'));
+    const pregled = izvor("src/components/KoricaPrePregled.jsx");
+    provera("KoricaPrePregled: kvačica „Preuzmi i koricu”, „Bez korice” i „Izaberi drugu sliku”; ništa se ne šalje (nema poziva ka api ni Storage-u)",
+      pregled.includes("T.preuzmiKvacica") && pregled.includes("T.bez") && pregled.includes("T.drugaSlika") && !/koricaIzLinka|postaviKoricu|pozoviApi|supabase/.test(pregled.replace(/\/\/.*$/gm, "")));
+    const T15 = (await import("../src/lib/tekst.js")).tekst.korice;
+    provera("natpisi: „Preuzmi i koricu”, „Izaberi drugu sliku”, „Pokušaj ponovo”", T15.preuzmiKvacica === "Preuzmi i koricu" && T15.drugaSlika === "Izaberi drugu sliku" && T15.ponovo === "Pokušaj ponovo");
+  }
+
   // ── izvorni kod: sve što je tražilo uputstvo ──
   {
     const korica = izvor("src/components/Korica.jsx");
@@ -680,7 +813,7 @@ faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-s
     const stranica = izvor("src/pages/Knjiga.jsx");
     provera("stranica knjige: Zameni/Ukloni koricu samo za bibliotekare", /jeBibliotekar\(clan\?\.uloga\) && \(\s*<section[\s\S]*<KoricaIzbor[\s\S]*mozeUklanjanje/.test(stranica));
     const kartica = izvor("src/components/KarticaUnosa.jsx");
-    provera("kartica: predlog korice iz rezultata ide u KoricaIzbor (koricaIzLinka je povezana sa ekranom za unos)", kartica.includes("predlog={rezultat?.korica ?? null}") && kartica.includes("<KoricaIzbor"));
+    provera("kartica: predlog korice iz rezultata ide u KoricaIzbor (koricaIzLinka je povezana sa ekranom za unos)", kartica.includes("predlog={rezultat.korica}") && kartica.includes("<KoricaPrePregled") && kartica.includes("<KoricaIzbor"));
     const kfIzvor = izvor("src/lib/korica-slika.js");
     provera("korica-slika.js: 600 px, webp pa jpeg", kfIzvor.includes("NAJVISE_SIRINA = 600") && kfIzvor.includes('"image/webp"') && kfIzvor.includes('"image/jpeg"'));
     const kn = izvor("src/lib/knjige.js");

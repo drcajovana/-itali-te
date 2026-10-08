@@ -126,7 +126,10 @@ export const adresaZaOtvaranje = (knjiga) =>
 
 // Kartici treba pažnja kad čeka pregled (ima podatke, a nije sačuvana) ili je sačuvana u fond
 // i još nema koricu (a bibliotekar nije izabrao „Bez korice”). Po tome „Sledeća knjiga" bira sledeću karticu.
-export const trebaPaznju = (stavka) => (Boolean(stavka.forma) && !stavka.sacuvano) || Boolean(stavka.sacuvano?.uFondu && !stavka.sacuvano.korica && !stavka.sacuvano.bezKorice);
+export const trebaPaznju = (stavka) =>
+  (Boolean(stavka.forma) && !stavka.sacuvano) ||
+  Boolean(stavka.sacuvano?.uFondu && !stavka.sacuvano.korica && !stavka.sacuvano.bezKorice) ||
+  stavka.sacuvano?.koricaStanje === "greska"; // preuzimanje korice nije uspelo: knjiga je sačuvana, čeka „Pokušaj ponovo”
 
 // Sledeća kartica posle `id` redom kojim su na ekranu; ako je posle nje nema, prva ranija kojoj
 // treba pažnja (preskočena). undefined samo kad nijednoj drugoj kartici ne treba ništa.

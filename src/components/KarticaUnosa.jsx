@@ -3,7 +3,9 @@ import { uIsbn13 } from "../lib/isbn.js";
 import { tekst } from "../lib/tekst.js";
 import { adresaZaOtvaranje, primeraka } from "../lib/unos-knjiga.js";
 import Korica from "./Korica.jsx";
+import { izborKorice } from "../lib/korica-tok.js";
 import KoricaIzbor from "./KoricaIzbor.jsx";
+import KoricaPrePregled from "./KoricaPrePregled.jsx";
 
 const T = tekst.unos;
 const polje = "mt-1 block w-full rounded-lg border-2 border-ivica bg-white px-3 py-2 text-lg focus:border-pecat focus:outline-none";
@@ -75,7 +77,7 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
 
 // Jedna kartica: jedna adresa i izmenljivi podaci iz nje. Sve stanje je u roditelju
 // (stavka), da „Sačuvaj sve potvrđene" vidi i ono što je bibliotekar upravo ispravio.
-export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrimerke, onIpak, onKorica, onBezKorice, onSledeca, imaSledecu }) {
+export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrimerke, onIpak, onKorica, onBezKorice, onKoricaPonovi, onSledeca, imaSledecu }) {
   const id = useId();
   const { link, status, forma, rezultat, poruka, greskaPolja, sacuvano, saljem, potvrdjeno, duplikati } = stavka;
   const prikazaniStatus = sacuvano ? "sacuvano" : status;
@@ -119,11 +121,26 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
             </p>
           </div>
 
+          {sacuvano.koricaStanje === "radi" && (
+            <p role="status" className="text-base font-medium">
+              {izborKorice(stavka) === "slika" ? tekst.korice.radi : tekst.korice.preuzimam}
+            </p>
+          )}
+          {sacuvano.koricaStanje === "greska" && (
+            <div role="alert" className="space-y-2 rounded-lg border-2 border-pecat p-3">
+              <p className="text-base font-medium text-pecat">{tekst.korice.sacuvanaBezKorice.replace("{razlog}", sacuvano.koricaRazlog ?? "")}</p>
+              <button type="button" onClick={onKoricaPonovi} className="flex min-h-12 w-full items-center justify-center rounded-lg bg-pecat px-5 py-3 text-xl font-semibold text-white sm:w-auto">
+                {tekst.korice.ponovo}
+              </button>
+            </div>
+          )}
+
           {(sacuvano.uFondu || rezultat?.korica) && (
             <KoricaIzbor
               knjigaId={sacuvano.id}
               naslov={sacuvano.naslov}
-              predlog={rezultat?.korica ?? null}
+              zauzetVani={sacuvano.koricaStanje === "radi"}
+              predlog={!sacuvano.korica && izborKorice(stavka) !== "preuzmi" ? (rezultat?.korica ?? null) : null}
               korica={sacuvano.korica}
               bezKorice={Boolean(sacuvano.bezKorice)}
               onKorica={onKorica}
@@ -240,7 +257,22 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
               </div>
             )}
 
-            {forma.stanje === "fond" && <p className="text-base text-mastilo/70">{T.kartica.koricaNapomena}</p>}
+            {rezultat?.korica ? (
+              <KoricaPrePregled
+                naslov={forma.naslov}
+                predlog={rezultat.korica}
+                izbor={izborKorice(stavka)}
+                slika={stavka.slika ?? null}
+                onIzbor={(izbor) => onPromeni("koricaIzbor", izbor)}
+                onSlika={(slika) => {
+                  onPromeni("slika", slika);
+                  onPromeni("koricaIzbor", "slika");
+                }}
+                onemoguceno={saljem}
+              />
+            ) : (
+              forma.stanje === "fond" && <p className="text-base text-mastilo/70">{T.kartica.koricaNapomena}</p>
+            )}
 
             {greskaPolja && (
               <p role="alert" className="text-base font-medium text-pecat">

@@ -122,17 +122,23 @@ početnu) služi da se knjiga upiše iz stranice izdavača, bez kucanja:
    autor), prikazuje se postojeći zapis i nudi: *Otvori*, *Dodaj primerke ovom zapisu* (samo
    za „U fondu") ili *Ipak sačuvaj kao novi zapis*. Označite „Potvrđeno" na više kartica pa
    **Sačuvaj sve potvrđene**: čuvaju se redom, a kartice sa duplikatom ili greškom čekaju vašu odluku.
-5. **Korica**: čim sačuvate knjigu, kartica nudi tri načina da dobije koricu (jedan po knjizi):
-   - **Koristi ovu koricu**: ako je sajt ponudio sliku, vidite je u pregledu („Predložena korica sa
-     sajta"). Dugme kopira tu sliku u našu bazu (server je preuzima jednom). Pregled učitava sliku
-     sa sajta samo u vašem pregledaču; u bazi je ne bude dok ne kliknete.
-   - **Slikaj koricu** ili **Izaberi sliku sa računara ili telefona**: na telefonu prvo otvara
-     kameru, a drugo nudi kameru ili galeriju; na računaru bira fajl. Slika se u pregledaču smanji
-     na najviše 600 px širine (webp, ili jpeg) i pošalje u našu bazu.
-   - **Bez korice**: knjiga svesno ostaje bez korice (prikazuje se pločica sa naslovom i autorom).
-     „Predomislio sam se" vraća izbor.
-   Dok se slika šalje, dugmad su zaključana i piše šta se radi. Greške su napisane jasno
-   (prevelika slika, pogrešan tip, nemate dozvolu, sajt ne daje sliku).
+5. **Korica se preuzima zajedno sa čuvanjem.** Kad je link dao predlog korice, kartica pre
+   čuvanja pokazuje pregled slike i kvačicu **Preuzmi i koricu** (podrazumevano uključena), a pored
+   nje **Bez korice** i **Izaberi drugu sliku** (sa računara ili telefona; telefon nudi i kameru).
+   Pregled učitava sliku sa sajta samo u vašem pregledaču. Na **Sačuvaj** se prvo upiše knjiga, pa
+   tek onda, ako je kvačica uključena, server preuzme sliku (ili se pošalje izabrana slika).
+   - **Greška pri koricu ne poništava čuvanje.** Knjiga ostaje sačuvana, sa pločicom, a kartica
+     piše razlog (sajt ne daje sliku, slika je prevelika, pogrešan tip, nemate dozvolu) i nudi
+     **Pokušaj ponovo**. Pored toga i dalje stoje **Slikaj koricu**, **Izaberi sliku sa računara ili
+     telefona** i **Bez korice**.
+   - Izabrana druga slika se u pregledaču smanji na najviše 600 px širine (webp ili jpeg) i šalje
+     se tek pošto se knjiga sačuva. Kartica bez predloga korice nudi samo fotografiju, posle čuvanja.
+   - **Sačuvaj sve potvrđene** radi isto za svaku knjigu, redom, uz pauzu između dva preuzimanja
+     (kao kod čitanja linkova). Na kraju piše sažetak: koliko je knjiga sačuvano, kod koliko je korica
+     preuzeta, a kod kojih nije i zašto. Ograničenje je **100 preuzimanja na sat**; kad se potroši,
+     ostale knjige se čuvaju bez korice i to piše u sažetku (koricu dodate kasnije).
+   - Korica se preuzima samo sa adrese koju ste sami nalepili, jedna slika po adresi; nikad
+     pretraživanjem ni automatskim obilaskom sajtova.
 6. **Sledeća knjiga**: posle čuvanja (i posle korice) dugme vodi na sledeću karticu kojoj
    treba pažnja (čeka pregled, ili je sačuvana u fond a nema koricu i niste izabrali „Bez korice").
    Telefonom se tako prolazi kroz gomilu knjiga bez vraćanja na vrh liste.
@@ -153,13 +159,13 @@ SQL Editor redom): javno čitanje, najviše 1.5 MB, samo jpeg, png i webp. Dva n
    na najviše 600 px širine i pošalje preko politika na `storage.objects` (upis i brisanje samo
    bibliotekar i administrator, izmene niko: zamena je nov fajl).
 2. **Preuzeto sa linka** (`korice_izvor = 'preuzeto'`): `api/iz-linka` vrati predlog adrese slike;
-   na zahtev bibliotekara `api/korica-iz-linka` preuzme sliku **jednom** (isti SSRF zaštita kao
+   `api/korica-iz-linka` (poziva je kartica pošto se knjiga sačuva, ili dugme „Pokušaj ponovo”) preuzme sliku **jednom** (isti SSRF zaštita kao
    `iz-linka`: https, bez privatnih i lokalnih adresa, provera svakog preusmeravanja, rok 8 s,
    najviše 1.5 MB; domen slike nije ograničen listom), proveri **stvaran tip po sadržaju**
    (jpeg, png, webp; ne po nastavku ni zaglavlju), sačuva je **onakvu kakva je** (bez menjanja
    veličine na serveru) i upiše `korice_url` (naša adresa), `korice_izvor = 'preuzeto'` i
    `korice_poreklo` (adresa sa koje je uzeta). Ograničenje: 100 preuzimanja na sat po
-   bibliotekaru. Pošto se slika kopira, pre upotrebe proverite da sajt to dozvoljava.
+   bibliotekaru. Samo sa adrese koju je bibliotekar nalepio, jedna slika po adresi. Pošto se slika kopira, pre upotrebe proverite da sajt to dozvoljava.
 
 Fajlovi se zovu `<id knjige>/<vreme>.<ekstenzija>`. Prikaz (`src/lib/korica-slika.js`, `Korica.jsx`):
 naša slika → Open Library po ISBN-u → pločica; slika koja se ne učita prelazi na sledeću. Stare

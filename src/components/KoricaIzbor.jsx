@@ -29,6 +29,7 @@ export default function KoricaIzbor({
   onBez = null,
   mozeUklanjanje = false,
   onUklonjena = null,
+  zauzetVani = false, // kartica upravo preuzima ili šalje koricu (posle čuvanja knjige)
 }) {
   const [zauzet, setZauzet] = useState(null); // null | 'preuzimanje' | 'slanje' | 'uklanjanje'
   const [poruka, setPoruka] = useState(null); // { tekst, greska }
@@ -64,7 +65,7 @@ export default function KoricaIzbor({
     setZauzet(null);
   }
 
-  const onemoguceno = zauzet !== null;
+  const onemoguceno = zauzet !== null || zauzetVani;
   const slanje = (radi) => {
     setZauzet(radi ? "slanje" : null);
     if (radi) setPoruka(null); // stara poruka ne sme da stoji uz novi pokušaj

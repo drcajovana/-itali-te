@@ -113,10 +113,16 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   ISBN-u → pločica. Google sličica je samo prikaz uživo u rezultatima pretrage. Stare adrese sa
   drugim izvorom (npr. `og_slika`) se ne prikazuju.
 - **Odluka vlasnice (2026-10-08): preuzimanje korice sa linka je dozvoljeno**, što menja raniji
-  dogovor „korica sa tuđeg sajta se ne uzima". Uslovi koji ostaju: `iz-linka` samo **predlaže**
-  adresu (`korica`), ništa ne preuzima; preuzima `api/korica-iz-linka.js`, samo na zahtev
-  bibliotekara (uloga se čita na serveru, `granicaKorice`), jednu sliku po zahtevu, 100 na sat,
-  nikad masovno ni automatski. Ista SSRF zaštita kao `iz-linka` (`bezbedan-fetch.js`, `lista: null`
+  dogovor „korica sa tuđeg sajta se ne uzima”. Pravilo: **korica se preuzima samo sa adrese koju je
+  bibliotekar nalepio, jedna slika po adresi, nikad pretraživanjem ni automatskim obilaskom
+  sajtova.** `iz-linka` samo **predlaže** adresu (`korica`), ništa ne preuzima; preuzima
+  `api/korica-iz-linka.js`, samo za bibliotekare (uloga se čita na serveru, `granicaKorice`), 100 na
+  sat. Preuzima se zajedno sa čuvanjem knjige (kvačica „Preuzmi i koricu”, podrazumevano uključena),
+  ali **posle upisa**: prvo se upiše knjiga, pa korica, i **greška pri koricu nikad ne poništava
+  upis** (knjiga ostaje sa pločicom, kartica piše razlog i nudi „Pokušaj ponovo”). „Sačuvaj sve”
+  radi to redom, uz pauzu između dva preuzimanja; kad se potroši ograničenje, ostatak se čuva bez
+  korice, a sažetak kaže koliko je sačuvano, preuzeto i kod kojih nije i zašto. Tok je u
+  `src/lib/korica-tok.js` (čist modul, testira ga `test:api`). Ista SSRF zaštita kao `iz-linka` (`bezbedan-fetch.js`, `lista: null`
   skida samo ograničenje domenom), najviše 1.5 MB, tip po sadržaju (`api/_lib/slika.js`), bez
   menjanja veličine na serveru i bez novih biblioteka. Pre upotrebe proveriti da sajt dozvoljava
   kopiranje slike (uslovi korišćenja); `korice_poreklo` čuva odakle je uzeta.

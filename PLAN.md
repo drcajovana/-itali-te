@@ -222,8 +222,13 @@ Slika se prikazuje samo iz našeg Storage-a (bucket `korice`), nikad sa tuđeg s
      izbor fajla na računaru); slika se u pregledaču smanji na najviše 600 px širine. Za zavičajnu
      zbirku je to često jedini izvor, a usput se pravi građa koja nigde drugde ne postoji;
    - **preuzeta sa linka**: pri unosu linka parser predloži adresu slike (`og:image` ili JSON-LD
-     `image`); na zahtev bibliotekara server preuzme tu jednu sliku (SSRF zaštita kao za link,
-     najviše 1.5 MB, tip po sadržaju) i sačuva je u Storage uz adresu porekla.
+     `image`); bibliotekar je vidi u pregledu na kartici, a kvačica „Preuzmi i koricu” (podrazumevano
+     uključena) znači da server, pošto se knjiga sačuva, preuzme tu jednu sliku (SSRF zaštita kao za
+     link, najviše 1.5 MB, tip po sadržaju) i sačuva je u Storage uz adresu porekla. Pravilo:
+     samo sa adrese koju je bibliotekar nalepio, jedna slika po adresi, nikad pretraživanjem ni
+     automatskim obilaskom sajtova. Greška pri koricu ne poništava čuvanje knjige: knjiga ostaje sa
+     pločicom, a kartica piše razlog i nudi „Pokušaj ponovo”. Ograničenje je 100 preuzimanja na sat;
+     kad se potroši, „Sačuvaj sve” čuva ostatak bez korice i to piše u sažetku.
 2. Open Library Covers po ISBN-u — bez ključa i registracije (prikazuje se uživo, ne čuva se)
 3. **Rezervno rešenje: složena pločica** sa naslovom i autorom u bojama aplikacije
 
@@ -237,8 +242,9 @@ Poslednja stavka nije sporedna. Za zavičajnu građu i starija izdanja korica ne
 postoji nigde i to je normalno stanje, ne greška. Ako je pločica lepo odrađena,
 polica izgleda uredno i kad trećina knjiga nema sliku.
 
-**Brzi tok:** posle čuvanja knjige u fondu kartica nudi „Slikaj koricu", pa „Sledeća
-knjiga", da bibliotekar sa telefonom prođe kroz gomilu knjiga bez vraćanja na listu.
+**Brzi tok:** posle čuvanja knjige (i korice, ako je kvačica uključena) kartica nudi „Slikaj koricu”
+za knjigu bez korice, pa „Sledeća knjiga”, da bibliotekar sa telefonom prođe kroz gomilu knjiga
+bez vraćanja na listu.
 
 **Šta se NE radi:** skidanje podataka sa sajtova izdavača i knjižara (Delfi,
 Laguna, Vulkan). Uslovi korišćenja to po pravilu zabranjuju, a ustanova ne treba

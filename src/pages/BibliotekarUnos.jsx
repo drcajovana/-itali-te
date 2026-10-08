@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import KarticaUnosa from "../components/KarticaUnosa.jsx";
 import { GreskaApija, porukaGreske } from "../lib/api.js";
 import { useAuth } from "../lib/auth-context.js";
-import { dodajPrimerke, izLinka, nadjiDuplikate, sacuvajKnjigu } from "../lib/knjige.js";
+import { dodajPrimerke, izLinka, koricaIzLinka, nadjiDuplikate, postaviKoricu, sacuvajKnjigu } from "../lib/knjige.js";
+import { izborKorice, primeniKoricu, sacuvajPaKoricu, sacuvajSve as sacuvajSveRedom, tekstSazetka } from "../lib/korica-tok.js";
 import { tekst } from "../lib/tekst.js";
 import { nasaFotografija } from "../lib/korica-slika.js";
 import { lokalnoNeispravan, obradiRedom, pocetnaForma, razdvojiLinkove, sledecaZaObradu, urediUnos } from "../lib/unos-knjiga.js";
@@ -87,11 +88,12 @@ export default function BibliotekarUnos() {
   // ───────── čuvanje ─────────
   // Upis ide preko običnog klijenta kao prijavljeni bibliotekar (RLS i okidači važu).
   // Duplikati se proveravaju neposredno pre upisa, po ISBN-13 i po normalizovanom naslovu i autoru.
-  async function sacuvajStavku(s, { ipak = false } = {}) {
+  // Upis same knjige (bez korice). Vraća { status: 'sacuvano', id } | { status: 'duplikat' | 'greska' }.
+  async function upisiStavku(s, { ipak = false } = {}) {
     const u = urediUnos(s.forma, { uneoId: clan.id });
     if (!u.ok) {
       izmeni(s.id, { greskaPolja: porukaKartice(u) });
-      return "greska";
+      return { status: "greska" };
     }
     izmeni(s.id, { saljem: true, greskaPolja: null });
     try {
@@ -99,17 +101,55 @@ export default function BibliotekarUnos() {
         const d = await nadjiDuplikate({ isbn: u.podaci.isbn, naslov: u.podaci.naslov, autor: u.podaci.autor });
         if (d.poIsbn.length || d.poTekstu.length) {
           izmeni(s.id, { saljem: false, duplikati: d });
-          return "duplikat";
+          return { status: "duplikat" };
         }
       }
       const upisano = await sacuvajKnjigu(u.red);
       izmeni(s.id, { saljem: false, duplikati: null, sacuvano: { id: upisano.id, naslov: upisano.naslov, isbn: u.podaci.isbn, uFondu: upisano.u_fondu, korica: null } });
-      return "sacuvano";
+      return { status: "sacuvano", id: upisano.id };
     } catch (err) {
       console.error("čuvanje knjige:", err);
       izmeni(s.id, { saljem: false, greskaPolja: T.greskeKartice.upis });
-      return "greska";
+      return { status: "greska" };
     }
+  }
+
+  // ───────── korica uz čuvanje (korica-tok.js) ─────────
+  // Knjiga se prvo upiše; korica se primenjuje tek posle toga i njena greška NE poništava upis:
+  // knjiga ostaje sačuvana (sa pločicom), a kartica pokaže razlog i „Pokušaj ponovo".
+  const preuzmiKoricu = (knjigaId, url) => koricaIzLinka(knjigaId, url);
+  const otpremiSliku = (knjigaId, blob) => postaviKoricu(knjigaId, blob, null);
+
+  function koricaNaKarticu(id, k) {
+    if (k.ishod === "preuzeta" || k.ishod === "slika") {
+      izmeni(id, (x) => ({ sacuvano: { ...x.sacuvano, korica: k.korica, koricaStanje: "gotovo", koricaRazlog: null, bezKorice: false } }));
+    } else if (k.ishod === "greska" || k.ishod === "limit") {
+      izmeni(id, (x) => ({ sacuvano: { ...x.sacuvano, koricaStanje: "greska", koricaRazlog: k.razlog } }));
+    } else {
+      izmeni(id, (x) => ({ sacuvano: { ...x.sacuvano, koricaStanje: null } }));
+    }
+  }
+  const koricaRadi = (id) => izmeni(id, (x) => ({ sacuvano: { ...x.sacuvano, koricaStanje: "radi", koricaRazlog: null } }));
+  const ulazKorice = (s) => ({ izbor: izborKorice(s), predlog: s.rezultat?.korica ?? null, slika: s.slika ?? null });
+
+  async function sacuvajStavku(s, { ipak = false } = {}) {
+    const r = await sacuvajPaKoricu({
+      upisi: () => upisiStavku(s, { ipak }),
+      ...ulazKorice(s),
+      preuzmi: preuzmiKoricu,
+      otpremi: otpremiSliku,
+      naKorici: () => koricaRadi(s.id),
+    });
+    if (r.korica) koricaNaKarticu(s.id, r.korica);
+    return r.upis;
+  }
+
+  async function ponoviKoricu(s) {
+    const n = stavkeRef.current.find((x) => x.id === s.id);
+    if (!n?.sacuvano) return;
+    koricaRadi(n.id);
+    const k = await primeniKoricu({ ...ulazKorice(n), knjigaId: n.sacuvano.id, preuzmi: preuzmiKoricu, otpremi: otpremiSliku });
+    koricaNaKarticu(n.id, k);
   }
 
   async function dodajPrimerkeStavci(s, postojeca) {
@@ -146,24 +186,36 @@ export default function BibliotekarUnos() {
     kartica.focus({ preventScroll: true });
   }
 
-  // „Sačuvaj sve potvrđene": redom, jedna po jedna. Kartice sa duplikatom ili greškom
-  // ostaju otvorene za odluku bibliotekara.
+  // „Sačuvaj sve potvrđene": redom, jedna po jedna; korica po izboru sa kartice, uz pauzu između
+  // dva preuzimanja. Kartice sa duplikatom ili greškom ostaju otvorene za odluku bibliotekara.
+  // Kad se potroši ograničenje preuzimanja, ostatak se čuva bez korice (piše u sažetku).
   async function sacuvajSve() {
     if (radi || cuvaSve) return;
     const potvrdjene = stavkeRef.current.filter((s) => s.potvrdjeno && !s.sacuvano && s.forma);
     if (!potvrdjene.length) return setObavest({ poruka: T.sacuvajSve.nema });
     setCuvaSve(true);
     setObavest(null);
-    let sacuvano = 0;
-    let ostalo = 0;
-    for (const s of potvrdjene) {
-      const najnovija = stavkeRef.current.find((x) => x.id === s.id);
-      const ishod = await sacuvajStavku(najnovija);
-      if (ishod === "sacuvano") sacuvano++;
-      else ostalo++;
-    }
+    const naslovi = Object.fromEntries(potvrdjene.map((s) => [s.id, s.forma.naslov]));
+    const lista = potvrdjene.map((s) => ({ id: s.id, ...ulazKorice(s) }));
+    const zbir = await sacuvajSveRedom(lista, {
+      sacuvaj: (st, { ogranicenjePotroseno, pauza }) => {
+        const najnovija = stavkeRef.current.find((x) => x.id === st.id);
+        return sacuvajPaKoricu({
+          upisi: () => upisiStavku(najnovija),
+          izbor: st.izbor,
+          predlog: st.predlog,
+          slika: st.slika,
+          preuzmi: preuzmiKoricu,
+          otpremi: otpremiSliku,
+          ogranicenjePotroseno,
+          pauza,
+          naKorici: () => koricaRadi(st.id),
+        });
+      },
+      naStavku: (id, r) => r.korica && koricaNaKarticu(id, r.korica),
+    });
     setCuvaSve(false);
-    setObavest({ poruka: T.sacuvajSve.zbir.replace("{n}", String(sacuvano)).replace("{m}", String(ostalo)) });
+    setObavest({ poruka: tekstSazetka(zbir, naslovi) });
   }
 
   const obradjeno = stavke.filter((s) => !["ceka", "trazi"].includes(s.status)).length;
@@ -222,12 +274,15 @@ export default function BibliotekarUnos() {
                 key={s.id}
                 stavka={s}
                 onPromeni={(ime, vrednost) =>
-                  ime === "potvrdjeno" ? izmeni(s.id, { potvrdjeno: vrednost }) : izmeni(s.id, (x) => ({ forma: { ...x.forma, [ime]: vrednost }, greskaPolja: null }))
+                  ["potvrdjeno", "koricaIzbor", "slika"].includes(ime)
+                    ? izmeni(s.id, { [ime]: vrednost })
+                    : izmeni(s.id, (x) => ({ forma: { ...x.forma, [ime]: vrednost }, greskaPolja: null }))
                 }
                 onSacuvaj={() => sacuvajStavku(stavkeRef.current.find((x) => x.id === s.id))}
                 onDodajPrimerke={(postojeca) => dodajPrimerkeStavci(stavkeRef.current.find((x) => x.id === s.id), postojeca)}
                 onIpak={() => sacuvajStavku(stavkeRef.current.find((x) => x.id === s.id), { ipak: true })}
                 onKorica={(adresa) => izmeni(s.id, (x) => ({ sacuvano: { ...x.sacuvano, korica: adresa, bezKorice: false } }))}
+                onKoricaPonovi={() => ponoviKoricu(s)}
                 onBezKorice={(bez) => izmeni(s.id, (x) => ({ sacuvano: { ...x.sacuvano, bezKorice: bez } }))}
                 onSledeca={() => idiNaSledecu(s.id)}
                 imaSledecu={Boolean(sledecaZaObradu(stavke, s.id))}
