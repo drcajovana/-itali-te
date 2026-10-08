@@ -65,7 +65,10 @@ export default function KoricaIzbor({
   }
 
   const onemoguceno = zauzet !== null;
-  const slanje = (radi) => setZauzet(radi ? "slanje" : null);
+  const slanje = (radi) => {
+    setZauzet(radi ? "slanje" : null);
+    if (radi) setPoruka(null); // stara poruka ne sme da stoji uz novi pokušaj
+  };
 
   if (bezKorice && onBez) {
     return (

@@ -120,17 +120,24 @@ početnu) služi da se knjiga upiše iz stranice izdavača, bez kucanja:
    autor), prikazuje se postojeći zapis i nudi: *Otvori*, *Dodaj primerke ovom zapisu* (samo
    za „U fondu") ili *Ipak sačuvaj kao novi zapis*. Označite „Potvrđeno" na više kartica pa
    **Sačuvaj sve potvrđene**: čuvaju se redom, a kartice sa duplikatom ili greškom čekaju vašu odluku.
-5. **Korica**: čim sačuvate knjigu u fond, kartica nudi **Slikaj koricu**. Na telefonu se
-   otvara kamera, na računaru izbor fajla. Slika se u pregledaču smanji na najviše 600 px
-   širine (webp, ili jpeg ako pregledač ne zna webp), pošalje u našu bazu i odmah postane
-   korica; ne treba ništa više da kliknete. Ako je sajt ponudio sliku (predlog), sliku možete
-   i **preuzeti sa linka** (vidi „Korice"); ona se kopira u našu bazu, nikad se ne učitava sa
-   tuđeg servera. Opis i ostalo sa sajta se ne čuvaju.
-6. **Sledeća knjiga**: posle čuvanja (i posle fotografije) dugme vodi na sledeću karticu kojoj
-   treba pažnja (čeka pregled, ili je sačuvana u fond a nema koricu). Telefonom se tako prolazi
-   kroz gomilu knjiga bez vraćanja na vrh liste.
-7. Postojeću knjigu otvara **Detalji** u pretrazi (stranica `/knjiga/…`): bibliotekar tamo vidi
-   **Slikaj koricu** ili **Zameni koricu** (stara fotografija se briše).
+5. **Korica**: čim sačuvate knjigu, kartica nudi tri načina da dobije koricu (jedan po knjizi):
+   - **Koristi ovu koricu**: ako je sajt ponudio sliku, vidite je u pregledu („Predložena korica sa
+     sajta"). Dugme kopira tu sliku u našu bazu (server je preuzima jednom). Pregled učitava sliku
+     sa sajta samo u vašem pregledaču; u bazi je ne bude dok ne kliknete.
+   - **Slikaj koricu** ili **Izaberi sliku sa računara ili telefona**: na telefonu prvo otvara
+     kameru, a drugo nudi kameru ili galeriju; na računaru bira fajl. Slika se u pregledaču smanji
+     na najviše 600 px širine (webp, ili jpeg) i pošalje u našu bazu.
+   - **Bez korice**: knjiga svesno ostaje bez korice (prikazuje se pločica sa naslovom i autorom).
+     „Predomislio sam se" vraća izbor.
+   Dok se slika šalje, dugmad su zaključana i piše šta se radi. Greške su napisane jasno
+   (prevelika slika, pogrešan tip, nemate dozvolu, sajt ne daje sliku).
+6. **Sledeća knjiga**: posle čuvanja (i posle korice) dugme vodi na sledeću karticu kojoj
+   treba pažnja (čeka pregled, ili je sačuvana u fond a nema koricu i niste izabrali „Bez korice").
+   Telefonom se tako prolazi kroz gomilu knjiga bez vraćanja na vrh liste.
+7. **Zamena i uklanjanje**: postojeću knjigu otvara **Detalji** u pretrazi (stranica `/knjiga/…`).
+   Bibliotekar tamo vidi **Zameni koricu** (isti izbori kao gore, stara slika se briše) i
+   **Ukloni koricu**: pita „Ukloniti koricu?", a na „Da, ukloni" briše sliku iz baze i prazni podatke
+   o korici (adresu, izvor i poreklo). Knjiga tada ponovo dobija Open Library ili pločicu.
 
 Ograničenje: **200 pročitanih adresa na sat** za bibliotekare (čitaoci imaju 30). Kad se
 dostigne, ostale adrese nisu poslate; pokušajte ponovo kasnije.
