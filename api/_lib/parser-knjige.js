@@ -12,11 +12,15 @@
 //
 // Razlike od starog parsera: nema transliteracije ni „capitalize" koraka (ostaje
 // tekst kakav je na sajtu), a rezultat je normalizovan (autori su niz, ISBN-13,
-// godina je broj, korica je https adresa).
+// godina je broj).
+//
+// Vraća podatke koje bibliotekar potvrđuje: naslov, autore, izdavača, godinu i ISBN, plus
+// `korica`: PREDLOG adrese slike (JSON-LD `image`, pa og:image) ili null. Ovde se slika ne
+// preuzima i ne prikazuje; preuzima je tek api/korica-iz-linka.js, na zahtev bibliotekara,
+// u naš Storage. Opis sa tuđeg sajta se i dalje ne čita.
 
 import { parseHTML } from "linkedom";
 import { uIsbn13 } from "../../src/lib/isbn.js";
-import { koricaJeDozvoljena } from "./bela-lista.js";
 import { ApiGreska } from "./greska.js";
 import { preuzmi, proveriUrl } from "./bezbedan-fetch.js";
 
@@ -38,6 +42,37 @@ const DOMEN_IZDAVAC = {
 // delfi.rs je React SPA: sirov HTML nema nijedan podatak o knjizi (sve se
 // renderuje JS-om). Njihova strana sama zove ovaj JSON API; gađamo ga direktno.
 const jeDelfi = (host) => host === "delfi.rs" || host.endsWith(".delfi.rs");
+
+// Adresa slike iz stranice (JSON-LD `image` može biti tekst, niz ili objekat). Relativne
+// adrese se razrešavaju prema stranici.
+function adreseSlika(v, osnova) {
+  const lista = Array.isArray(v) ? v : [v];
+  const adrese = [];
+  for (const stavka of lista.slice(0, 3)) {
+    const sirova = typeof stavka === "object" && stavka ? (stavka.url ?? stavka.contentUrl) : stavka;
+    if (!sirova || typeof sirova !== "string") continue;
+    try {
+      adrese.push(new URL(sirova.trim(), osnova).href);
+    } catch {
+      /* neispravna adresa slike se preskače */
+    }
+  }
+  return adrese;
+}
+
+// Ista provera kao pri preuzimanju (https, bez korisnika i porta, bez IP adrese i localhost-a;
+// domen nije ograničen listom), da se ne predlaže adresa koju bi preuzimanje odbilo.
+export function jeJavnaHttpsAdresa(adresa) {
+  if (typeof adresa !== "string" || adresa.length > 500 || /[\s\p{Cc}]/u.test(adresa)) return false;
+  try {
+    proveriUrl(adresa, null);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const predlogKorice = (adrese) => adrese.find(jeJavnaHttpsAdresa) ?? null;
 
 const NAJVISE_ELEMENATA = 8000; // gornja granica skeniranja oznaka na ogromnim stranicama
 
@@ -67,21 +102,6 @@ function metaSadrzaj(doc, selektor) {
 function godinaIz(v) {
   const m = /(1[4-9]\d\d|2[01]\d\d)/.exec(String(v ?? ""));
   return m ? Number(m[1]) : null;
-}
-
-// Samo https i samo domeni dozvoljeni za korice (isto pravilo kao u bazi, migracija
-// 0009: slika sa tuđeg servera bi dozvolila praćenje ko gleda koju knjigu);
-// relativne adrese se razrešavaju prema stranici.
-function https(v, osnova) {
-  const prva = Array.isArray(v) ? v[0] : v;
-  const sirova = typeof prva === "object" && prva ? prva.url ?? prva.contentUrl : prva;
-  if (!sirova || typeof sirova !== "string") return null;
-  try {
-    const u = new URL(sirova.trim(), osnova);
-    return koricaJeDozvoljena(u.href) ? u.href : null;
-  } catch {
-    return null;
-  }
 }
 
 function cvoroviIzJsonLd(podaci) {
@@ -209,7 +229,6 @@ function izdavacZaDomen(host) {
 // Čita HTML jedne stranice i vraća sirove podatke (bez ograničenja dužine).
 export function izvuciIzHtmla(html, urlStr) {
   const { document: doc } = parseHTML(html);
-  const osnova = urlStr;
   const host = new URL(urlStr).hostname.replace(/^www\./i, "").toLowerCase();
 
   let autori = [];
@@ -217,9 +236,8 @@ export function izvuciIzHtmla(html, urlStr) {
   let izdavac = "";
   let isbn = null;
   let godina = null;
-  let opis = "";
-  let korica = null;
   let izvor = "";
+  const slike = []; // adrese slika koje je sajt ponudio, redom (JSON-LD pa og:image)
 
   // 1) JSON-LD (schema.org Book / Product)
   for (const blok of doc.querySelectorAll('script[type="application/ld+json"]')) {
@@ -238,8 +256,7 @@ export function izvuciIzHtmla(html, urlStr) {
       izdavac ||= imeIz(cvor.publisher) || imeIz(cvor.brand);
       isbn ||= prviIsbn(cvor);
       godina ||= godinaIz(cvor.datePublished ?? cvor.copyrightYear);
-      opis ||= imeIz(cvor.description);
-      korica ||= https(cvor.image, osnova);
+      slike.push(...adreseSlika(cvor.image, urlStr));
     }
   }
 
@@ -275,8 +292,7 @@ export function izvuciIzHtmla(html, urlStr) {
   if (!autori.length && ogPretpostavka) autori = [ogPretpostavka]; // apsolutno poslednji pokušaj
   isbn ||= uIsbn13(metaSadrzaj(doc, 'meta[property="book:isbn"]'));
   godina ||= godinaIz(metaSadrzaj(doc, 'meta[property="book:release_date"]'));
-  opis ||= metaSadrzaj(doc, 'meta[property="og:description"]') || metaSadrzaj(doc, 'meta[name="description"]');
-  korica ||= https(metaSadrzaj(doc, 'meta[property="og:image"]'), osnova);
+  slike.push(...adreseSlika(metaSadrzaj(doc, 'meta[property="og:image"]'), urlStr));
 
   // 4) Dekontaminacija naslova preko <h1>: neki sajtovi (npr. Laguna) trpaju
   // „Sajt - Naslov - Autor - Slogan" i u JSON-LD „name", ne samo u og:title.
@@ -299,7 +315,7 @@ export function izvuciIzHtmla(html, urlStr) {
   const fiksni = izdavacZaDomen(host);
   if (fiksni) izdavac = fiksni;
 
-  return { naslov, autori, izdavac, godina, isbn, opis, korica, izvorPodataka: izvor || null };
+  return { naslov, autori, izdavac, godina, isbn, korica: predlogKorice(slike), izvorPodataka: izvor || null };
 }
 
 // Normalizovan oblik, isti kao za Google Books; sve je ograničeno po dužini.
@@ -311,8 +327,8 @@ export function urediRezultat(sirovo, urlStr) {
     izdavac: urediTekst(sirovo.izdavac).slice(0, 150),
     godina,
     isbn: sirovo.isbn ?? null,
-    opis: urediTekst(sirovo.opis).slice(0, 2000),
-    korica: sirovo.korica ?? null,
+    // predlog adrese slike (ne preuzima se ovde); nevažeća adresa se odbacuje
+    korica: jeJavnaHttpsAdresa(sirovo.korica) ? sirovo.korica : null,
     izvor: "link",
     url: urlStr,
     izvorPodataka: sirovo.izvorPodataka ?? null,

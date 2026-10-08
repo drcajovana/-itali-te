@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { Link } from "react-router-dom";
 import { porukaGreske } from "../lib/api.js";
 import { urediPotvrdu } from "../lib/red-knjige.js";
 import { tekst } from "../lib/tekst.js";
@@ -66,8 +67,8 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
       return setGreskaForme(T.potvrda.greske[kljuc] ?? T.potvrda.greske.predugo);
     }
     setGreskaForme(null);
-    // Šalje se samo potvrđeno; korica ide samo uz izvor 'link' (red-knjige.js).
-    return upisi({ podaci: r.podaci, izvor: knjiga.izvor, korica: knjiga.korica });
+    // Šalje se samo potvrđeno (red-knjige.js): nikad opis ni korica.
+    return upisi({ podaci: r.podaci });
   }
 
   const promeni = (ime) => (e) => setForma((f) => ({ ...f, [ime]: e.target.value }));
@@ -90,6 +91,13 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
           <p className={`mt-1 inline-block rounded px-2 py-0.5 text-base font-medium ${knjiga.u_fondu ? "bg-ivica" : "border border-ivica"}`}>
             {dostupnost}
           </p>
+        )}
+        {izBaze && (
+          <div className="mt-1">
+            <Link to={`/knjiga/${knjiga.id}`} className="inline-flex min-h-11 items-center text-lg text-pecat underline">
+              {T.knjiga.detalji}
+            </Link>
+          </div>
         )}
         {!izBaze && (
           <p className="mt-1 text-base text-mastilo/70">

@@ -89,7 +89,9 @@ const lat = {
       pogledaj: "Pogledaj na Google Books",
       godina: "godina",
       bezAutora: "Autor nije poznat",
-      koricaZa: "Korica knjige",
+      koricaAlt: "Korica knjige „{naslov}”",
+      koricaAltAutor: "Korica knjige „{naslov}”, autor: {autor}",
+      detalji: "Detalji",
     },
 
     google: {
@@ -133,7 +135,7 @@ const lat = {
       uvodGoogle:
         "Ovo su podaci koje smo našli na Google Books. Ispravite ih ako treba. Trajno se čuva samo ono što ovde potvrdite: naslov, autor, izdavač, godina i ISBN. Opis i korica sa Google Books se ne čuvaju.",
       uvodLink:
-        "Ovo su podaci sa stranice koju ste zalepili. Ispravite ih ako treba. Trajno se čuva samo ono što ovde potvrdite: naslov, autor, izdavač, godina i ISBN. Opis sa tog sajta se ne čuva, a korica samo ako je sa sajta izdavača.",
+        "Ovo su podaci sa stranice koju ste zalepili. Ispravite ih ako treba. Trajno se čuva samo ono što ovde potvrdite: naslov, autor, izdavač, godina i ISBN. Opis i slika sa tog sajta se ne čuvaju.",
       polja: {
         naslov: "Naslov",
         autor: "Autor (ili autori)",
@@ -171,6 +173,12 @@ const lat = {
       nije_stranica: "Ovaj link nije stranica knjige. Upišite je ručno.",
       prevelika_stranica: "Ova stranica je prevelika. Upišite knjigu ručno.",
       nema_podataka: "Na ovoj stranici nema podataka o knjizi. Upišite je ručno.",
+      nije_bibliotekar: "Koricu sa linka može da preuzme samo bibliotekar.",
+      nije_slika: "Ova adresa ne vodi do slike.",
+      prevelika_slika: "Slika je prevelika (najviše 1.5 MB).",
+      slika_nije_podrzana: "Dozvoljene su samo jpeg, png i webp slike.",
+      knjiga_ne_postoji: "Ova knjiga ne postoji u bazi.",
+      cuvanje_slike_nije_uspelo: "Slika nije sačuvana. Pokušajte ponovo.",
       neispravan_isbn: "ISBN nije ispravan.",
       prazan_upit: "Upišite naslov, autora ili ISBN.",
       neispravan_upit: "Upit nije ispravan.",
@@ -181,7 +189,7 @@ const lat = {
   // Ekran za bibliotekare: unos knjiga linkovima (/bibliotekar/unos).
   unos: {
     naslov: "Unos knjiga linkovima",
-    uvod: "Nalepite adrese knjiga sa sajtova izdavača, jednu u svakom redu (najviše 20). Obrađuju se jedna po jedna, redom, a za svaku se čita samo ta jedna stranica. Opis se ne preuzima: njega piše bibliotekar.",
+    uvod: "Nalepite adrese knjiga sa sajtova izdavača, jednu u svakom redu (najviše 20). Obrađuju se jedna po jedna, redom, a za svaku se čita samo ta jedna stranica. Opis se ne preuzima: njega piše bibliotekar. Koricu slikate telefonom čim sačuvate knjigu.",
     polje: "Adrese knjiga (jedna u svakom redu)",
     procitaj: "Pročitaj adrese",
     citam: "Čitam adrese…",
@@ -222,7 +230,7 @@ const lat = {
       potvrdjeno: "Potvrđeno, uključi u „Sačuvaj sve”",
       sacuvaj: "Sačuvaj",
       cuvam: "Čuvam…",
-      koricaNapomena: "Korica se čuva samo ako je sa sajta izdavača sa liste dozvoljenih.",
+      koricaNapomena: "Koricu slikate čim sačuvate knjigu (samo za knjige u fondu).",
     },
 
     sacuvajSve: {
@@ -260,6 +268,60 @@ const lat = {
       predugo: "Neko polje je predugačko.",
       upis: "Nije sačuvano. Pokušajte ponovo.",
     },
+  },
+
+  // Fotografije korica (dugme „Slikaj koricu", brzi tok „Sledeća knjiga").
+  korice: {
+    slikaj: "Slikaj koricu",
+    zameni: "Zameni koricu",
+    radi: "Šaljem sliku…",
+    koristi: "Koristi ovu koricu",
+    preuzimam: "Preuzimam koricu sa sajta…",
+    izaberi: "Izaberi sliku sa računara ili telefona",
+    bez: "Bez korice",
+    bezOdluka: "Knjiga ostaje bez korice.",
+    predomislio: "Predomislio sam se",
+    predlog: "Predložena korica sa sajta",
+    predlogNapomena: "Slika se u našu bazu kopira tek kad izaberete „Koristi ovu koricu”.",
+    predlogNijeUcitan: "Sliku sa sajta ne mogu da prikažem. Server je možda ipak može da preuzme.",
+    predlogAlt: "Predložena korica sa sajta za knjigu „{naslov}”",
+    ukloni: "Ukloni koricu",
+    ukloniPitanje: "Ukloniti koricu? Slika se briše iz baze.",
+    ukloniDa: "Da, ukloni",
+    ukloniNe: "Ne, ostavi",
+    uklanjam: "Uklanjam koricu…",
+    uklonjena: "Korica je uklonjena.",
+    uklonjenaBezFajla: "Korica je uklonjena, ali fajl nije obrisan iz baze (javite administratoru).",
+    sacuvana: "Korica je sačuvana.",
+    sledeca: "Sledeća knjiga",
+    poslednja: "Nema više knjiga koje čekaju. Za nove nalepite adrese.",
+    greske: {
+      slika_tip: "Ovo nije slika u dozvoljenom obliku (jpeg, png ili webp). Izaberite fotografiju.",
+      slika_velika: "Slika je prevelika. Snimite je ponovo ili izaberite manju.",
+      nema_dozvole: "Nemate dozvolu da menjate korice. Prijavite se kao bibliotekar.",
+      slika_neispravna: "Ne mogu da otvorim ovu sliku. Snimite je ponovo.",
+      korica_upload: "Slika nije poslata. Proverite internet i pokušajte ponovo.",
+      korica_upis: "Korica nije sačuvana. Pokušajte ponovo.",
+      korica_nije_prihvacena: "Korica nije prihvaćena. Obavestite administratora.",
+      knjiga_neispravna: "Knjiga nije ispravna. Osvežite stranicu.",
+    },
+  },
+
+  // Stranica jedne knjige (/knjiga/:id).
+  knjigaEkran: {
+    nazad: "Nazad na pretragu",
+    nijeNadjena: "Ove knjige nema.",
+    greska: "Ne mogu da učitam knjigu. Proverite internet i pokušajte ponovo.",
+    koricaOdeljak: "Korica",
+    izdavac: "Izdavač i godina",
+    godina: "Godina izdanja",
+    isbn: "ISBN",
+    zanrovi: "Žanr",
+    primerci: "Primerci",
+    primerciVrednost: "{ukupno}, slobodnih: {slobodnih}",
+    signatura: "Signatura",
+    koricaPoreklo: "Korica preuzeta sa",
+    opis: "Opis",
   },
 
   zasticeno: {

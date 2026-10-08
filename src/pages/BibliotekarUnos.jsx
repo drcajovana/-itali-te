@@ -4,7 +4,8 @@ import { GreskaApija, porukaGreske } from "../lib/api.js";
 import { useAuth } from "../lib/auth-context.js";
 import { dodajPrimerke, izLinka, nadjiDuplikate, sacuvajKnjigu } from "../lib/knjige.js";
 import { tekst } from "../lib/tekst.js";
-import { lokalnoNeispravan, obradiRedom, pocetnaForma, razdvojiLinkove, urediUnos } from "../lib/unos-knjiga.js";
+import { nasaFotografija } from "../lib/korica-slika.js";
+import { lokalnoNeispravan, obradiRedom, pocetnaForma, razdvojiLinkove, sledecaZaObradu, urediUnos } from "../lib/unos-knjiga.js";
 
 const T = tekst.unos;
 const dugme = "block w-full rounded-lg bg-pecat px-5 py-3 text-xl font-semibold text-white disabled:opacity-60 sm:w-auto";
@@ -87,7 +88,7 @@ export default function BibliotekarUnos() {
   // Upis ide preko običnog klijenta kao prijavljeni bibliotekar (RLS i okidači važu).
   // Duplikati se proveravaju neposredno pre upisa, po ISBN-13 i po normalizovanom naslovu i autoru.
   async function sacuvajStavku(s, { ipak = false } = {}) {
-    const u = urediUnos(s.forma, { uneoId: clan.id, korica: s.rezultat?.korica ?? null });
+    const u = urediUnos(s.forma, { uneoId: clan.id });
     if (!u.ok) {
       izmeni(s.id, { greskaPolja: porukaKartice(u) });
       return "greska";
@@ -102,7 +103,7 @@ export default function BibliotekarUnos() {
         }
       }
       const upisano = await sacuvajKnjigu(u.red);
-      izmeni(s.id, { saljem: false, duplikati: null, sacuvano: { id: upisano.id, naslov: upisano.naslov, isbn: u.podaci.isbn } });
+      izmeni(s.id, { saljem: false, duplikati: null, sacuvano: { id: upisano.id, naslov: upisano.naslov, isbn: u.podaci.isbn, uFondu: upisano.u_fondu, korica: null } });
       return "sacuvano";
     } catch (err) {
       console.error("čuvanje knjige:", err);
@@ -122,7 +123,7 @@ export default function BibliotekarUnos() {
       izmeni(s.id, {
         saljem: false,
         duplikati: null,
-        sacuvano: { id: postojeca.id, naslov: postojeca.naslov, isbn: postojeca.isbn, primerci: true },
+        sacuvano: { id: postojeca.id, naslov: postojeca.naslov, isbn: postojeca.isbn, primerci: true, uFondu: true, korica: nasaFotografija(postojeca) },
       });
     } catch (err) {
       // zapis se u međuvremenu promenio: duplikati se brišu, pa sledeće „Sačuvaj" proverava ponovo
@@ -132,6 +133,17 @@ export default function BibliotekarUnos() {
         greskaPolja: err?.kod === "izmenjeno_u_medjuvremenu" ? T.duplikat.izmenjeno : T.greskeKartice.upis,
       });
     }
+  }
+
+  // „Sledeća knjiga": skroluje do sledeće kartice kojoj treba pažnja (čeka pregled ili čeka koricu),
+  // da bibliotekar sa telefonom prođe kroz gomilu knjiga bez vraćanja na vrh liste.
+  function idiNaSledecu(id) {
+    const sledeca = sledecaZaObradu(stavkeRef.current, id);
+    const kartica = sledeca && document.querySelector(`[data-kartica="${sledeca.id}"]`);
+    if (!kartica) return;
+    const manjePokreta = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    kartica.scrollIntoView({ block: "start", behavior: manjePokreta ? "auto" : "smooth" });
+    kartica.focus({ preventScroll: true });
   }
 
   // „Sačuvaj sve potvrđene": redom, jedna po jedna. Kartice sa duplikatom ili greškom
@@ -215,6 +227,10 @@ export default function BibliotekarUnos() {
                 onSacuvaj={() => sacuvajStavku(stavkeRef.current.find((x) => x.id === s.id))}
                 onDodajPrimerke={(postojeca) => dodajPrimerkeStavci(stavkeRef.current.find((x) => x.id === s.id), postojeca)}
                 onIpak={() => sacuvajStavku(stavkeRef.current.find((x) => x.id === s.id), { ipak: true })}
+                onKorica={(adresa) => izmeni(s.id, (x) => ({ sacuvano: { ...x.sacuvano, korica: adresa, bezKorice: false } }))}
+                onBezKorice={(bez) => izmeni(s.id, (x) => ({ sacuvano: { ...x.sacuvano, bezKorice: bez } }))}
+                onSledeca={() => idiNaSledecu(s.id)}
+                imaSledecu={Boolean(sledecaZaObradu(stavke, s.id))}
               />
             ))}
           </ul>

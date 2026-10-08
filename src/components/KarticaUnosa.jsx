@@ -3,6 +3,7 @@ import { uIsbn13 } from "../lib/isbn.js";
 import { tekst } from "../lib/tekst.js";
 import { adresaZaOtvaranje, primeraka } from "../lib/unos-knjiga.js";
 import Korica from "./Korica.jsx";
+import KoricaIzbor from "./KoricaIzbor.jsx";
 
 const T = tekst.unos;
 const polje = "mt-1 block w-full rounded-lg border-2 border-ivica bg-white px-3 py-2 text-lg focus:border-pecat focus:outline-none";
@@ -74,7 +75,7 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
 
 // Jedna kartica: jedna adresa i izmenljivi podaci iz nje. Sve stanje je u roditelju
 // (stavka), da „Sačuvaj sve potvrđene" vidi i ono što je bibliotekar upravo ispravio.
-export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrimerke, onIpak }) {
+export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrimerke, onIpak, onKorica, onBezKorice, onSledeca, imaSledecu }) {
   const id = useId();
   const { link, status, forma, rezultat, poruka, greskaPolja, sacuvano, saljem, potvrdjeno, duplikati } = stavka;
   const prikazaniStatus = sacuvano ? "sacuvano" : status;
@@ -89,7 +90,7 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
   const unesi = (ime) => (e) => onPromeni(ime, e.target.value);
 
   return (
-    <li className="rounded-lg border-2 border-ivica bg-white p-3">
+    <li data-kartica={stavka.id} tabIndex={-1} className="rounded-lg border-2 border-ivica bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded px-2 py-0.5 text-base font-semibold ${OZNAKA_STATUSA[prikazaniStatus]}`}>{T.status[prikazaniStatus]}</span>
         <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all text-base text-pecat underline">
@@ -104,17 +105,51 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
       )}
 
       {sacuvano && (
-        <p role="status" className="mt-2 text-lg font-medium">
-          {sacuvano.primerci ? T.sacuvanoPrimerci : T.sacuvano} <span className="font-semibold">{sacuvano.naslov}</span>{" "}
-          <a href={adresaZaOtvaranje({ naslov: sacuvano.naslov, isbn: sacuvano.isbn })} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-pecat underline">
-            {T.otvori}
-          </a>
-        </p>
+        <div className="mt-3 space-y-3">
+          <div className="flex gap-3">
+            <Korica
+              knjiga={{ naslov: sacuvano.naslov, isbn: sacuvano.isbn, korice_url: sacuvano.korica, korice_izvor: sacuvano.korica ? "fotografija" : null }}
+              autor={forma?.autor}
+            />
+            <p role="status" className="min-w-0 flex-1 text-lg font-medium">
+              {sacuvano.primerci ? T.sacuvanoPrimerci : T.sacuvano} <span className="font-semibold">{sacuvano.naslov}</span>{" "}
+              <a href={adresaZaOtvaranje({ id: sacuvano.id, naslov: sacuvano.naslov, isbn: sacuvano.isbn })} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-pecat underline">
+                {T.otvori}
+              </a>
+            </p>
+          </div>
+
+          {(sacuvano.uFondu || rezultat?.korica) && (
+            <KoricaIzbor
+              knjigaId={sacuvano.id}
+              naslov={sacuvano.naslov}
+              predlog={rezultat?.korica ?? null}
+              korica={sacuvano.korica}
+              bezKorice={Boolean(sacuvano.bezKorice)}
+              onKorica={onKorica}
+              onBez={onBezKorice}
+            />
+          )}
+
+          {imaSledecu ? (
+            <button
+              type="button"
+              onClick={onSledeca}
+              className={`flex min-h-12 w-full items-center justify-center rounded-lg px-5 py-3 text-xl font-semibold sm:w-auto ${
+                sacuvano.uFondu && !sacuvano.korica && !sacuvano.bezKorice ? "border-2 border-pecat text-pecat" : "bg-pecat text-white"
+              }`}
+            >
+              {tekst.korice.sledeca}
+            </button>
+          ) : (
+            <p className="text-base text-mastilo/70">{tekst.korice.poslednja}</p>
+          )}
+        </div>
       )}
 
       {imaFormu && (
         <div className="mt-3 flex gap-3">
-          <Korica key={link} knjiga={{ naslov: forma.naslov, isbn: uIsbn13(forma.isbn), korica: rezultat?.korica ?? null }} autor={forma.autor} />
+          <Korica knjiga={{ naslov: forma.naslov, isbn: uIsbn13(forma.isbn) }} autor={forma.autor} />
           <div className="min-w-0 flex-1 space-y-3">
             {status === "delimicno" && <p className="text-base font-medium">{T.delimicnoPomoc}</p>}
             {[
@@ -205,7 +240,7 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
               </div>
             )}
 
-            {rezultat?.korica && <p className="text-base text-mastilo/70">{T.kartica.koricaNapomena}</p>}
+            {forma.stanje === "fond" && <p className="text-base text-mastilo/70">{T.kartica.koricaNapomena}</p>}
 
             {greskaPolja && (
               <p role="alert" className="text-base font-medium text-pecat">

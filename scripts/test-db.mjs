@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DOZVOLJENI_DOMENI_KORICA, koricaJeDozvoljena } from "../api/_lib/bela-lista.js";
 import { uIsbn13 } from "../src/lib/isbn.js";
+import { putanjaIzAdrese, putanjaKorice } from "../src/lib/korica-slika.js";
 
 const MIGRACIJE = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
 const db = new PGlite({ extensions: { pg_trgm } });
@@ -73,6 +74,15 @@ try {
     alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
     alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
     alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+
+    -- Zamena za Supabase Storage: samo ono što 0013 dira (buckets, objects, RLS na objects).
+    -- Veličinu i tip fajla proverava Storage API, ne baza, pa se to ovde ne može probati.
+    create schema storage;
+    create table storage.buckets (id text primary key, name text not null, public boolean default false, file_size_limit bigint, allowed_mime_types text[]);
+    create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id), name text, owner uuid, created_at timestamptz default now());
+    alter table storage.objects enable row level security;
+    grant usage on schema storage to anon, authenticated, service_role;
+    grant all on storage.buckets, storage.objects to anon, authenticated, service_role;
   `);
   const ko = await db.query("select current_user as k");
   ok(ko.rows[0].k === "postgres", "sesija radi kao 'postgres' (kao SQL Editor i migracije)", ko.rows[0]);
@@ -82,7 +92,8 @@ try {
   const KASNE = fajlovi.filter((f) => /^00(09|10)_/.test(f));
   const POSLEDNJA = fajlovi.filter((f) => /^0011_/.test(f));
   const NAKON = fajlovi.filter((f) => /^0012_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x))) await pusti(f);
+  const STORAGE = fajlovi.filter((f) => /^001[34]_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -137,17 +148,22 @@ try {
   faza("Migracija 0012 (nad bazom koja već ima zahteve u tabeli)");
   for (const f of NAKON) await pusti(f);
 
+  faza("Migracije 0013 i 0014 (Storage: bucket i politike; korica preuzeta sa linka)");
+  for (const f of STORAGE) await pusti(f);
+
   // ───────── podaci za dalje provere ─────────
   const A = "11111111-1111-4111-8111-111111111111";
   const NEAKTIVAN = "22222222-2222-4222-8222-222222222222";
   const BIB = "33333333-3333-4333-8333-333333333333";
-  await db.query("insert into auth.users (id) values ($1), ($2), ($3)", [A, NEAKTIVAN, BIB]);
+  const ADM = "88888888-8888-4888-8888-888888888888";
+  await db.query("insert into auth.users (id) values ($1), ($2), ($3), ($4)", [A, NEAKTIVAN, BIB, ADM]);
   await db.query(
     `insert into clanovi (id, broj_kartice, ime, uloga, aktivan) values
        ($1, '0101228', 'Čitalac A', 'citalac', true),
        ($2, 'STARA', 'Neaktivna', 'citalac', false),
-       ($3, 'BIB1', 'Bibliotekar', 'bibliotekar', true)`,
-    [A, NEAKTIVAN, BIB]
+       ($3, 'BIB1', 'Bibliotekar', 'bibliotekar', true),
+       ($4, 'ADM1', 'Administrator', 'administrator', true)`,
+    [A, NEAKTIVAN, BIB, ADM]
   );
   await db.query(
     `insert into knjige (naslov, autor, izdavac, godina, isbn, u_fondu, broj_primeraka, broj_slobodnih, izvor) values
@@ -482,6 +498,157 @@ try {
   ok(!r.greska && r.redovi.some((x) => x.naslov === "Проклета авлија"), "duplikat po naslovu i autoru: latinički unos nalazi ćirilični zapis", r.greska?.message ?? r.redovi);
   r = await kao("authenticated", BIB, "select naslov from public.trazi_knjige($1)", ["Potpuno nepostojeci naslov Nepoznat Autor"]);
   ok(!r.greska && r.redovi.length === 0, "nova knjiga: nema duplikata", r.greska?.message ?? r.redovi);
+
+  // ───────── 0013: Storage ─────────
+  faza("0013: bucket „korice” i politike na storage.objects (zamena za Storage)");
+  const bucket = (await db.query("select * from storage.buckets where id = 'korice'")).rows[0];
+  ok(bucket?.public === true && Number(bucket.file_size_limit) === 1572864 && JSON.stringify(bucket.allowed_mime_types) === JSON.stringify(["image/jpeg", "image/png", "image/webp"]),
+    "bucket „korice” posle 0013 i 0014: javan, najviše 1.5 MB (0013 je postavila 1 MB, 0014 ga podiže), samo jpeg, png i webp", bucket);
+  const politike = (await db.query(`select p.polname as ime, p.polcmd as komanda, array(select rolname from pg_roles r where r.oid = any(p.polroles) order by 1) as uloge
+                                    from pg_policy p where p.polrelid = 'storage.objects'::regclass order by 1`)).rows;
+  ok(JSON.stringify(politike) === JSON.stringify([
+    { ime: "korice_brisanje_bibliotekar", komanda: "d", uloge: ["authenticated"] },
+    { ime: "korice_citanje_svi", komanda: "r", uloge: ["anon", "authenticated"] },
+    { ime: "korice_upis_bibliotekar", komanda: "a", uloge: ["authenticated"] },
+  ]), "politike: čitanje za sve, upis i brisanje samo za prijavljene (bibliotekar), nijedna za izmenu", politike);
+
+  const KID = fond.id;
+  const imeUbaceno = (n) => `${KID}/${n}.webp`;
+  await db.query("insert into storage.buckets (id, name, public) values ('drugi', 'drugi', false)");
+  await db.query("insert into storage.objects (bucket_id, name) values ('korice', $1), ('korice', $2), ('drugi', $3)", [imeUbaceno("1700000000001"), imeUbaceno("1700000000002"), "tajna/dokument.webp"]);
+  const OBJ = "insert into storage.objects (bucket_id, name, owner) values ($1, $2, auth.uid()) returning name";
+  const spisak = (b) => kao(b.uloga, b.sub, "select name from storage.objects where bucket_id = $1 order by name", [b.bucket]);
+
+  r = await spisak({ uloga: "anon", sub: null, bucket: "korice" });
+  ok(!r.greska && r.redovi.length === 2, "anon vidi objekte u bucket-u „korice” (javno čitanje)", r.greska?.message ?? r.redovi);
+  r = await spisak({ uloga: "anon", sub: null, bucket: "drugi" });
+  ok(!r.greska && r.redovi.length === 0, "anon ne vidi objekte iz drugog bucket-a", r.greska?.message ?? r.redovi);
+  r = await spisak({ uloga: "authenticated", sub: A, bucket: "korice" });
+  ok(!r.greska && r.redovi.length === 2, "čitalac vidi objekte u bucket-u „korice”", r.greska?.message ?? r.redovi);
+
+  r = await kao("authenticated", A, OBJ, ["korice", imeUbaceno("1700000000010")]);
+  ok(r.greska?.message?.includes("row-level security"), "ČITALAC ne može da upiše u bucket „korice”", r.greska?.message ?? r.redovi);
+  r = await kao("anon", null, OBJ, ["korice", imeUbaceno("1700000000011")]);
+  ok(Boolean(r.greska), "anon ne može da upiše u bucket „korice”", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", NEAKTIVAN, OBJ, ["korice", imeUbaceno("1700000000012")]);
+  ok(r.greska?.message?.includes("row-level security"), "neaktivan član ne može da upiše u bucket „korice”", r.greska?.message ?? r.redovi);
+
+  for (const tip of ["image/webp", "image/jpeg", "image/png"]) {
+    const ime = putanjaKorice(KID, 1700000000100, tip);
+    r = await kao("authenticated", BIB, OBJ, ["korice", ime]);
+    ok(!r.greska && r.redovi.length === 1, `BIBLIOTEKAR može da upiše ${ime.split("/")[1]} (ime iz putanjaKorice, ${tip})`, r.greska?.message ?? r.redovi);
+  }
+  r = await kao("authenticated", ADM, OBJ, ["korice", imeUbaceno("1700000000200")]);
+  ok(!r.greska && r.redovi.length === 1, "administrator može da upiše u bucket „korice”", r.greska?.message ?? r.redovi);
+
+  for (const [naziv, ime] of [
+    ["bez fascikle knjige", "slika.webp"],
+    ["fascikla nije uuid", "nije-uuid/1700000000300.webp"],
+    ["dublje fascikle", `${KID}/a/1700000000300.webp`],
+    ["izlaz iz fascikle (..)", `${KID}/../1700000000300.webp`],
+    ["ekstenzija .svg", `${KID}/1700000000300.svg`],
+    ["ekstenzija .html", `${KID}/1700000000300.html`],
+    ["dvostruka ekstenzija", `${KID}/1700000000300.webp.exe`],
+    ["bez imena fajla", `${KID}/.webp`],
+    ["predugačko ime (65 znakova)", `${KID}/${"a".repeat(65)}.webp`],
+    ["UUID velikim slovima", `${KID.toUpperCase()}/1700000000300.webp`],
+    ["razmak u imenu", `${KID}/1700 000300.webp`],
+  ]) {
+    r = await kao("authenticated", BIB, OBJ, ["korice", ime]);
+    ok(r.greska?.message?.includes("row-level security"), `bibliotekar: ime se odbija — ${naziv}`, r.greska?.message ?? r.redovi);
+  }
+  r = await kao("authenticated", BIB, OBJ, ["drugi", imeUbaceno("1700000000400")]);
+  ok(r.greska?.message?.includes("row-level security"), "bibliotekar ne upisuje u tuđ bucket preko ovih politika", r.greska?.message ?? r.redovi);
+
+  r = await kao("authenticated", BIB, "update storage.objects set name = name || 'x' where bucket_id = 'korice' returning id");
+  ok(!r.greska && r.redovi.length === 0, "niko ne može da izmeni objekat (nema UPDATE politike): zamena je novi fajl", r.greska?.message ?? r.redovi);
+
+  const BRISI = "delete from storage.objects where bucket_id = 'korice' and name = $1 returning name";
+  r = await kao("authenticated", A, BRISI, [imeUbaceno("1700000000001")]);
+  ok(!r.greska && r.redovi.length === 0, "čitalac ne može da obriše objekat", r.greska?.message ?? r.redovi);
+  r = await kao("anon", null, BRISI, [imeUbaceno("1700000000001")]);
+  ok(!r.greska && r.redovi.length === 0, "anon ne može da obriše objekat", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, BRISI, [imeUbaceno("1700000000001")]);
+  ok(!r.greska && r.redovi.length === 1, "bibliotekar može da obriše objekat (stara korica pri zameni)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "delete from storage.objects where bucket_id = 'drugi' returning name");
+  ok(!r.greska && r.redovi.length === 0, "bibliotekar ne briše iz tuđeg bucket-a", r.greska?.message ?? r.redovi);
+
+  // Isto pravilo u JS-u: adresa fotografije se vraća u ime fajla koje politika prihvata
+  const javna = `https://jrmzgulxvxtpghwbhmrc.supabase.co/storage/v1/object/public/korice/${putanjaKorice(KID, 1700000000500, "image/webp")}`;
+  ok(putanjaIzAdrese(javna) === putanjaKorice(KID, 1700000000500, "image/webp"), "javna adresa → putanja u bucket-u (za brisanje stare korice)", putanjaIzAdrese(javna));
+  r = await kao("authenticated", BIB, "insert into public.knjige (naslov, korice_url, korice_izvor, izvor) values ('Fotografija bibliotekara', $1, 'fotografija', 'fond') returning korice_url, korice_izvor", [javna]);
+  ok(!r.greska && r.redovi[0]?.korice_url === javna && r.redovi[0]?.korice_izvor === "fotografija", "adresa fotografije iz našeg Storage-a prolazi okidač za domene (0009)", r.greska?.message ?? r.redovi);
+
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, STORAGE[0]), "utf8"));
+  const posle = (await db.query("select count(*)::int as n from pg_policy where polrelid = 'storage.objects'::regclass")).rows[0].n;
+  const brojBucketa = (await db.query("select count(*)::int as n from storage.buckets where id = 'korice'")).rows[0].n;
+  ok(posle === 3 && brojBucketa === 1, "0013 je idempotentna: drugo puštanje ne duplira politike ni bucket", { politike: posle, bucketi: brojBucketa });
+  const posle13Ponovo = Number((await db.query("select file_size_limit from storage.buckets where id = 'korice'")).rows[0].file_size_limit);
+  ok(posle13Ponovo === 1048576, "napomena: ponovno puštanje 0013 posle 0014 vraća granicu na 1 MB, pa se posle njega ponovo pušta 0014", posle13Ponovo);
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, STORAGE[1]), "utf8"));
+
+  // ───────── 0014: korica preuzeta sa linka ─────────
+  faza("0014: korice_izvor 'preuzeto' i korice_poreklo (korica preuzeta sa linka)");
+  const kolona = (await db.query("select data_type from information_schema.columns where table_schema = 'public' and table_name = 'knjige' and column_name = 'korice_poreklo'")).rows;
+  ok(kolona[0]?.data_type === "text", "kolona knjige.korice_poreklo postoji (text)", kolona);
+  const ogranicenjaIzvora = (await db.query("select conname from pg_constraint where conrelid = 'public.knjige'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%korice_izvor%'")).rows;
+  ok(ogranicenjaIzvora.length === 1 && ogranicenjaIzvora[0].conname === "knjige_korice_izvor_check", "tačno jedno ograničenje na korice_izvor, pod stalnim imenom", ogranicenjaIzvora);
+  const bucket14 = (await db.query("select * from storage.buckets where id = 'korice'")).rows[0];
+  ok(bucket14?.public === true && Number(bucket14.file_size_limit) === 1572864 && JSON.stringify(bucket14.allowed_mime_types) === JSON.stringify(["image/jpeg", "image/png", "image/webp"]),
+    "bucket „korice”: javan, najviše 1.5 MB, i dalje samo jpeg, png i webp", bucket14);
+  const okidac = (await db.query("select pg_get_triggerdef(oid) as d from pg_trigger where tgrelid = 'public.knjige'::regclass and tgname = 'knjige_korice_biu'")).rows;
+  ok(okidac.length === 1 && okidac[0].d.includes("korice_poreklo"), "okidač knjige_korice_biu prati i korice_poreklo", okidac);
+
+  const NASA = `https://jrmzgulxvxtpghwbhmrc.supabase.co/storage/v1/object/public/korice/${fond.id}/1700000000600.jpg`;
+  const POREKLO = "https://cdn.nigde-na-listi.example/slike/k.jpg";
+  const UPIS14 = "insert into public.knjige (naslov, korice_url, korice_izvor, korice_poreklo, izvor) values ($1, $2, $3, $4, 'fond') returning id, korice_url, korice_izvor, korice_poreklo";
+  const dugo = `https://cdn.example/${"a".repeat(600)}.jpg`;
+
+  r = await kao("authenticated", BIB, UPIS14, ["P1 preuzeta", NASA, "preuzeto", POREKLO]);
+  const p1 = r.redovi?.[0];
+  ok(!r.greska && p1.korice_url === NASA && p1.korice_izvor === "preuzeto" && p1.korice_poreklo === POREKLO,
+    "bibliotekar: korica 'preuzeto' sa našom adresom i porekom (adresa sa tuđeg sajta) ostaje kako je upisana", r.greska?.message ?? p1);
+  for (const [naziv, poreklo] of [["poreklo nije https", "http://cdn.example/k.jpg"], ["poreklo ima razmak", "https://cdn.example/a b.jpg"], ["poreklo duže od 500 znakova", dugo], ["poreklo je prazan tekst", ""], ["poreklo nije adresa", "nije adresa"]]) {
+    r = await kao("authenticated", BIB, UPIS14, [`P2 ${naziv}`, NASA, "preuzeto", poreklo]);
+    const red = r.redovi?.[0];
+    ok(!r.greska && red.korice_poreklo === null && red.korice_url === NASA && red.korice_izvor === "preuzeto", `bibliotekar: ${naziv} → poreklo postaje NULL, korica ostaje (upis se ne odbija)`, r.greska?.message ?? red);
+  }
+  r = await kao("authenticated", BIB, UPIS14, ["P3 fotografija sa porekom", NASA, "fotografija", POREKLO]);
+  ok(!r.greska && r.redovi[0].korice_izvor === "fotografija" && r.redovi[0].korice_poreklo === null, "poreklo ima smisla samo uz izvor 'preuzeto': uz 'fotografija' postaje NULL", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, UPIS14, ["P4 bez korice", null, "preuzeto", POREKLO]);
+  ok(!r.greska && r.redovi[0].korice_url === null && r.redovi[0].korice_izvor === null && r.redovi[0].korice_poreklo === null, "bez korice nema ni izvora ni porekla", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, UPIS14, ["P5 tuđa adresa korice", "https://evil.example/k.jpg", "preuzeto", POREKLO]);
+  ok(!r.greska && r.redovi[0].korice_url === null && r.redovi[0].korice_izvor === null && r.redovi[0].korice_poreklo === null, "adresa korice van liste domena: sve tri vrednosti postaju NULL (0009 i dalje važi)", r.greska?.message ?? r.redovi);
+
+  // član ne može da lažira 'preuzeto'
+  r = await kao("authenticated", A, UPIS14, ["P6 član lažira", NASA, "preuzeto", POREKLO]);
+  ok(!r.greska && r.redovi[0].korice_url === null && r.redovi[0].korice_izvor === null && r.redovi[0].korice_poreklo === null, "ČLAN ne može da postavi izvor 'preuzeto' (korica, izvor i poreklo postaju NULL)", r.greska?.message ?? r.redovi);
+
+  // izmena
+  r = await kao("authenticated", BIB, "update public.knjige set korice_izvor = 'fotografija' where id = $1 returning korice_izvor, korice_poreklo, korice_url", [p1.id]);
+  ok(!r.greska && r.redovi[0]?.korice_izvor === "fotografija" && r.redovi[0].korice_poreklo === null && r.redovi[0].korice_url === NASA, "izmena izvora sa 'preuzeto' na 'fotografija' briše poreklo", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.knjige set korice_izvor = 'preuzeto', korice_poreklo = $2 where id = $1 returning korice_izvor, korice_poreklo", [p1.id, POREKLO]);
+  ok(!r.greska && r.redovi[0]?.korice_izvor === "preuzeto" && r.redovi[0].korice_poreklo === POREKLO, "bibliotekar može ponovo da postavi 'preuzeto' sa porekom", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.knjige set korice_url = null where id = $1 returning korice_izvor, korice_poreklo, korice_url", [p1.id]);
+  ok(!r.greska && r.redovi[0]?.korice_url === null && r.redovi[0].korice_izvor === null && r.redovi[0].korice_poreklo === null, "uklanjanje korice briše i izvor i poreklo", r.greska?.message ?? r.redovi);
+
+  // servisna uloga (api/korica-iz-linka.js) je izuzeta od okidača, ali ne od ograničenja u tabeli
+  r = await db.query(UPIS14, ["P7 servis", NASA, "preuzeto", POREKLO]).then((x) => ({ redovi: x.rows }), (e) => ({ greska: e }));
+  ok(!r.greska && r.redovi[0].korice_url === NASA && r.redovi[0].korice_izvor === "preuzeto" && r.redovi[0].korice_poreklo === POREKLO, "servisna uloga (postgres) upisuje sve tri vrednosti kako jesu", r.greska?.message ?? r.redovi);
+  r = await db.query(UPIS14, ["P8 loš izvor", NASA, "nesto", null]).then((x) => ({ redovi: x.rows }), (e) => ({ greska: e }));
+  ok(Boolean(r.greska), "ograničenje u tabeli odbija nepoznat izvor korice čak i servisnoj ulozi", r.greska?.message ?? r.redovi);
+  r = await db.query(UPIS14, ["P9 loše poreklo", NASA, "preuzeto", "http://cdn.example/k.jpg"]).then((x) => ({ redovi: x.rows }), (e) => ({ greska: e }));
+  ok(Boolean(r.greska), "ograničenje u tabeli odbija poreklo koje nije https čak i servisnoj ulozi", r.greska?.message ?? r.redovi);
+
+  // stari izvori i dalje važe
+  for (const izvor of ["fond", "google_books", "open_library", "og_slika", "fotografija", "preuzeto"]) {
+    r = await db.query(UPIS14, [`P10 ${izvor}`, NASA, izvor, null]).then((x) => ({ redovi: x.rows }), (e) => ({ greska: e }));
+    ok(!r.greska && r.redovi[0].korice_izvor === izvor, `izvor korice '${izvor}' je dozvoljen`, r.greska?.message ?? r.redovi);
+  }
+
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, STORAGE[1]), "utf8"));
+  const posle14 = (await db.query("select (select count(*)::int from pg_constraint where conrelid = 'public.knjige'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%korice_izvor%') as ogr, (select count(*)::int from pg_trigger where tgrelid = 'public.knjige'::regclass and tgname = 'knjige_korice_biu') as okidaci, (select count(*)::int from storage.buckets where id = 'korice') as bucketi")).rows[0];
+  ok(posle14.ogr === 1 && posle14.okidaci === 1 && posle14.bucketi === 1, "0014 je idempotentna: drugo puštanje ne duplira ograničenje, okidač ni bucket", posle14);
 
   // ───────── opšte ─────────
   faza("Opšta pravila");

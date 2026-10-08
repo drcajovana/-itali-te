@@ -5,8 +5,8 @@
 // PRAVILO (CLAUDE.md, „Google Books"): iz Google-a se trajno čuva samo ono što član
 // potvrdi: ISBN-13, naslov, autor, godina, izdavač. Nikad opis, nikad korica, nikad
 // masovno. Uslovi Google-a ne dozvoljavaju pravljenje baze ni trajnih kopija
-// sadržaja iz API-ja. Isto važi za opis sa tuđeg sajta; korica sa linka se čuva samo
-// ako je domen na listi dozvoljenih (to proveravaju api/ i baza, migracija 0009).
+// sadržaja iz API-ja. Isto važi za opis i sliku sa tuđeg sajta (link): ne čuvaju se.
+// Korica dolazi samo iz fotografije koju bibliotekar okači u Storage (korica-slika.js).
 import { uIsbn13 } from "./isbn.js";
 
 const NAJVISE = { naslov: 300, autor: 200, izdavac: 150 };
@@ -43,20 +43,14 @@ export function urediPotvrdu(unos) {
   return { ok: true, podaci: { naslov, autor: autor || null, izdavac: izdavac || null, godina, isbn } };
 }
 
-// Red za INSERT u `knjige`, tačno ovih polja i ni jednog više: nikad opis, nikad
-// Google-ova korica. Korica sa linka ide samo kad je izvor 'link' (domen je već
-// proverila funkcija iz-linka, a baza bi nedozvoljenu postavila na NULL).
-export function redZaUpis(podaci, izvor, korica) {
-  const red = {
+// Red za INSERT u `knjige`, tačno ovih pet polja i ni jednog više: nikad opis, nikad
+// korica (ni Google-ova, ni sa tuđeg sajta).
+export function redZaUpis(podaci) {
+  return {
     naslov: podaci.naslov,
     autor: podaci.autor ?? null,
     izdavac: podaci.izdavac ?? null,
     godina: podaci.godina ?? null,
     isbn: podaci.isbn ?? null,
   };
-  if (izvor === "link" && typeof korica === "string" && korica) {
-    red.korice_url = korica;
-    red.korice_izvor = "og_slika";
-  }
-  return red;
 }

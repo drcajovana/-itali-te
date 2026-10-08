@@ -3,7 +3,8 @@
 // Šta se proverava, i za SVAKO preusmeravanje posebno:
 //  1. samo https, bez korisnika/lozinke u adresi, samo port 443;
 //  2. domen mora biti na beloj listi (api/_lib/bela-lista.js); IP adrese kao
-//     domen i „localhost" se odbijaju;
+//     domen i „localhost" se odbijaju. Samo za slike (api/korica-iz-linka.js) lista se
+//     ne primenjuje (`lista: null`), a sve ostale provere važe isto;
 //  3. DNS odgovor se proverava u istom koraku u kom se otvara veza (lookup
 //     funkcija ispod): ako je ijedna adresa privatna, loopback ili link-local,
 //     veza se ne otvara. Povezuje se baš na proverenu adresu, pa ne može da se
@@ -53,7 +54,7 @@ export function proveriUrl(ulaz, lista = DOZVOLJENI_DOMENI) {
   if (net.isIP(host) || host.startsWith("[") || host === "localhost" || host.endsWith(".")) {
     throw new ApiGreska(422, "domen_nije_dozvoljen", "Domen nije dozvoljen.");
   }
-  if (!domenJeDozvoljen(host, lista)) {
+  if (lista && !domenJeDozvoljen(host, lista)) {
     throw new ApiGreska(422, "domen_nije_dozvoljen", "Domen nije na listi dozvoljenih.");
   }
   return u;
@@ -228,6 +229,7 @@ export async function preuzmi(ulaz, opcije = {}) {
     tipovi = ["text/html", "application/xhtml+xml"],
     najviseBajtova = OGRANICENJA.najviseBajtova,
     lista = DOZVOLJENI_DOMENI,
+    sirovo = false, // true: telo su bajtovi (Buffer), bez dekodiranja u tekst (slike)
   } = opcije;
   const pocetak = Date.now();
   let u = proveriUrl(ulaz, lista);
@@ -256,7 +258,7 @@ export async function preuzmi(ulaz, opcije = {}) {
     if (odgovor.status !== 200) {
       throw new ApiGreska(502, "ne_mogu_da_procitam", `Sajt je odgovorio sa HTTP ${odgovor.status}.`);
     }
-    return { url: u, tip: odgovor.tip, telo: dekodujTelo(odgovor.telo, odgovor.tip) };
+    return { url: u, tip: odgovor.tip, telo: sirovo ? odgovor.telo : dekodujTelo(odgovor.telo, odgovor.tip) };
   }
   throw new ApiGreska(422, "previse_preusmeravanja", "Previše preusmeravanja.");
 }

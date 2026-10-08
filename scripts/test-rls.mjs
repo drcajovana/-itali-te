@@ -127,8 +127,14 @@ async function pokusaj(zahtev) {
 // mogao da pogodi pravog člana. Zato se pamte po id-ju, a ostaci prekinutog
 // pokretanja se nalaze po imenu u clanovi ("RLS Test…").
 const NAPRAVLJENI = [];
+// Fajlovi koje je test okačio u bucket „korice” (putanje); brišu se pri čišćenju.
+const SLIKE = [];
 
 async function ocisti() {
+  if (SLIKE.length) {
+    const s = await S.storage.from("korice").remove(SLIKE.splice(0));
+    if (s.error) throw new Error(`čišćenje fotografija: ${s.error.message}`);
+  }
   // Knjige i objave nemaju vlasnika koji bi ih pokupio kaskadom.
   const o = await S.from("objave").delete().like("naslov", "RLS-TEST%");
   if (o.error) throw new Error(`čišćenje objava: ${o.error.message}`);
@@ -838,6 +844,163 @@ async function main() {
     const p = await vidi(A.db, "polica", (q) => q.eq("clan_id", B.id));
     const u = await vidi(A.db, "utisci", (q) => q.eq("clan_id", B.id).eq("vidljivost", "prijatelji"));
     return tacno(p, 0, "polica") === true && tacno(u, 0, "utisci") === true ? true : `${opis(p)} / ${opis(u)}`;
+  });
+
+  // ───────────────────────── 11. Storage ─────────────────────────
+  faza("11. Storage: bucket „korice” (migracije 0013 i 0014)");
+
+  const BUCKET = "korice";
+  // Najmanja ispravna slika (1x1 PNG): Storage proverava tip iz zaglavlja, ne sadržaj.
+  const PNG = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+  const fajl = (s) => `rls${RUN}${s}.png`;
+  const putanja = (s) => {
+    const p = `${K1.id}/${fajl(s)}`;
+    SLIKE.push(p);
+    return p;
+  };
+  const posalji = (klijent, p, telo = PNG, tip = "image/png", opcije = {}) =>
+    klijent.storage.from(BUCKET).upload(p, telo, { contentType: tip, upsert: false, ...opcije });
+  const javna = (p) => S.storage.from(BUCKET).getPublicUrl(p).data.publicUrl;
+  const preuzmi = async (p) => {
+    const o = await fetch(javna(p));
+    const duzina = o.ok ? (await o.arrayBuffer()).byteLength : 0;
+    return { status: o.status, tip: o.headers.get("content-type"), duzina };
+  };
+  // Postojanje se proverava spiskom (servisnim ključem), ne javnom adresom: CDN može
+  // još neko vreme da vrati keširanu sliku koja je već obrisana.
+  const uFascikli = async () => {
+    const r = await S.storage.from(BUCKET).list(K1.id, { limit: 100 });
+    if (r.error) throw new Error(`spisak fajlova: ${r.error.message}`);
+    return r.data.map((o) => o.name);
+  };
+  const nijeUpisano = (r) => (r.error ? true : `upis je prošao: ${JSON.stringify(r.data)}`);
+
+  await provera("bucket „korice” postoji: javan, najviše 1.5 MB (0014), samo jpeg, png i webp", async () => {
+    const r = await S.storage.getBucket(BUCKET);
+    if (r.error) return `getBucket: ${r.error.message} (nije puštena migracija 0013?)`;
+    const b = r.data;
+    const tipovi = JSON.stringify([...(b.allowed_mime_types ?? [])].sort());
+    return b.public === true && Number(b.file_size_limit) === 1572864 && tipovi === JSON.stringify(["image/jpeg", "image/png", "image/webp"])
+      ? true
+      : JSON.stringify({ public: b.public, file_size_limit: b.file_size_limit, allowed_mime_types: b.allowed_mime_types });
+  });
+
+  const P1 = putanja("a");
+  await provera("kontrola: BIBLIOTEKAR može da okači sliku u bucket „korice”", async () => {
+    const r = await posalji(BIB.db, P1);
+    return r.error ? `greška: ${r.error.message}` : (await uFascikli()).includes(fajl("a")) ? true : "upis je prošao, ali fajla nema u bucket-u";
+  });
+
+  await provera("ANON može da čita sliku preko javne adrese", async () => {
+    const o = await fetch(javna(P1));
+    const duzina = (await o.arrayBuffer()).byteLength;
+    return o.status === 200 && (o.headers.get("content-type") ?? "").startsWith("image/png") && duzina === PNG.length
+      ? true
+      : `status ${o.status}, tip ${o.headers.get("content-type")}, ${duzina} bajtova (očekivano ${PNG.length})`;
+  });
+  await provera("ANON može da preuzme sliku i preko klijenta (politika za čitanje)", async () => {
+    const r = await anon.storage.from(BUCKET).download(P1);
+    return r.error ? `greška: ${r.error.message}` : r.data.size === PNG.length ? true : `${r.data.size} bajtova`;
+  });
+  await provera("čitalac čita sliku (javna adresa i klijent)", async () => {
+    const j = await preuzmi(P1);
+    const r = await A.db.storage.from(BUCKET).download(P1);
+    return j.status === 200 && j.duzina === PNG.length && !r.error && r.data.size === PNG.length ? true : `javna: ${JSON.stringify(j)}; klijent: ${r.error?.message ?? r.data?.size}`;
+  });
+
+  const PA = putanja("citalac");
+  await provera("ČITALAC ne može da okači sliku u bucket „korice”", async () => {
+    const r = await posalji(A.db, PA);
+    const u = nijeUpisano(r);
+    return u === true ? ((await uFascikli()).includes(fajl("citalac")) ? "greška je stigla, a fajl je ipak u bucket-u" : true) : u;
+  });
+  const PN = putanja("anon");
+  await provera("ANON ne može da okači sliku u bucket „korice”", async () => {
+    const r = await posalji(anon, PN);
+    const u = nijeUpisano(r);
+    return u === true ? ((await uFascikli()).includes(fajl("anon")) ? "greška je stigla, a fajl je ipak u bucket-u" : true) : u;
+  });
+
+  const ODBIJENE = [
+    ["SVG (image/svg+xml)", "svg", Uint8Array.from(Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'/>")), "image/svg+xml"],
+    ["HTML (text/html)", "html", Uint8Array.from(Buffer.from("<html></html>")), "text/html"],
+    ["slika veća od 1.5 MB", "velika", new Uint8Array(1572865), "image/png"],
+  ];
+  for (const [naziv, oznaka, telo, tip] of ODBIJENE) {
+    const p = putanja(oznaka);
+    await provera(`bibliotekar: ${naziv} se odbija (tip i veličina su ograničeni u bucket-u)`, async () => {
+      const r = await posalji(BIB.db, p, telo, tip);
+      const u = nijeUpisano(r);
+      return u === true ? ((await uFascikli()).includes(fajl(oznaka)) ? "greška je stigla, a fajl je ipak u bucket-u" : true) : u;
+    });
+  }
+  await provera("bibliotekar: putanja bez fascikle knjige se odbija (politika)", async () => {
+    const p = fajl("bezfascikle");
+    SLIKE.push(p);
+    const r = await posalji(BIB.db, p);
+    return nijeUpisano(r);
+  });
+  await provera("bibliotekar: prepisivanje postojećeg fajla (upsert) se odbija: nema UPDATE politike", async () => {
+    const r = await posalji(BIB.db, P1, PNG, "image/png", { upsert: true });
+    const j = await preuzmi(P1);
+    return r.error ? (j.status === 200 && j.duzina === PNG.length ? true : `slika posle pokušaja: ${JSON.stringify(j)}`) : "upsert je prošao";
+  });
+
+  await provera("bibliotekar postavlja knjige.korice_url (javna adresa) i korice_izvor 'fotografija'; čitalac to vidi", async () => {
+    const u = await BIB.db.from("knjige").update({ korice_url: javna(P1), korice_izvor: "fotografija" }).eq("id", K1.id).select("korice_url, korice_izvor");
+    if (u.error || u.data.length !== 1) return `izmena: ${opis(u)}`;
+    if (u.data[0].korice_url !== javna(P1) || u.data[0].korice_izvor !== "fotografija") return `okidač je promenio vrednosti: ${JSON.stringify(u.data[0])}`;
+    const c = await A.db.from("knjige").select("korice_url, korice_izvor").eq("id", K1.id).single();
+    return !c.error && c.data.korice_url === javna(P1) && c.data.korice_izvor === "fotografija" ? true : `čitalac vidi: ${JSON.stringify(c.data ?? c.error)}`;
+  });
+
+  // ── 0014: korica preuzeta sa linka (kolona korice_poreklo, izvor 'preuzeto') ──
+  const PRE = javna(`${K2.id}/rls${RUN}preuzeto.jpg`);
+  const POREKLO = "https://cdn.nigde-na-listi.example/slike/k.jpg";
+  await provera("0014: bibliotekar postavlja korice_izvor 'preuzeto' uz korice_poreklo; čitalac to vidi", async () => {
+    const u = await BIB.db.from("knjige").update({ korice_url: PRE, korice_izvor: "preuzeto", korice_poreklo: POREKLO }).eq("id", K2.id).select("korice_url, korice_izvor, korice_poreklo");
+    if (u.error || u.data.length !== 1) return `izmena: ${opis(u)} (nije puštena 0014?)`;
+    const c = await A.db.from("knjige").select("korice_url, korice_izvor, korice_poreklo").eq("id", K2.id).single();
+    const d = u.data[0];
+    return d.korice_url === PRE && d.korice_izvor === "preuzeto" && d.korice_poreklo === POREKLO && !c.error && c.data.korice_poreklo === POREKLO ? true : `bibliotekar: ${JSON.stringify(d)}; čitalac: ${JSON.stringify(c.data ?? c.error)}`;
+  });
+  await provera("0014: poreklo koje nije https se briše (korica ostaje)", async () => {
+    const u = await BIB.db.from("knjige").update({ korice_poreklo: "http://cdn.example/k.jpg" }).eq("id", K2.id).select("korice_url, korice_izvor, korice_poreklo");
+    if (u.error || u.data.length !== 1) return `izmena: ${opis(u)}`;
+    return u.data[0].korice_poreklo === null && u.data[0].korice_url === PRE ? true : JSON.stringify(u.data[0]);
+  });
+  await provera("0014: ČITALAC ne može da lažira izvor 'preuzeto' pri upisu knjige (korica, izvor i poreklo postaju NULL)", async () => {
+    const r = await A.db.from("knjige").insert({ naslov: N("A-lazna-korica"), korice_url: PRE, korice_izvor: "preuzeto", korice_poreklo: POREKLO }).select("korice_url, korice_izvor, korice_poreklo").single();
+    if (r.error) return `upis: ${r.error.message}`;
+    return r.data.korice_url === null && r.data.korice_izvor === null && r.data.korice_poreklo === null ? true : JSON.stringify(r.data);
+  });
+  await provera("bibliotekar „Ukloni koricu”: korice_url, korice_izvor i korice_poreklo se prazne (i kad je izvor 'preuzeto' sa porekom)", async () => {
+    const pre = await BIB.db.from("knjige").update({ korice_url: PRE, korice_izvor: "preuzeto", korice_poreklo: POREKLO }).eq("id", K2.id).select("korice_poreklo");
+    if (pre.error || pre.data[0]?.korice_poreklo !== POREKLO) return `priprema: ${opis(pre)}`;
+    const u = await BIB.db.from("knjige").update({ korice_url: null, korice_izvor: null, korice_poreklo: null }).eq("id", K2.id).select("korice_url, korice_izvor, korice_poreklo");
+    if (u.error || u.data.length !== 1) return `izmena: ${opis(u)}`;
+    const d = u.data[0];
+    return d.korice_url === null && d.korice_izvor === null && d.korice_poreklo === null ? true : JSON.stringify(d);
+  });
+  await provera("ČITALAC ne može da ukloni ni da promeni koricu postojeće knjige", async () => {
+    await BIB.db.from("knjige").update({ korice_url: PRE, korice_izvor: "preuzeto", korice_poreklo: POREKLO }).eq("id", K2.id);
+    const u = await A.db.from("knjige").update({ korice_url: null, korice_izvor: null, korice_poreklo: null }).eq("id", K2.id).select();
+    const k = await stanje("knjige", K2.id);
+    return (u.error || u.data.length === 0) && k.korice_url === PRE && k.korice_izvor === "preuzeto" ? true : `izmena: ${opis(u)}; u bazi: ${k.korice_url}/${k.korice_izvor}`;
+  });
+  await provera("0014: nepoznat izvor korice odbija baza (čak i servisni ključ)", async () => {
+    const r = await S.from("knjige").update({ korice_url: PRE, korice_izvor: "nesto" }).eq("id", K2.id).select();
+    return r.error ? true : "izmena je prošla";
+  });
+
+  await provera("ČITALAC ne može da obriše sliku iz bucket-a", async () => {
+    await A.db.storage.from(BUCKET).remove([P1]);
+    return (await uFascikli()).includes(fajl("a")) ? true : "fajl je obrisan";
+  });
+  await provera("BIBLIOTEKAR može da obriše sliku (stara korica pri zameni)", async () => {
+    const r = await BIB.db.storage.from(BUCKET).remove([P1]);
+    if (r.error) return `greška: ${r.error.message}`;
+    return (await uFascikli()).includes(fajl("a")) ? "fajl je ostao u bucket-u" : true;
   });
 }
 

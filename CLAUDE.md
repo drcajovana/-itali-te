@@ -42,7 +42,8 @@ transliterovati je.
   (ni seed, ni bulk, ni „popuni opise"). Uslovi (Google APIs ToS, odeljak 5e) ne
   dozvoljavaju pravljenje baze ni trajnih kopija sadržaja iz API-ja; korica se
   prikazuje uz oznaku „Google Books" i vezu ka njihovoj stranici, nikad se ne čuva.
-  Isto važi za opis sa tuđeg sajta (link): ne čuva se.
+  Isto važi za opis sa tuđeg sajta (link): ne čuva se. Slika sa linka je predlog adrese; vidi
+  „Korice i ISBN”.
 - **Ne piše se ništa u COBISS.** COBISS je izvor istine za katalog i
   zaduženja; „Rezerviši" je obaveštenje bibliotekaru, ništa više.
 - **Nema samostalne registracije.** Nalog postoji samo ako je članstvo
@@ -105,15 +106,35 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 
 ## Korice i ISBN
 
-- **Korica** (`knjige.korice_url`): samo https, do 500 znakova, samo domeni sa liste:
-  izdavači (`bela-lista.js`), Open Library i naš Supabase Storage. **Google nije na
-  listi** (ne sme da se čuva). Lista je u JS-u (`DOZVOLJENI_DOMENI_KORICA` u `api/_lib/bela-lista.js`) I u bazi
-  (`privatno.domeni_korica`); `npm run test:db` pada ako se razilaze. Novi domen se dodaje
-  na oba mesta: JS niz i nova migracija sa INSERT-om. Nedozvoljena adresa se **ne odbija,
-  nego postaje NULL** (i `korice_izvor`), jer je korica dopuna, a odbijanje bi uništilo
-  upis knjige. Servisna uloga je izuzeta. Domen našeg Storage-a je već na listi
-  (`SUPABASE_STORAGE_DOMEN`), da fotografija koju okači bibliotekar ne postane NULL; pri
-  prelasku na drugi Supabase projekat menja se u JS-u i u novoj migraciji.
+- **Slika korice se prikazuje samo iz NAŠEG Storage-a** (bucket `korice`, migracije 0013 i 0014);
+  nikad se ne učitava sa tuđeg servera (nema hotlinka). Dva izvora: fotografija koju bibliotekar
+  snimi (`korice_izvor = 'fotografija'`) i slika preuzeta sa linka (`'preuzeto'`, uz
+  `korice_poreklo`). Lanac prikaza (`src/lib/korica-slika.js`): naša slika → Open Library po
+  ISBN-u → pločica. Google sličica je samo prikaz uživo u rezultatima pretrage. Stare adrese sa
+  drugim izvorom (npr. `og_slika`) se ne prikazuju.
+- **Odluka vlasnice (2026-10-08): preuzimanje korice sa linka je dozvoljeno**, što menja raniji
+  dogovor „korica sa tuđeg sajta se ne uzima". Uslovi koji ostaju: `iz-linka` samo **predlaže**
+  adresu (`korica`), ništa ne preuzima; preuzima `api/korica-iz-linka.js`, samo na zahtev
+  bibliotekara (uloga se čita na serveru, `granicaKorice`), jednu sliku po zahtevu, 100 na sat,
+  nikad masovno ni automatski. Ista SSRF zaštita kao `iz-linka` (`bezbedan-fetch.js`, `lista: null`
+  skida samo ograničenje domenom), najviše 1.5 MB, tip po sadržaju (`api/_lib/slika.js`), bez
+  menjanja veličine na serveru i bez novih biblioteka. Pre upotrebe proveriti da sajt dozvoljava
+  kopiranje slike (uslovi korišćenja); `korice_poreklo` čuva odakle je uzeta.
+- **Ne dodavati domene izdavača** u listu za korice. `knjige.korice_url`: samo https, do 500
+  znakova, samo domeni sa liste (`DOZVOLJENI_DOMENI_KORICA` u `api/_lib/bela-lista.js` I
+  `privatno.domeni_korica`; `npm run test:db` pada ako se razilaze). U praksi se koriste samo
+  Open Library i naš Storage (`SUPABASE_STORAGE_DOMEN`); domeni izdavača ostaju na listi iz
+  istorijskih razloga (0009), a lista za čitanje linkova je zasebna. Nedozvoljena adresa se
+  **ne odbija, nego postaje NULL**. Servisna uloga (api/korica-iz-linka) je izuzeta. Pri
+  prelasku na drugi Supabase projekat menja se domen u JS-u i u novoj migraciji.
+- **Okidač `knjige_korice_biu`** (0014): `korice_poreklo` ostaje samo uz izvor `'preuzeto'` i samo kao
+  https do 500 znakova; izvor `'preuzeto'` sme da postavi samo bibliotekar, administrator ili
+  servis (član ne može da lažira poreklo).
+- **Storage politike** (`0013`): čitanje javno, upis i brisanje samo `privatno.je_bibliotekar()`,
+  izmene nema (zamena = nov fajl + brisanje starog); ime fajla `<uuid knjige>/<ime>.(webp|jpg|png)`,
+  isti obrazac u `putanjaKorice` (test:api poredi JS i SQL). Bucket: 1.5 MB (0014). Fotografija se
+  smanjuje u pregledaču na 600 px pre slanja (`smanjiSliku`). Stara slika se briše samo ako je
+  adresa sa našeg bucket-a (tačan prefiks) i iz fascikle iste knjige (`putanjaIzAdrese`).
 - **ISBN** se čuva i traži kao ISBN-13. Pravilo je na dva mesta koja moraju da se slažu:
   `src/lib/isbn.js` (`uIsbn13`) i `privatno.isbn13()`; `test:db` ih poredi na fiksnim i
   slučajnim primerima. Ne pisati treću implementaciju. Neispravan ISBN odbija baza (osim
@@ -165,10 +186,9 @@ izdavača) i gde se koristi `SUPABASE_SERVICE_ROLE_KEY`. Pravila:
 
 Član koji dodaje knjigu iz Google-a ili sa linka prvo vidi **izmenljiva polja** sa
 vrednostima iz rezultata; upis ide tek na dugme „Potvrdi" (`RezultatKnjige.jsx`).
-Upisuje se običnim INSERT-om, i to **samo** naslov, autor, izdavač, godina i ISBN-13, plus
-korica sa linka kad je domen na listi (`urediPotvrdu` i `redZaUpis` u
-`src/lib/red-knjige.js`; `npm run test:api` proverava da u red nikad ne uđu opis ni
-Google-ova korica). Okidač `knjige_unos_clana` uvek postavlja `izvor='clan'` i
+Upisuje se običnim INSERT-om, i to **samo** naslov, autor, izdavač, godina i ISBN-13
+(`urediPotvrdu` i `redZaUpis` u `src/lib/red-knjige.js`; `npm run test:api` proverava da u
+red nikad ne uđu opis ni korica). Koricu bibliotekar postavlja posle upisa (`postaviKoricu`). Okidač `knjige_unos_clana` uvek postavlja `izvor='clan'` i
 `u_fondu=false`, pa izvor knjige ne razlikuje Google od ručnog upisa.
 
 Google-ov `korica` u rezultatu služi samo za prikaz (`api/_lib/google-books.js` ga vraća

@@ -19,6 +19,8 @@ export const PROZOR_SEKUNDI = 3600;
 // ima svoje brojanje, pa veći limit za bibliotekare ne dira Google ni čitaoce.
 export const KANTA_OPSTA = "api"; // čitaoci (obe funkcije zajedno) i Google pretraga
 export const KANTA_BIBLIOTEKAR = "iz-linka:bibliotekar";
+export const KANTA_KORICA = "korica-iz-linka:bibliotekar"; // preuzimanje slike korice (samo osoblje)
+export const NAJVISE_KORICA = 100;
 
 const ULOGE_SA_VECIM_LIMITOM = ["bibliotekar", "administrator"];
 export const jeBibliotekarskaUloga = (uloga) => ULOGE_SA_VECIM_LIMITOM.includes(uloga);
@@ -29,6 +31,13 @@ export function granicaIzLinka(uloga) {
   return jeBibliotekarskaUloga(uloga)
     ? { kanta: KANTA_BIBLIOTEKAR, najvise: NAJVISE_ZAHTEVA_BIBLIOTEKAR }
     : { kanta: KANTA_OPSTA, najvise: NAJVISE_ZAHTEVA };
+}
+
+// Granica za korica-iz-linka: samo bibliotekar i administrator. Ostali dobijaju 403 pre
+// ograničenja i pre ikakvog mrežnog poziva.
+export function granicaKorice(uloga) {
+  if (!jeBibliotekarskaUloga(uloga)) throw new ApiGreska(403, "nije_bibliotekar", "Samo bibliotekar može da preuzme koricu.");
+  return { kanta: KANTA_KORICA, najvise: NAJVISE_KORICA };
 }
 
 const OPCIJE = { auth: { persistSession: false, autoRefreshToken: false } };

@@ -34,12 +34,18 @@ const CLANOVI = {
 const stanje = {
   brojac: new Map(), kes: new Map(), zahteviKaBazi: 0, rpcGreska: false, rpcPozivi: 0,
   pozivi: [], citanjaUloge: 0, ulogaGreska: false,
+  // knjige i Storage za api/korica-iz-linka.js
+  knjige: new Map(), patchevi: [], patchGreska: false, otpremljeno: [], obrisano: [], storageGreska: false,
 };
 const kljucB = (clanId, kanta = "api") => `${clanId}|${kanta}`;
 
 const lazniSupabase = http.createServer((req, res) => {
   let telo = "";
-  req.on("data", (d) => (telo += d));
+  const delovi = [];
+  req.on("data", (d) => {
+    telo += d;
+    delovi.push(d);
+  });
   req.on("end", () => {
     stanje.zahteviKaBazi++;
     const url = new URL(req.url, "http://x");
@@ -82,6 +88,31 @@ const lazniSupabase = http.createServer((req, res) => {
       stanje.brojac.set(kljucB(b.p_clan, b.p_akcija), n + 1);
       return odgovori(200, { dozvoljeno: true, preostalo: b.p_najvise - n - 1, ponovo_za_sekundi: 0 });
     }
+    if (url.pathname === "/rest/v1/knjige" || url.pathname.startsWith("/storage/v1/object/korice")) {
+      // samo servisni ključ (korica-iz-linka piše kao service_role)
+      if (!(req.headers.authorization ?? "").includes(KLJUC_SERVIS)) return odgovori(401, { code: "42501", message: "permission denied" });
+    }
+    if (url.pathname === "/rest/v1/knjige") {
+      const id = (url.searchParams.get("id") ?? "").replace("eq.", "");
+      const red = stanje.knjige.get(id);
+      if (req.method === "PATCH") {
+        stanje.patchevi.push({ id, telo: JSON.parse(telo) });
+        if (stanje.patchGreska) return odgovori(500, { code: "XX000", message: "baza ne radi" });
+        if (!red) return objekat ? odgovori(406, { code: "PGRST116" }) : odgovori(200, []);
+        Object.assign(red, JSON.parse(telo));
+        return objekat ? odgovori(200, { id }) : odgovori(200, [{ id }]);
+      }
+      return objekat ? (red ? odgovori(200, red) : odgovori(406, { code: "PGRST116" })) : odgovori(200, red ? [red] : []);
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/storage/v1/object/korice/")) {
+      if (stanje.storageGreska) return odgovori(500, { statusCode: "500", error: "x", message: "storage ne radi" });
+      stanje.otpremljeno.push({ putanja: decodeURIComponent(url.pathname.slice("/storage/v1/object/korice/".length)), tip: req.headers["content-type"], bajtovi: Buffer.concat(delovi) });
+      return odgovori(200, { Id: randomUUID(), Key: "korice/x" });
+    }
+    if (req.method === "DELETE" && url.pathname === "/storage/v1/object/korice") {
+      stanje.obrisano.push(...(JSON.parse(telo).prefixes ?? []));
+      return odgovori(200, []);
+    }
     if (url.pathname === "/rest/v1/kes_linkova") {
       if (!(req.headers.authorization ?? "").includes(KLJUC_SERVIS)) return odgovori(401, { code: "42501", message: "permission denied" });
       if (req.method === "POST") {
@@ -119,6 +150,8 @@ const { urediPotvrdu, redZaUpis } = await import("../src/lib/red-knjige.js");
 const unos = await import("../src/lib/unos-knjiga.js");
 const googleHandler = (await import("../api/pretraga-google.js")).default;
 const linkHandler = (await import("../api/iz-linka.js")).default;
+const koricaHandler = (await import("../api/korica-iz-linka.js")).default;
+const { tipSlike } = await import("../api/_lib/slika.js");
 
 // ───────────────────────── ispis ─────────────────────────
 
@@ -279,8 +312,10 @@ let p = parser.izvuciIzHtmla(
     publisher: { "@type": "Organization", name: "Vulkan" }, isbn: "978-86-521-2603-3", datePublished: "2019-05-01", description: "Roman o mostu.", image: "https://cdn.laguna.rs/k.jpg" })}</head><body></body></html>`,
   "https://www.vulkani.rs/knjiga/1"
 );
-provera("JSON-LD Book: naslov, autor, izdavač, ISBN-13, godina, opis, korica",
-  p.naslov === "Na Drini ćuprija" && p.autori.join() === "Ivo Andrić" && p.isbn === "9788652126033" && p.godina === 2019 && p.opis === "Roman o mostu." && p.korica === "https://cdn.laguna.rs/k.jpg" && p.izvorPodataka === "json-ld", p);
+provera("JSON-LD Book: naslov, autor, izdavač, ISBN-13, godina",
+  p.naslov === "Na Drini ćuprija" && p.autori.join() === "Ivo Andrić" && p.isbn === "9788652126033" && p.godina === 2019 && p.izvorPodataka === "json-ld", p);
+provera("JSON-LD sa opisom i slikom: bibliotekarska polja i PREDLOG korice; opis se ne čita",
+  JSON.stringify(Object.keys(p).sort()) === JSON.stringify(["autori", "godina", "isbn", "izdavac", "izvorPodataka", "korica", "naslov"]) && p.korica === "https://cdn.laguna.rs/k.jpg" && !("opis" in p), p);
 provera("poznati preprodavac (vulkani.rs) ima prednost nad izdavačem iz JSON-LD-a", p.izdavac === "Vulkan izdavaštvo", p.izdavac);
 
 p = parser.izvuciIzHtmla(`<html><head>${jsonLd({ "@graph": [{ "@type": "WebSite", name: "Sajt" }, { "@type": ["Product", "Book"], name: "Seobe", author: [{ name: "Miloš Crnjanski" }, "Drugi Autor"], workExample: [{ isbn: "0-306-40615-2" }] }] })}</head></html>`, U);
@@ -309,11 +344,8 @@ provera("autor preko CSS klase product-authors (title atributa ima prednost)", p
 
 p = parser.izvuciIzHtmla(
   `<html><head><meta property="og:title" content="Gospođica - Ivo Andrić | Delfi"><meta property="og:site_name" content="laguna.rs"><meta property="og:image" content="/slike/g.jpg"><meta property="og:description" content="Opis knjige."></head><body></body></html>`, U);
-provera("Open Graph: „Naslov - Autor | Sajt” se razdvaja, goli domen kao izdavač gubi nastavak, relativna og:image postaje https",
-  p.naslov === "Gospođica" && p.autori.join() === "Ivo Andrić" && p.izdavac === "laguna" && p.korica === "https://www.laguna.rs/slike/g.jpg" && p.opis === "Opis knjige.", p);
-
-p = parser.izvuciIzHtmla(`<html><head><meta property="og:title" content="Knjiga"><meta property="og:image" content="http://cdn.laguna.rs/nesigurno.jpg"></head></html>`, U);
-provera("http korica se odbacuje (samo https)", p.korica === null, p.korica);
+provera("Open Graph: „Naslov - Autor | Sajt” se razdvaja, goli domen kao izdavač gubi nastavak; relativna og:image postaje https predlog; og:description se ne čita",
+  p.naslov === "Gospođica" && p.autori.join() === "Ivo Andrić" && p.izdavac === "laguna" && p.korica === "https://www.laguna.rs/slike/g.jpg" && !("opis" in p), p);
 
 p = parser.izvuciIzHtmla(`<html><head><title>Seobe | Laguna</title></head><body><p>Nema ničeg drugog.</p></body></html>`, U);
 provera("samo <title>: vraća bar naslov, nikad prazan rezultat", p.naslov === "Seobe" && p.izvorPodataka === "title", p);
@@ -329,9 +361,13 @@ provera("<title> „Naslov - Autor” daje i autora; pcelica.rs fiksira izdavač
 }
 {
   const dugacak = "x".repeat(5000);
-  const n = parser.urediRezultat({ naslov: dugacak, autori: Array(30).fill("A"), izdavac: dugacak, opis: dugacak, godina: 3000, isbn: null, korica: null }, U);
-  provera("rezultat je ograničen po dužini (naslov 300, opis 2000, najviše 10 autora, godina van opsega se odbacuje)",
-    n.naslov.length === 300 && n.opis.length === 2000 && n.autori.length === 10 && n.godina === null && n.izdavac.length === 150, { naslov: n.naslov.length, opis: n.opis.length, autori: n.autori.length, godina: n.godina });
+  const n = parser.urediRezultat({ naslov: dugacak, autori: Array(30).fill("A"), izdavac: dugacak, opis: dugacak, godina: 3000, isbn: null, korica: "https://cdn.laguna.rs/k.jpg" }, U);
+  provera("rezultat je ograničen po dužini (naslov 300, izdavač 150, najviše 10 autora, godina van opsega se odbacuje)",
+    n.naslov.length === 300 && n.autori.length === 10 && n.godina === null && n.izdavac.length === 150, { naslov: n.naslov.length, autori: n.autori.length, godina: n.godina });
+  provera("urediRezultat ne propušta opis čak ni kad stigne u sirovim podacima; ispravna korica ostaje", !("opis" in n) && n.korica === "https://cdn.laguna.rs/k.jpg", n);
+  for (const losa of ["http://cdn.laguna.rs/k.jpg", "https://127.0.0.1/k.jpg", "https://localhost/k.jpg", "https://u:p@cdn.laguna.rs/k.jpg", "https://cdn.laguna.rs:8443/k.jpg", "https://cdn.laguna.rs/a b.jpg", `https://cdn.laguna.rs/${"a".repeat(500)}.jpg`, "javascript:alert(1)", "data:image/png;base64,AAAA", "", null]) {
+    provera(`predlog korice se odbacuje: ${String(losa).slice(0, 50)}`, parser.urediRezultat({ naslov: "N", autori: [], korica: losa }, U).korica === null);
+  }
 }
 {
   // Delfi: API put (JSON), pa rezerva na HTML
@@ -429,10 +465,18 @@ for (const [adresa, ocekivano] of Object.entries(KORICE)) {
 }
 provera("lista domena za korice = domeni linkova + Open Library + naš Supabase Storage (2 dodatna)", bl.DOZVOLJENI_DOMENI_KORICA.length === bl.DOZVOLJENI_DOMENI.length + 2, bl.DOMENI_KORICA_DODATNI);
 provera("Google nije na listi domena za korice (ne sme da se čuva)", !bl.DOZVOLJENI_DOMENI_KORICA.some((d) => d.includes("google")), bl.DOZVOLJENI_DOMENI_KORICA.filter((d) => d.includes("google")));
-p = parser.izvuciIzHtmla(`<html><head><meta property="og:title" content="Knjiga"><meta property="og:image" content="https://d111.cloudfront.net/k.jpg"></head></html>`, U);
-provera("parser: og:image sa tuđeg CDN-a se ne vraća (baza bi je svakako sklonila)", p.korica === null, p.korica);
-p = parser.izvuciIzHtmla(`<html><head><meta property="og:title" content="Knjiga"><meta property="og:image" content="https://cdn.laguna.rs/k.jpg"></head></html>`, U);
-provera("parser: og:image sa poddomena izdavača se zadržava", p.korica === "https://cdn.laguna.rs/k.jpg", p.korica);
+for (const slika of ["https://d111.cloudfront.net/k.jpg", "https://cdn.laguna.rs/k.jpg", "https://covers.openlibrary.org/b/isbn/9788652126033-M.jpg"]) {
+  p = parser.izvuciIzHtmla(`<html><head><meta property="og:title" content="Knjiga"><meta property="og:image" content="${slika}"></head></html>`, U);
+  provera(`parser: og:image sa bilo kog javnog https domena je predlog korice (${new URL(slika).hostname}); domen nije ograničen listom`, p.korica === slika, p);
+}
+for (const [naziv, slika] of [["http", "http://cdn.laguna.rs/k.jpg"], ["IP adresa", "https://93.184.216.34/k.jpg"], ["localhost", "https://localhost/k.jpg"], ["korisnik u adresi", "https://a:b@cdn.laguna.rs/k.jpg"], ["port", "https://cdn.laguna.rs:8443/k.jpg"], ["data:", "data:image/png;base64,AAAA"]]) {
+  p = parser.izvuciIzHtmla(`<html><head><meta property="og:title" content="Knjiga"><meta property="og:image" content="${slika}"></head></html>`, U);
+  provera(`parser: predlog korice se ne daje za nebezbednu adresu (${naziv})`, p.korica === null, p.korica);
+}
+p = parser.izvuciIzHtmla(`<html><head>${jsonLd({ "@type": "Book", name: "Knjiga", image: [{ "@type": "ImageObject", url: "/slike/prva.jpg" }, "https://cdn.laguna.rs/druga.jpg"] })}<meta property="og:image" content="https://cdn.laguna.rs/og.jpg"></head></html>`, U);
+provera("parser: JSON-LD image (objekat ili niz, relativna adresa) ima prednost nad og:image", p.korica === "https://www.laguna.rs/slike/prva.jpg", p.korica);
+p = parser.izvuciIzHtmla(`<html><head>${jsonLd({ "@type": "Book", name: "Knjiga", image: "http://cdn.laguna.rs/nesigurna.jpg" })}<meta property="og:image" content="https://cdn.laguna.rs/og.jpg"></head></html>`, U);
+provera("parser: nebezbedna JSON-LD slika se preskače, uzima se og:image", p.korica === "https://cdn.laguna.rs/og.jpg", p.korica);
 n = gb.normalizujStavku({ volumeInfo: { title: "T", imageLinks: { thumbnail: "http://books.googleusercontent.com/x.jpg" } } });
 provera("Google: korica sa books.googleusercontent.com se PRIKAZUJE (prebacuje se na https), ali nije za čuvanje", n.korica === "https://books.googleusercontent.com/x.jpg" && bl.koricaJeDozvoljena(n.korica) === false, { korica: n.korica, zaCuvanje: bl.koricaJeDozvoljena(n.korica) });
 n = gb.normalizujStavku({ volumeInfo: { title: "T", imageLinks: { thumbnail: "https://www.google.com/x.jpg" } } });
@@ -473,18 +517,180 @@ for (const [unos, polje, razlog] of [
 
 const POTVRDJENO = { naslov: "Na Drini ćuprija", autor: "Ivo Andrić", izdavac: "Laguna", godina: 2019, isbn: "9788652126033" };
 const KLJUCEVI = ["autor", "godina", "isbn", "izdavac", "naslov"];
-let red = redZaUpis({ ...POTVRDJENO, opis: "Opis sa Google-a", korice_url: "https://books.google.com/x" }, "google_books", "https://books.google.com/books/content?id=a");
-provera("Google: red ima tačno naslov, autor, izdavač, godinu i ISBN; nema opisa ni korice (ni kad su stigli u podacima ili kao argument)",
+let red = redZaUpis({ ...POTVRDJENO, opis: "Opis sa sajta ili Google-a", korice_url: "https://books.google.com/x", korica: "https://cdn.laguna.rs/k.jpg", izvor: "link" });
+provera("red za upis ima tačno naslov, autor, izdavač, godinu i ISBN; nema opisa, korice ni izvora (ni kad su stigli u podacima)",
   JSON.stringify(Object.keys(red).sort()) === JSON.stringify(KLJUCEVI), red);
-red = redZaUpis({ ...POTVRDJENO, opis: "Opis sa sajta" }, "link", "https://cdn.laguna.rs/k.jpg");
-provera("link: nema opisa; korica se šalje (domen proverava api/ i baza) sa izvorom 'og_slika'",
-  !("opis" in red) && red.korice_url === "https://cdn.laguna.rs/k.jpg" && red.korice_izvor === "og_slika" && Object.keys(red).length === 7, red);
-red = redZaUpis(POTVRDJENO, "link", null);
-provera("link bez korice: nema ni korice ni izvora korice", !("korice_url" in red) && !("korice_izvor" in red), red);
-red = redZaUpis(POTVRDJENO, "clan", "https://cdn.laguna.rs/k.jpg");
-provera("ručni upis (izvor 'clan'): korica se nikad ne šalje", JSON.stringify(Object.keys(red).sort()) === JSON.stringify(KLJUCEVI), red);
-red = redZaUpis({ naslov: "Samo naslov" }, "google_books", "https://books.google.com/x");
+red = redZaUpis({ naslov: "Samo naslov" });
 provera("nedostajuća polja postaju null, ne undefined", red.autor === null && red.izdavac === null && red.godina === null && red.isbn === null, red);
+provera("nedostajuća polja postaju null, ne undefined", red.autor === null && red.izdavac === null && red.godina === null && red.isbn === null, red);
+
+// ───────────────────────── 7d. fotografije korica ─────────────────────────
+faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-slika.js)");
+{
+  const kf = await import("../src/lib/korica-slika.js");
+  const { readFileSync } = await import("node:fs");
+  const izvor = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  const greskaKoda = (fn) => {
+    try {
+      fn();
+      return null;
+    } catch (e) {
+      return e.kod ?? e.message;
+    }
+  };
+
+  // ── smanjivanje: najviše 600 px širine ──
+  for (const [s, v, os, ov] of [[4000, 3000, 600, 450], [3024, 4032, 600, 800], [1200, 1600, 600, 800], [600, 900, 600, 900], [300, 400, 300, 400], [800, 4000, 180, 900], [1, 1, 1, 1], [10000, 1, 600, 1]]) {
+    const d = kf.dimenzijePosleSmanjenja(s, v);
+    provera(`smanjivanje ${s}x${v} → ${os}x${ov}`, d.sirina === os && d.visina === ov, d);
+  }
+  {
+    let lose = null;
+    for (let i = 0; i < 2000 && !lose; i++) {
+      const s = 1 + Math.floor(Math.random() * 12000);
+      const v = 1 + Math.floor(Math.random() * 12000);
+      const d = kf.dimenzijePosleSmanjenja(s, v);
+      if (d.sirina > 600 || d.visina > 900 || d.sirina < 1 || d.visina < 1 || d.sirina > s || d.visina > v) lose = { s, v, d };
+    }
+    provera("smanjivanje: nikad šire od 600 px, više od 900 px, ni veće od originala (2000 slučajnih veličina)", lose === null, lose);
+  }
+  provera("smanjivanje: razmera ostaje (4:3 → 600x450, kvadrat → 600x600)", kf.dimenzijePosleSmanjenja(2400, 1800).visina === 450 && kf.dimenzijePosleSmanjenja(1000, 1000).visina === 600);
+  provera("smanjivanje: neispravne dimenzije su greška slika_neispravna", greskaKoda(() => kf.dimenzijePosleSmanjenja(0, 10)) === "slika_neispravna" && greskaKoda(() => kf.dimenzijePosleSmanjenja(NaN, 10)) === "slika_neispravna" && greskaKoda(() => kf.dimenzijePosleSmanjenja(10, -1)) === "slika_neispravna");
+
+  // ── imena fajlova: ista pravila kao politika u migraciji 0013 ──
+  const KID = "123e4567-e89b-42d3-a456-426614174000";
+  provera("ime fajla: <id knjige>/<vreme>.<ekstenzija> po tipu (webp, jpg, png)",
+    kf.putanjaKorice(KID, 1700000000000, "image/webp") === `${KID}/1700000000000.webp` && kf.putanjaKorice(KID, 1, "image/jpeg").endsWith(".jpg") && kf.putanjaKorice(KID, 1, "image/png").endsWith(".png"));
+  provera("ime fajla: tip koji nije jpeg/png/webp (svg, html, gif) je greška slika_tip", ["image/svg+xml", "text/html", "image/gif", ""].every((t) => greskaKoda(() => kf.putanjaKorice(KID, 1, t)) === "slika_tip"));
+  provera("ime fajla: id knjige koji nije uuid je greška knjiga_neispravna", ["1", "../x", `${KID}/x`, ""].every((id) => greskaKoda(() => kf.putanjaKorice(id, 1, "image/webp")) === "knjiga_neispravna"));
+  {
+    const sql = izvor("supabase/migrations/0013_storage_korice.sql").replace(/^--.*$/gm, "");
+    const uzorak = /name ~ '([^']+)'/.exec(sql)?.[1];
+    const re = uzorak && new RegExp(uzorak);
+    provera("0013 sadrži obrazac imena fajla", Boolean(re), uzorak);
+    const dobra = ["image/webp", "image/jpeg", "image/png"].map((t) => kf.putanjaKorice(KID, Date.now(), t));
+    provera("sva imena iz putanjaKorice prolaze obrazac iz migracije 0013 (JS i SQL su isto pravilo)", Boolean(re) && dobra.every((p) => re.test(p)), dobra);
+    const losa = ["slika.webp", `${KID}/a/b.webp`, `${KID}/../x.webp`, `${KID}/1.svg`, `${KID}/1.html`, `${KID}/.webp`, `${KID.toUpperCase()}/1.webp`, `${KID}/1 2.webp`];
+    provera("loša imena ne prolaze obrazac iz migracije 0013", Boolean(re) && losa.every((p) => !re.test(p)), losa.filter((p) => re?.test(p)));
+    provera("migracija 0013: bucket je javan, 1 MB, samo jpeg, png i webp; upis i brisanje samo za bibliotekare, izmena nikome",
+      /'korice', 'korice', true, 1048576, array\['image\/jpeg', 'image\/png', 'image\/webp'\]/.test(sql) &&
+        (sql.match(/privatno\.je_bibliotekar\(\)/g) ?? []).length === 2 && !/for update/i.test(sql) && !/for all/i.test(sql) && /for select to anon, authenticated/.test(sql));
+  }
+
+  // ── javna adresa → putanja (brisanje stare korice) ──
+  const JAVNA = `https://jrmzgulxvxtpghwbhmrc.supabase.co/storage/v1/object/public/korice/${KID}/1700000000000.webp`;
+  provera("javna adresa → putanja u bucket-u", kf.putanjaIzAdrese(JAVNA) === `${KID}/1700000000000.webp` && kf.putanjaIzAdrese(`${JAVNA}?t=1`) === `${KID}/1700000000000.webp`);
+  for (const losa of [
+    "https://covers.openlibrary.org/b/isbn/9788652126033-M.jpg",
+    "https://cdn.laguna.rs/k.jpg",
+    JAVNA.replace("https:", "http:"),
+    JAVNA.replace("/public/korice/", "/public/drugi/"),
+    JAVNA.replace("/object/public/", "/object/sign/"),
+    JAVNA.replace(KID, "../../x"),
+    JAVNA.replace(KID, "nije-uuid"),
+    JAVNA.replace(KID + "/", ""),
+    JAVNA.replace(".webp", ".svg"),
+    JAVNA.replace(KID, `${KID}%2F..%2Fx`),
+    "", null, undefined, "nije adresa",
+  ]) {
+    provera(`putanjaIzAdrese vraća null (nikad se ne briše tuđe): ${String(losa).slice(0, 70)}`, kf.putanjaIzAdrese(losa) === null, kf.putanjaIzAdrese(losa));
+  }
+
+  {
+    const PREFIKS = "https://jrmzgulxvxtpghwbhmrc.supabase.co/storage/v1/object/public/korice/";
+    const ime = `${KID}/1700000000000.webp`;
+    provera("putanjaIzAdrese sa prefiksom: adresa sa našeg bucket-a (i http prefiks lažnog Supabase-a) vraća putanju", kf.putanjaIzAdrese(PREFIKS + ime, PREFIKS) === ime && kf.putanjaIzAdrese(`http://127.0.0.1:1/x/korice/${ime}?v=1`, "http://127.0.0.1:1/x/korice/") === ime);
+    provera("putanjaIzAdrese sa prefiksom: tuđ server ili drugi bucket → null", kf.putanjaIzAdrese(PREFIKS.replace("jrmzgulxvxtpghwbhmrc", "xxxxxxxxxxxxxxxxxxxx") + ime, PREFIKS) === null && kf.putanjaIzAdrese(`https://evil.example/storage/v1/object/public/korice/${ime}`, PREFIKS) === null && kf.putanjaIzAdrese(PREFIKS.replace("korice/", "drugi/") + ime, PREFIKS) === null);
+    provera("putanjaIzAdrese sa prefiksom: i dalje samo ispravan oblik imena", kf.putanjaIzAdrese(`${PREFIKS}${KID}/../x.webp`, PREFIKS) === null && kf.putanjaIzAdrese(`${PREFIKS}${KID}/a.svg`, PREFIKS) === null && kf.putanjaIzAdrese(`${PREFIKS}nije-uuid/a.webp`, PREFIKS) === null);
+  }
+
+  // ── lanac prikaza ──
+  const ISBN = "9788652126033";
+  const OL = `https://covers.openlibrary.org/b/isbn/${ISBN}-M.jpg?default=false`;
+  provera("lanac: naša fotografija pa Open Library", JSON.stringify(kf.adreseKorica({ isbn: ISBN, korice_url: JAVNA, korice_izvor: "fotografija" })) === JSON.stringify([JAVNA, OL]), kf.adreseKorica({ isbn: ISBN, korice_url: JAVNA, korice_izvor: "fotografija" }));
+  provera("lanac: bez fotografije samo Open Library po ISBN-u (za pločicu se pada kad i on ne postoji)", JSON.stringify(kf.adreseKorica({ isbn: "978-86-521-2603-3" })) === JSON.stringify([OL]));
+  provera("lanac: ISBN-10 se pretvara u ISBN-13 za Open Library", kf.adreseKorica({ isbn: "0-306-40615-2" })[0] === "https://covers.openlibrary.org/b/isbn/9780306406157-M.jpg?default=false");
+  provera("lanac: bez fotografije i bez ISBN-a nema nijedne adrese (prikazuje se pločica)", kf.adreseKorica({ naslov: "Bez ISBN-a" }).length === 0 && kf.adreseKorica({ isbn: "123" }).length === 0);
+  for (const izvorKorice of ["og_slika", "google_books", "open_library", "fond", null]) {
+    const a = kf.adreseKorica({ isbn: ISBN, korice_url: "https://cdn.laguna.rs/k.jpg", korice_izvor: izvorKorice });
+    provera(`lanac: stara adresa sa izvorom ${izvorKorice} se ne prikazuje (korica sa tuđeg sajta se ne uzima)`, JSON.stringify(a) === JSON.stringify([OL]), a);
+  }
+  provera("lanac: Google rezultat (pretraga uživo) prikazuje svoju sličicu pa Open Library", JSON.stringify(kf.adreseKorica({ isbn: ISBN, izvor: "google_books", korica: "https://books.google.com/x.jpg" })) === JSON.stringify(["https://books.google.com/x.jpg", OL]));
+  provera("lanac: rezultat sa linka ne nosi sliku sa sajta (čak ni ako bi stigla)", JSON.stringify(kf.adreseKorica({ isbn: ISBN, izvor: "link", korica: "https://cdn.laguna.rs/k.jpg" })) === JSON.stringify([OL]));
+  provera("naša kopija preuzeta sa linka (izvor 'preuzeto') prikazuje se kao naša slika, pre Open Library", JSON.stringify(kf.adreseKorica({ isbn: ISBN, korice_url: JAVNA, korice_izvor: "preuzeto" })) === JSON.stringify([JAVNA, OL]));
+  provera("fotografija samo uz izvor 'fotografija' i https adresu", kf.nasaFotografija({ korice_url: JAVNA, korice_izvor: "fotografija" }) === JAVNA && kf.nasaFotografija({ korice_url: JAVNA.replace("https:", "http:"), korice_izvor: "fotografija" }) === null && kf.nasaFotografija({ korice_url: null, korice_izvor: "fotografija" }) === null && kf.nasaFotografija(null) === null);
+
+  // ── brzi tok: „Sledeća knjiga” ──
+  {
+    const stavke = [
+      { id: "1", forma: {}, sacuvano: { id: "k1", uFondu: true, korica: "https://x/1" } }, // gotova (sačuvana i sa koricom)
+      { id: "2", forma: {}, sacuvano: { id: "k2", uFondu: true, korica: null } }, // čeka koricu
+      { id: "3", status: "nije_uspelo" }, // bez forme: ne čeka ništa
+      { id: "4", forma: {} }, // čeka pregled
+      { id: "5", forma: {}, sacuvano: { id: "k5", uFondu: false, korica: null } }, // za nabavku: korica se ne nudi
+      { id: "6", forma: {} },
+    ];
+    provera("sledeća knjiga posle 1 je 2 (sačuvana u fond, čeka koricu)", unos.sledecaZaObradu(stavke, "1")?.id === "2");
+    provera("sledeća posle 2 preskače karticu bez podataka (3) i staje na 4 (čeka pregled)", unos.sledecaZaObradu(stavke, "2")?.id === "4");
+    provera("sledeća posle 4 preskače „za nabavku” bez korice (5) i staje na 6", unos.sledecaZaObradu(stavke, "4")?.id === "6");
+    provera("posle poslednje vraća se na prvu preskočenu kojoj treba pažnja (6 → 2)", unos.sledecaZaObradu(stavke, "6")?.id === "2");
+    provera("kad ništa drugo ne čeka, nema sledeće", unos.sledecaZaObradu([{ id: "1", forma: {}, sacuvano: { uFondu: true, korica: "x" } }, { id: "2", status: "nije_uspelo" }], "1") === undefined && unos.sledecaZaObradu([{ id: "1", forma: {} }], "1") === undefined);
+    provera("nepoznat id nema sledeću", unos.sledecaZaObradu(stavke, "nema") === undefined);
+    provera("kartica koja je sačuvana u fond i dobila koricu više ne traži pažnju", unos.trebaPaznju(stavke[0]) === false && unos.trebaPaznju(stavke[1]) === true && unos.trebaPaznju(stavke[4]) === false);
+  }
+  // ── greške pri slanju u Storage ──
+  for (const [greska, kod] of [
+    [{ statusCode: "413", message: "The object exceeded the maximum allowed size" }, "slika_velika"],
+    [{ message: "Payload too large" }, "slika_velika"],
+    [{ statusCode: "415", message: "mime type text/html is not supported" }, "slika_tip"],
+    [{ statusCode: "400", error: "invalid_mime_type", message: "invalid_mime_type" }, "slika_tip"],
+    [{ statusCode: "403", message: "new row violates row-level security policy" }, "nema_dozvole"],
+    [{ status: 401, message: "Unauthorized" }, "nema_dozvole"],
+    [{ message: "Failed to fetch" }, "korica_upload"],
+    [{ statusCode: "500", message: "x" }, "korica_upload"],
+    [null, "korica_upload"],
+  ]) {
+    provera(`kodGreskeSlanja: ${JSON.stringify(greska)} → ${kod}`, kf.kodGreskeSlanja(greska) === kod, kf.kodGreskeSlanja(greska));
+  }
+  provera("„Bez korice” je odluka: kartica sačuvana u fond sa bezKorice više ne traži pažnju, a bez odluke traži",
+    unos.trebaPaznju({ forma: {}, sacuvano: { uFondu: true, korica: null, bezKorice: true } }) === false && unos.trebaPaznju({ forma: {}, sacuvano: { uFondu: true, korica: null, bezKorice: false } }) === true);
+  provera("„Otvori” vodi na stranicu knjige kad postoji id, a bez id-a na pretragu", unos.adresaZaOtvaranje({ id: KID, naslov: "X" }) === `/knjiga/${KID}` && unos.adresaZaOtvaranje({ naslov: "X" }) === "/pretraga?upit=X");
+
+  // ── izvorni kod: sve što je tražilo uputstvo ──
+  {
+    const korica = izvor("src/components/Korica.jsx");
+    provera("Korica.jsx: loading=lazy, opisni alt i prelazak na sledeću adresu/pločicu kad se slika ne učita",
+      korica.includes('loading="lazy"') && /alt=\{opisKorice\(/.test(korica) && korica.includes("onError") && korica.includes("<Plocica"));
+    const slikaj = izvor("src/components/SlikajKoricu.jsx");
+    provera('SlikajKoricu.jsx: kamera (capture="environment") samo kad se traži, inače obična selekcija fajla; smanjivanje pre slanja običnim klijentom',
+      slikaj.includes('capture={kamera ? "environment" : undefined}') && slikaj.includes("smanjiSliku(") && slikaj.includes("postaviKoricu(") && !/service_role|servisni/i.test(slikaj.replace(/\/\/.*$/gm, "")));
+    const izbor = izvor("src/components/KoricaIzbor.jsx");
+    provera("KoricaIzbor.jsx: „Koristi ovu koricu” zove koricaIzLinka, „Bez korice” samo kad roditelj da onBez, uklanjanje traži potvrdu",
+      izbor.includes("koricaIzLinka(knjigaId, predlog)") && izbor.includes("onBez && !korica") && izbor.includes("setPotvrda(true)") && izbor.split("onClick={ukloni}").length === 2 && /potvrda && \(\s*<div role="group"[\s\S]*onClick=\{ukloni\}/.test(izbor) && izbor.includes("disabled={onemoguceno}"));
+    provera("KoricaIzbor.jsx: dva izbora slike: kamera i obična selekcija; predlog se prikazuje lenjo, sa opisnim alt tekstom i rezervom", /kamera\s*\n/.test(izbor) && izbor.includes("kamera={false}") && izbor.includes('loading="lazy"') && izbor.includes("T.predlogAlt") && izbor.includes("onError"));
+    const T14 = (await import("../src/lib/tekst.js")).tekst.korice;
+    provera("natpisi dugmadi su tačno kako je traženo", T14.koristi === "Koristi ovu koricu" && T14.izaberi === "Izaberi sliku sa računara ili telefona" && T14.bez === "Bez korice" && T14.ukloni === "Ukloni koricu" && T14.zameni === "Zameni koricu" && T14.slikaj === "Slikaj koricu", T14);
+    provera("poruke grešaka: prevelika slika, pogrešan tip i nema dozvole postoje", ["slika_velika", "slika_tip", "nema_dozvole", "slika_neispravna", "korica_upload", "korica_upis"].every((k) => typeof T14.greske[k] === "string" && T14.greske[k].length > 10), Object.keys(T14.greske));
+    const knj = izvor("src/lib/knjige.js");
+    const pocetakUkloni = knj.indexOf("export async function ukloniKoricu");
+    const ukloniKod = knj.slice(pocetakUkloni);
+    provera("ukloniKoricu: prvo prazni korice_url, korice_izvor i korice_poreklo u knjizi, pa briše fajl (običnim klijentom)",
+      /korice_url: null, korice_izvor: null, korice_poreklo: null/.test(ukloniKod) && ukloniKod.indexOf(".update(") < ukloniKod.indexOf(".remove([putanja])") && ukloniKod.includes("startsWith(`${knjigaId}/`)"));
+    provera("postaviKoricu: izvor 'fotografija', korice_poreklo prazno, greške se prevode (nema dozvole, tip, veličina)", /korice_izvor: "fotografija", korice_poreklo: null/.test(knj) && knj.includes("kodGreskeSlanja(greskaSlanja)") && knj.includes('"nema_dozvole"'));
+    const stranica = izvor("src/pages/Knjiga.jsx");
+    provera("stranica knjige: Zameni/Ukloni koricu samo za bibliotekare", /jeBibliotekar\(clan\?\.uloga\) && \(\s*<section[\s\S]*<KoricaIzbor[\s\S]*mozeUklanjanje/.test(stranica));
+    const kartica = izvor("src/components/KarticaUnosa.jsx");
+    provera("kartica: predlog korice iz rezultata ide u KoricaIzbor (koricaIzLinka je povezana sa ekranom za unos)", kartica.includes("predlog={rezultat?.korica ?? null}") && kartica.includes("<KoricaIzbor"));
+    const kfIzvor = izvor("src/lib/korica-slika.js");
+    provera("korica-slika.js: 600 px, webp pa jpeg", kfIzvor.includes("NAJVISE_SIRINA = 600") && kfIzvor.includes('"image/webp"') && kfIzvor.includes('"image/jpeg"'));
+    const kn = izvor("src/lib/knjige.js");
+    provera("knjige.js: fotografija postavlja korice_url i korice_izvor 'fotografija'", /korice_izvor: "fotografija"/.test(kn) && kn.includes("korice_url: adresa"));
+    const parserKod = izvor("api/_lib/parser-knjige.js") + izvor("api/iz-linka.js");
+    provera("api: opis sa tuđeg sajta se ne čita (ni og:description ni JSON-LD description)", !/og:description|\.description\b|\bopis\b/.test(parserKod.replace(/\/\/.*$/gm, "")), parserKod.match(/og:description|\.description\b|\bopis\b/g));
+    provera("iz-linka.js i parser ne preuzimaju sliku (samo predlažu adresu): nema preuzimanja slike ni upisa u Storage",
+      !/storage|sirovo: true|tipSlike/.test((izvor("api/_lib/parser-knjige.js") + izvor("api/iz-linka.js")).replace(/\/\/.*$/gm, "")));
+  }
+}
 
 // ───────────────────────── 8. handleri ─────────────────────────
 faza("8. Handleri protiv lažnog Supabase-a");
@@ -790,17 +996,17 @@ faza("13. Unos bibliotekara linkovima: adrese, sekvencijalna obrada, kartica");
   const FORMA = { naslov: "Na Drini ćuprija", autor: "Ivo Andrić", izdavac: "Laguna", godina: "2019", isbn: "0-306-40615-2", zanr: "roman, istorijski roman", opis: "Opis koji je napisao bibliotekar.", stanje: "fond", primerci: "3", signatura: " 821.163.41-31 " };
   const BIBLIOTEKAR_ID = "11111111-1111-4111-8111-111111111111";
   let u = unos.urediUnos(FORMA, { uneoId: BIBLIOTEKAR_ID, korica: "https://cdn.laguna.rs/k.jpg" });
+  provera("korica se ne prima kao opcija: nema ni korice ni izvora korice u redu (fotografija se postavlja posle upisa)",
+    !("korice_url" in u.red) && !("korice_izvor" in u.red), u.red);
   provera("„U fondu”: red ima u_fondu, broj primeraka = slobodnih, signaturu, izvor 'fond', ISBN-13, žanrove, opis i uneo_id",
     u.ok && u.red.u_fondu === true && u.red.broj_primeraka === 3 && u.red.broj_slobodnih === 3 && u.red.signatura === "821.163.41-31" && u.red.izvor === "fond" &&
     u.red.isbn === "9780306406157" && u.red.zanrovi.join() === "roman,istorijski roman" && u.red.opis === "Opis koji je napisao bibliotekar." && u.red.uneo_id === BIBLIOTEKAR_ID, u);
-  provera("korica sa linka ide u red sa izvorom 'og_slika'", u.red.korice_url === "https://cdn.laguna.rs/k.jpg" && u.red.korice_izvor === "og_slika", u.red);
   provera("red za „U fondu” ima tačno očekivana polja (nema ničeg „sa strane”)",
-    JSON.stringify(Object.keys(u.red).sort()) === JSON.stringify(["autor", "broj_primeraka", "broj_slobodnih", "godina", "isbn", "izdavac", "izvor", "korice_izvor", "korice_url", "naslov", "opis", "signatura", "u_fondu", "uneo_id", "zanrovi"]), Object.keys(u.red).sort());
+    JSON.stringify(Object.keys(u.red).sort()) === JSON.stringify(["autor", "broj_primeraka", "broj_slobodnih", "godina", "isbn", "izdavac", "izvor", "naslov", "opis", "signatura", "u_fondu", "uneo_id", "zanrovi"]), Object.keys(u.red).sort());
 
   u = unos.urediUnos({ ...FORMA, stanje: "nabavka", primerci: "7", signatura: "X-1" }, { uneoId: BIBLIOTEKAR_ID });
   provera("„Za nabavku”: u_fondu=false, 0 primeraka i 0 slobodnih, bez signature, izvor 'link' (i kad su primerci i signatura bili upisani)",
     u.ok && u.red.u_fondu === false && u.red.broj_primeraka === 0 && u.red.broj_slobodnih === 0 && u.red.signatura === null && u.red.izvor === "link", u.red);
-  provera("bez korice nema ni korice ni izvora korice", !("korice_url" in u.red) && !("korice_izvor" in u.red), u.red);
 
   for (const [naziv, izmena, polje, razlog] of [
     ["nema broja primeraka", { primerci: "" }, "primerci", "prazno"],
@@ -830,13 +1036,244 @@ faza("13. Unos bibliotekara linkovima: adrese, sekvencijalna obrada, kartica");
   const sazrelo = { naslov: "Naslov", autori: ["Autor"], izdavac: "Izdavač", godina: 2019, isbn: "9788652126033", opis: "OPIS SA TUĐEG SAJTA", korica: "https://cdn.laguna.rs/k.jpg" };
   const pocetna = unos.pocetnaForma(sazrelo);
   provera("kartica se popunjava iz rezultata, ali je OPIS prazan (ne povlači se sa sajta)", pocetna.opis === "" && pocetna.naslov === "Naslov" && pocetna.autor === "Autor" && pocetna.godina === "2019" && pocetna.isbn === "9788652126033", pocetna);
-  u = unos.urediUnos(pocetna, { uneoId: BIBLIOTEKAR_ID, korica: sazrelo.korica });
-  provera("a ni u redu za upis nema opisa sa sajta (opis je null dok ga bibliotekar ne napiše)", u.ok && u.red.opis === null && !JSON.stringify(u.red).includes("TUĐEG"), u.red);
+  u = unos.urediUnos(pocetna, { uneoId: BIBLIOTEKAR_ID });
+  provera("a ni u redu za upis nema opisa ni korice sa sajta (opis je null dok ga bibliotekar ne napiše)", u.ok && u.red.opis === null && !JSON.stringify(u.red).includes("TUĐEG") && !JSON.stringify(u.red).includes("k.jpg"), u.red);
   provera("podrazumevano stanje kartice je „U fondu” sa 1 primerkom", pocetna.stanje === "fond" && pocetna.primerci === "1");
   for (const [n, ocekivano] of [[1, "1 primerak"], [2, "2 primerka"], [4, "4 primerka"], [5, "5 primeraka"], [11, "11 primeraka"], [12, "12 primeraka"], [14, "14 primeraka"], [21, "21 primerak"], [22, "22 primerka"], [25, "25 primeraka"], [101, "101 primerak"], [111, "111 primeraka"], [112, "112 primeraka"], [999, "999 primeraka"]]) {
     provera(`množina: ${n} → ${ocekivano}`, unos.primeraka(n) === ocekivano, unos.primeraka(n));
   }
   provera("adresa za „Otvori” vodi na pretragu po ISBN-u, a bez ISBN-a po naslovu", unos.adresaZaOtvaranje({ isbn: "9788652126033", naslov: "X" }) === "/pretraga?upit=9788652126033" && unos.adresaZaOtvaranje({ naslov: "Na Drini ćuprija" }) === "/pretraga?upit=Na%20Drini%20%C4%87uprija");
+}
+
+faza("14. Korica sa linka (api/korica-iz-linka.js): samo bibliotekar, slika se preuzima jednom i čuva u Storage");
+{
+  const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(300, 7)]);
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(300, 8)]);
+  const WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.from([0x20, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.alloc(300, 9)]);
+
+  // tipSlike: po sadržaju, ne po nastavku ni zaglavlju
+  provera("tipSlike prepoznaje jpeg, png i webp po sadržaju", tipSlike(JPEG)?.mime === "image/jpeg" && tipSlike(PNG)?.mime === "image/png" && tipSlike(WEBP)?.mime === "image/webp" && tipSlike(JPEG)?.ekstenzija === "jpg");
+  for (const [naziv, bajtovi] of [
+    ["HTML", Buffer.from("<!doctype html><html><body>slika</body></html>")],
+    ["SVG", Buffer.from("<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'></svg>")],
+    ["GIF", Buffer.from("GIF89a\x01\x00\x01\x00\x00\x00\x00;", "latin1")],
+    ["BMP", Buffer.concat([Buffer.from("BM"), Buffer.alloc(40)])],
+    ["RIFF koji nije WEBP (WAVE)", Buffer.concat([Buffer.from("RIFF"), Buffer.from([0x20, 0, 0, 0]), Buffer.from("WAVEfmt "), Buffer.alloc(40)])],
+    ["PNG sa pokvarenim zaglavljem", Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0b]), Buffer.alloc(40)])],
+    ["prekratko", Buffer.from([0xff, 0xd8, 0xff])],
+    ["prazno", Buffer.alloc(0)],
+  ]) {
+    provera(`tipSlike odbija: ${naziv}`, tipSlike(bajtovi) === null);
+  }
+  provera("tipSlike odbija null i undefined", tipSlike(null) === null && tipSlike(undefined) === null);
+
+  // preuzmi: bez liste domena i sa sirovim bajtovima, ali sve ostale zaštite važe
+  {
+    const mreza = [];
+    bf.unutrasnje.jedanZahtev = async (u) => {
+      mreza.push(u.href);
+      if (u.href === "https://cdn.nigde-na-listi.example/k.jpg") return { status: 200, tip: "image/jpeg", telo: JPEG };
+      if (u.href === "https://cdn.nigde-na-listi.example/preko") return { status: 302, preusmerenje: "https://drugi.example/k.png" };
+      if (u.href === "https://drugi.example/k.png") return { status: 200, tip: "image/png", telo: PNG };
+      if (u.href === "https://cdn.nigde-na-listi.example/u-privatno") return { status: 302, preusmerenje: "https://10.0.0.5/k.jpg" };
+      if (u.href === "https://cdn.nigde-na-listi.example/na-http") return { status: 302, preusmerenje: "http://drugi.example/k.jpg" };
+      return { status: 404 };
+    };
+    let r = await bf.preuzmi("https://cdn.nigde-na-listi.example/k.jpg", { lista: null, sirovo: true, tipovi: ["image/"], accept: "image/*" });
+    provera("preuzmi(lista: null, sirovo: true): domen van bele liste prolazi, telo su bajtovi (Buffer)", Buffer.isBuffer(r.telo) && r.telo.equals(JPEG), r.telo?.length);
+    r = await bf.preuzmi("https://cdn.nigde-na-listi.example/preko", { lista: null, sirovo: true, tipovi: ["image/"] });
+    provera("preuzmi(lista: null): preusmeravanje na drugi javni domen se prati i proverava", r.telo.equals(PNG) && r.url.hostname === "drugi.example", r.url?.href);
+    let e = await baca(() => bf.preuzmi("https://cdn.nigde-na-listi.example/k.jpg", { sirovo: true }));
+    provera("bez `lista: null` isti domen se i dalje odbija (podrazumevana bela lista važi za stranice)", e?.kod === "domen_nije_dozvoljen", e?.kod);
+    e = await baca(() => bf.preuzmi("https://cdn.nigde-na-listi.example/u-privatno", { lista: null, sirovo: true }));
+    provera("preuzmi(lista: null): preusmeravanje na privatnu adresu se odbija", e?.kod === "preusmerenje_van_liste", e?.kod);
+    e = await baca(() => bf.preuzmi("https://cdn.nigde-na-listi.example/na-http", { lista: null, sirovo: true }));
+    provera("preuzmi(lista: null): preusmeravanje na http se odbija", e?.kod === "preusmerenje_van_liste", e?.kod);
+    for (const losa of ["https://10.0.0.5/k.jpg", "https://127.0.0.1/k.jpg", "https://localhost/k.jpg", "https://[::1]/k.jpg", "http://cdn.example/k.jpg", "https://a:b@cdn.example/k.jpg", "https://cdn.example:8443/k.jpg", "https://cdn.example./k.jpg"]) {
+      const n = mreza.length;
+      e = await baca(() => bf.preuzmi(losa, { lista: null, sirovo: true }));
+      provera(`preuzmi(lista: null) odbija pre mreže: ${losa}`, e instanceof ApiGreska && mreza.length === n, e?.kod ?? "prošlo");
+    }
+    bf.unutrasnje.jedanZahtev = original;
+  }
+
+  // ── handler ──
+  const BIBL = CLANOVI["tok-bib"];
+  const KNJIGA = randomUUID();
+  const SLIKA = "https://cdn.nigde-na-listi.example/slike/k.jpg";
+  const BAZA_JAVNO = `http://127.0.0.1:${PORT}/storage/v1/object/public/korice/`;
+  const mrezniPozivi = [];
+  let stranicaSlike = () => ({ status: 200, tip: "image/jpeg", telo: JPEG });
+  bf.unutrasnje.jedanZahtev = async (u) => {
+    mrezniPozivi.push(u.href);
+    const o = stranicaSlike(u);
+    if (o instanceof Error) throw o;
+    return o;
+  };
+  const resetuj = () => {
+    stanje.brojac.clear();
+    stanje.pozivi.length = 0;
+    stanje.patchevi.length = 0;
+    stanje.otpremljeno.length = 0;
+    stanje.obrisano.length = 0;
+    stanje.patchGreska = false;
+    stanje.storageGreska = false;
+    stanje.ulogaGreska = false;
+    mrezniPozivi.length = 0;
+    stanje.knjige.set(KNJIGA, { id: KNJIGA, korice_url: null });
+    stranicaSlike = () => ({ status: 200, tip: "image/jpeg", telo: JPEG });
+  };
+  const bezEfekata = (naziv) => provera(naziv, mrezniPozivi.length === 0 && stanje.otpremljeno.length === 0 && stanje.patchevi.length === 0 && stanje.obrisano.length === 0, { mreza: mrezniPozivi.length, upis: stanje.otpremljeno.length, patch: stanje.patchevi.length });
+  const nistaSacuvano = (naziv) => provera(naziv, stanje.otpremljeno.length === 0 && stanje.patchevi.length === 0 && stanje.obrisano.length === 0, { upis: stanje.otpremljeno.length, patch: stanje.patchevi.length, obrisano: stanje.obrisano.length });
+  const TELO = { url: SLIKA, knjigaId: KNJIGA };
+  resetuj();
+
+  let o = await z(koricaHandler, { metod: "GET", token: "tok-bib" });
+  provera("korica-iz-linka: GET se odbija (405)", o.status === 405, o.status);
+  o = await z(koricaHandler, { telo: TELO });
+  provera("korica-iz-linka: bez tokena 401, ništa se ne preuzima", o.status === 401 && mrezniPozivi.length === 0, o.status);
+
+  // čitalac: 403, a pokušaj da se predstavi kao bibliotekar ne pomaže
+  o = await z(koricaHandler, { token: "tok-a", telo: TELO });
+  provera("ČITALAC dobija 403 nije_bibliotekar", o.status === 403 && o.telo.greska.kod === "nije_bibliotekar", o.telo);
+  bezEfekata("čitalac: nema preuzimanja, upisa u Storage ni izmene knjige");
+  provera("čitalac ne troši nijednu kantu ograničenja", stanje.pozivi.length === 0, stanje.pozivi);
+  o = await z(koricaHandler, { token: "tok-a", telo: { ...TELO, uloga: "bibliotekar", role: "administrator" }, zaglavlja: { "x-uloga": "bibliotekar", "x-role": "administrator" } });
+  provera("čitalac koji u telu i zaglavljima tvrdi da je bibliotekar i dalje dobija 403", o.status === 403, o.status);
+  bezEfekata("i tada nema preuzimanja ni upisa");
+  o = await z(koricaHandler, { token: "tok-neaktivan", telo: TELO });
+  provera("neaktivan član: 403 clanstvo_nije_aktivno", o.status === 403 && o.telo.greska.kod === "clanstvo_nije_aktivno", o.telo);
+
+  // neispravan zahtev (bibliotekar): odbija se pre ograničenja i pre mreže
+  for (const [naziv, telo, status, kod] of [
+    ["bez adrese", { knjigaId: KNJIGA }, 400, "neispravan_link"],
+    ["bez knjige", { url: SLIKA }, 400, "neispravan_zahtev"],
+    ["knjiga nije uuid", { url: SLIKA, knjigaId: "../../x" }, 400, "neispravan_zahtev"],
+    ["adresa duža od 500 znakova", { url: `https://cdn.example/${"a".repeat(500)}.jpg`, knjigaId: KNJIGA }, 400, "neispravan_link"],
+    ["http adresa", { url: "http://cdn.example/k.jpg", knjigaId: KNJIGA }, 422, "nije_https"],
+    ["IP adresa", { url: "https://93.184.216.34/k.jpg", knjigaId: KNJIGA }, 422, "domen_nije_dozvoljen"],
+    ["localhost", { url: "https://localhost/k.jpg", knjigaId: KNJIGA }, 422, "domen_nije_dozvoljen"],
+    ["adresa sa korisnikom", { url: "https://a:b@cdn.example/k.jpg", knjigaId: KNJIGA }, 422, "neispravan_link"],
+    ["nestandardni port", { url: "https://cdn.example:8443/k.jpg", knjigaId: KNJIGA }, 422, "neispravan_link"],
+  ]) {
+    o = await z(koricaHandler, { token: "tok-bib", telo });
+    provera(`bibliotekar, neispravan zahtev (${naziv}): ${status} ${kod}`, o.status === status && o.telo.greska.kod === kod, o.telo);
+  }
+  bezEfekata("neispravni zahtevi: nema preuzimanja ni upisa");
+  provera("neispravni zahtevi ne troše ograničenje", stanje.pozivi.length === 0, stanje.pozivi);
+
+  // knjiga ne postoji: ništa se ne preuzima
+  o = await z(koricaHandler, { token: "tok-bib", telo: { url: SLIKA, knjigaId: randomUUID() } });
+  provera("nepostojeća knjiga: 404 knjiga_ne_postoji, bez preuzimanja", o.status === 404 && o.telo.greska.kod === "knjiga_ne_postoji" && mrezniPozivi.length === 0, o.telo);
+
+  // sadržaj nije slika, ma šta zaglavlje tvrdilo
+  for (const [naziv, bajtovi] of [["HTML", Buffer.from("<html><body>nije slika</body></html>")], ["SVG", Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'></svg>")], ["GIF", Buffer.from("GIF89a\x01\x00\x01\x00\x00\x00\x00;", "latin1")], ["prekratko", Buffer.from("abc")]]) {
+    resetuj();
+    stranicaSlike = () => ({ status: 200, tip: "image/jpeg", telo: bajtovi });
+    o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+    provera(`sadržaj ${naziv} pod image/jpeg zaglavljem se odbija: 422 slika_nije_podrzana`, o.status === 422 && o.telo.greska.kod === "slika_nije_podrzana", o.telo);
+    provera(`${naziv}: ništa se ne čuva (ni Storage ni knjiga)`, stanje.otpremljeno.length === 0 && stanje.patchevi.length === 0, { upis: stanje.otpremljeno.length, patch: stanje.patchevi.length });
+  }
+  resetuj();
+  stranicaSlike = () => Object.assign(new ApiGreska(422, "nije_stranica", "x"));
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  provera("zaglavlje koje nije slika: 422 nije_slika", o.status === 422 && o.telo.greska.kod === "nije_slika", o.telo);
+  stranicaSlike = () => new ApiGreska(422, "prevelika_stranica", "x");
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  provera("prevelika slika (preko 1.5 MB): 422 prevelika_slika", o.status === 422 && o.telo.greska.kod === "prevelika_slika", o.telo);
+  for (const [kod, status] of [["preusmerenje_van_liste", 422], ["domen_nije_dozvoljen", 422], ["predugo", 504], ["ne_mogu_da_procitam", 502]]) {
+    stranicaSlike = () => new ApiGreska(status, kod, "x");
+    o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+    provera(`greška preuzimanja ${kod} se prenosi (${status})`, o.status === status && o.telo.greska.kod === kod, o.telo);
+  }
+  nistaSacuvano("posle svih grešaka preuzimanja: ništa nije sačuvano (ni Storage, ni knjiga, ni brisanje)");
+
+  // uspeh
+  resetuj();
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  const rez = o.telo?.rezultati?.[0];
+  provera("BIBLIOTEKAR: jpeg se preuzima, 200 i javna adresa iz našeg Storage-a", o.status === 200 && rez?.korica_url?.startsWith(`${BAZA_JAVNO}${KNJIGA}/`) && rez.korica_url.endsWith(".jpg") && rez.korica_poreklo === SLIKA && rez.tip === "image/jpeg", o.telo);
+  provera("slika se preuzima tačno jednom, sa adrese koju je bibliotekar poslao", mrezniPozivi.length === 1 && mrezniPozivi[0] === SLIKA, mrezniPozivi);
+  provera("u Storage ide ista slika (bajt po bajt, bez izmene veličine), pod <id knjige>/<vreme>.jpg, sa tipom iz sadržaja",
+    stanje.otpremljeno.length === 1 && stanje.otpremljeno[0].bajtovi.equals(JPEG) && /^[0-9a-f-]{36}\/\d+\.jpg$/.test(stanje.otpremljeno[0].putanja) && stanje.otpremljeno[0].putanja.startsWith(KNJIGA) && String(stanje.otpremljeno[0].tip).startsWith("image/jpeg"), { n: stanje.otpremljeno.length, putanja: stanje.otpremljeno[0]?.putanja, tip: stanje.otpremljeno[0]?.tip });
+  provera("u knjige se upisuje korice_url (naša adresa), korice_izvor 'preuzeto' i korice_poreklo (originalna adresa)",
+    stanje.patchevi.length === 1 && stanje.patchevi[0].id === KNJIGA && stanje.patchevi[0].telo.korice_url === rez.korica_url && stanje.patchevi[0].telo.korice_izvor === "preuzeto" && stanje.patchevi[0].telo.korice_poreklo === SLIKA && Object.keys(stanje.patchevi[0].telo).length === 3, stanje.patchevi);
+  provera("korice_url nikad nije adresa sa tuđeg sajta", !stanje.patchevi[0].telo.korice_url.includes("nigde-na-listi"), stanje.patchevi[0].telo.korice_url);
+  provera("ograničenje: kanta 'korica-iz-linka:bibliotekar' sa granicom 100", stanje.pozivi.length === 1 && stanje.pozivi[0].kanta === "korica-iz-linka:bibliotekar" && stanje.pozivi[0].najvise === 100, stanje.pozivi);
+  provera("nema ničeg što liči na ključ u odgovoru", !TAJNE.some((k) => o.sirovo.includes(k)));
+
+  // tip se određuje po sadržaju: png pod .jpg adresom, webp pod .png adresom, jpeg pod .webp adresom
+  for (const [adresa, bajtovi, ekstenzija, mime] of [
+    ["https://cdn.example.com/a.jpg", PNG, "png", "image/png"],
+    ["https://cdn.example.com/a.png", WEBP, "webp", "image/webp"],
+    ["https://cdn.example.com/a.webp", JPEG, "jpg", "image/jpeg"],
+    ["https://cdn.example.com/bez-nastavka", PNG, "png", "image/png"],
+  ]) {
+    resetuj();
+    stranicaSlike = () => ({ status: 200, tip: "application/octet-stream", telo: bajtovi });
+    o = await z(koricaHandler, { token: "tok-bib", telo: { url: adresa, knjigaId: KNJIGA } });
+    provera(`tip po sadržaju: ${adresa.split("/").pop()} sa ${mime} sadržajem se čuva kao .${ekstenzija}`, o.status === 200 && stanje.otpremljeno[0]?.putanja.endsWith(`.${ekstenzija}`) && String(stanje.otpremljeno[0].tip).startsWith(mime) && o.telo.rezultati[0].tip === mime, { status: o.status, putanja: stanje.otpremljeno[0]?.putanja, tip: stanje.otpremljeno[0]?.tip });
+  }
+
+  resetuj();
+  o = await z(koricaHandler, { token: "tok-admin", telo: TELO });
+  provera("ADMINISTRATOR takođe sme", o.status === 200, o.telo);
+
+  // zamena: stara naša slika se briše, tuđa adresa se ne dira
+  resetuj();
+  const STARA = `${BAZA_JAVNO}${KNJIGA}/1700000000000.webp`; // naš bucket (lažni Supabase je http, pa se poredi tačan prefiks)
+  stanje.knjige.set(KNJIGA, { id: KNJIGA, korice_url: STARA });
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  provera("zamena: stara slika iz našeg bucket-a se briše (samo ona)", o.status === 200 && JSON.stringify(stanje.obrisano) === JSON.stringify([`${KNJIGA}/1700000000000.webp`]), stanje.obrisano);
+  resetuj();
+  stanje.knjige.set(KNJIGA, { id: KNJIGA, korice_url: "https://cdn.laguna.rs/staro.jpg" });
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  provera("zamena: stara adresa koja nije naša ne dovodi ni do kakvog brisanja", o.status === 200 && stanje.obrisano.length === 0, stanje.obrisano);
+  for (const [naziv, tudja] of [
+    ["isti oblik putanje, ali sa tuđeg servera (iste dužine adrese)", `${BAZA_JAVNO.replace("127.0.0.1", "128.0.0.1")}${KNJIGA}/1700000000000.webp`],
+    ["naš bucket, ali fascikla druge knjige", `${BAZA_JAVNO}${randomUUID()}/1700000000000.webp`],
+  ]) {
+    resetuj();
+    stanje.knjige.set(KNJIGA, { id: KNJIGA, korice_url: tudja });
+    o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+    provera(`zamena: ne briše se ni ${naziv}`, o.status === 200 && stanje.obrisano.length === 0, stanje.obrisano);
+  }
+
+  // kvarovi
+  resetuj();
+  stanje.patchGreska = true;
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  provera("kad upis u knjigu ne uspe: 502, a tek otpremljena slika se uklanja iz Storage-a", o.status === 502 && o.telo.greska.kod === "cuvanje_slike_nije_uspelo" && stanje.otpremljeno.length === 1 && stanje.obrisano.includes(stanje.otpremljeno[0].putanja), { status: o.status, obrisano: stanje.obrisano });
+  resetuj();
+  stanje.storageGreska = true;
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  provera("kad Storage ne radi: 502 i knjiga se ne menja", o.status === 502 && o.telo.greska.kod === "cuvanje_slike_nije_uspelo" && stanje.patchevi.length === 0, { status: o.status, patch: stanje.patchevi.length });
+  resetuj();
+  stanje.ulogaGreska = true;
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  provera("kad se uloga ne može pročitati: zatvoreno (503), bez preuzimanja", o.status === 503 && mrezniPozivi.length === 0 && stanje.otpremljeno.length === 0, { status: o.status });
+
+  // ograničenje
+  resetuj();
+  stanje.brojac.set(kljucB(BIBL.id, "korica-iz-linka:bibliotekar"), 100);
+  o = await z(koricaHandler, { token: "tok-bib", telo: TELO });
+  provera("posle 100 preuzimanja na sat: 429, bez preuzimanja", o.status === 429 && o.telo.greska.kod === "previse_zahteva" && mrezniPozivi.length === 0, o.telo);
+  stanje.brojac.set(kljucB(BIBL.id, "iz-linka:bibliotekar"), 0);
+
+  // izvor: nema biblioteka za obradu slike, nema novih zavisnosti
+  {
+    const { readFileSync } = await import("node:fs");
+    const kod = readFileSync(new URL("../api/korica-iz-linka.js", import.meta.url), "utf8") + readFileSync(new URL("../api/_lib/slika.js", import.meta.url), "utf8");
+    provera("korica-iz-linka ne menja veličinu slike na serveru i ne koristi biblioteke za slike", !/sharp|jimp|canvas|imagemagick|gm\(|resize/i.test(kod.replace(/\/\/.*$/gm, "")));
+    const paket = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    provera("nema novih zavisnosti u package.json (isti skup kao pre ove izmene)", JSON.stringify(Object.keys(paket.dependencies).sort()) === JSON.stringify(["@supabase/supabase-js", "@tailwindcss/vite", "linkedom", "react", "react-dom", "react-router-dom", "tailwindcss"]), Object.keys(paket.dependencies));
+    const sql14 = readFileSync(new URL("../supabase/migrations/0014_korice_preuzeto.sql", import.meta.url), "utf8").replace(/^--.*$/gm, "");
+    provera("migracija 0014: kolona korice_poreklo, izvor 'preuzeto', bucket 1.5 MB (1572864), okidač prati korice_poreklo",
+      /add column if not exists korice_poreklo text/.test(sql14) && /'preuzeto'\)\)/.test(sql14) && /1572864/.test(sql14) && /update of korice_url, korice_izvor, korice_poreklo/.test(sql14));
+  }
+  bf.unutrasnje.jedanZahtev = original;
+  resetuj();
+  stanje.brojac.clear();
 }
 
 faza("11. Tajne");

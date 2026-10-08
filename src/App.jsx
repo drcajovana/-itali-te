@@ -3,6 +3,7 @@ import AuthProvider from "./components/AuthProvider.jsx";
 import RutaZaBibliotekare from "./components/RutaZaBibliotekare.jsx";
 import ZasticenaRuta from "./components/ZasticenaRuta.jsx";
 import BibliotekarUnos from "./pages/BibliotekarUnos.jsx";
+import Knjiga from "./pages/Knjiga.jsx";
 import Pocetna from "./pages/Pocetna.jsx";
 import Prijava from "./pages/Prijava.jsx";
 import Pretraga from "./pages/Pretraga.jsx";
@@ -16,6 +17,7 @@ export default function App() {
         <Route element={<ZasticenaRuta />}>
           <Route path="/" element={<Pocetna />} />
           <Route path="/pretraga" element={<Pretraga />} />
+          <Route path="/knjiga/:id" element={<Knjiga />} />
           <Route path="/profil" element={<Profil />} />
           <Route element={<RutaZaBibliotekare />}>
             <Route path="/bibliotekar/unos" element={<BibliotekarUnos />} />

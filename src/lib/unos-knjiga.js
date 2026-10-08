@@ -72,13 +72,12 @@ function urediZanrove(tekst) {
 // Provera kartice i red za INSERT u `knjige`.
 //   unos:  { naslov, autor, izdavac, godina, isbn, zanr, opis, stanje: 'fond'|'nabavka',
 //            primerci, signatura }  (sve tekst, kako stoji u formi)
-//   opcije: { uneoId, korica }       korica = adresa sa linka (domen je već proverio server;
-//                                    baza je svakako postavlja na NULL ako domen nije na listi)
+//   opcije: { uneoId }               ko upisuje (bibliotekar)
 // Vraća { ok: true, podaci, red } ili { ok: false, polje, razlog }.
 //
 // Opis dolazi ISKLJUČIVO od bibliotekara (polje je u formi prazno): nikad se ne uzima
 // sa sajta. Izvor knjige: 'fond' za „U fondu", 'link' za „Za nabavku".
-export function urediUnos(unos, { uneoId = null, korica = null } = {}) {
+export function urediUnos(unos, { uneoId = null } = {}) {
   const osnova = urediPotvrdu(unos);
   if (!osnova.ok) return osnova;
 
@@ -104,10 +103,11 @@ export function urediUnos(unos, { uneoId = null, korica = null } = {}) {
     if (signatura && signatura.length > 50) return { ok: false, polje: "signatura", razlog: "predugo" };
   }
 
-  // Osnova je ista kao za člana (red-knjige.js): naslov, autor, izdavač, godina, ISBN-13 i
-  // korica sa linka. Ostalo je ono što sme samo bibliotekar (RLS i okidači to proveravaju).
+  // Osnova je ista kao za člana (red-knjige.js): naslov, autor, izdavač, godina i ISBN-13.
+  // Ostalo je ono što sme samo bibliotekar (RLS i okidači to proveravaju). Korica se ne šalje
+  // ovde: fotografija se okači posle upisa (knjige.js, postaviKoricu).
   const red = {
-    ...redZaUpis(osnova.podaci, "link", korica),
+    ...redZaUpis(osnova.podaci),
     zanrovi: zanrovi.lista,
     opis: opis || null,
     signatura,
@@ -120,8 +120,20 @@ export function urediUnos(unos, { uneoId = null, korica = null } = {}) {
   return { ok: true, podaci: osnova.podaci, red };
 }
 
-// Adresa za „Otvori": postojeći zapis se nalazi običnom pretragom (posebne stranice knjige još nema).
-export const adresaZaOtvaranje = (knjiga) => `/pretraga?upit=${encodeURIComponent(knjiga.isbn || knjiga.naslov)}`;
+// Adresa za „Otvori": stranica knjige (/knjiga/:id); bez id-a rezervno ide pretraga po ISBN-u ili naslovu.
+export const adresaZaOtvaranje = (knjiga) =>
+  knjiga.id ? `/knjiga/${encodeURIComponent(knjiga.id)}` : `/pretraga?upit=${encodeURIComponent(knjiga.isbn || knjiga.naslov)}`;
+
+// Kartici treba pažnja kad čeka pregled (ima podatke, a nije sačuvana) ili je sačuvana u fond
+// i još nema koricu (a bibliotekar nije izabrao „Bez korice”). Po tome „Sledeća knjiga" bira sledeću karticu.
+export const trebaPaznju = (stavka) => (Boolean(stavka.forma) && !stavka.sacuvano) || Boolean(stavka.sacuvano?.uFondu && !stavka.sacuvano.korica && !stavka.sacuvano.bezKorice);
+
+// Sledeća kartica posle `id` redom kojim su na ekranu; ako je posle nje nema, prva ranija kojoj
+// treba pažnja (preskočena). undefined samo kad nijednoj drugoj kartici ne treba ništa.
+export function sledecaZaObradu(stavke, id) {
+  const i = stavke.findIndex((s) => s.id === id);
+  return i < 0 ? undefined : (stavke.slice(i + 1).find(trebaPaznju) ?? stavke.slice(0, i).find(trebaPaznju));
+}
 
 // Početne vrednosti kartice iz pročitanog rezultata. Opis je NAMERNO prazan: ne preuzima
 // se sa sajta, piše ga bibliotekar. Stanje je podrazumevano „U fondu", 1 primerak.

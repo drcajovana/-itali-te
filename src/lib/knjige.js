@@ -7,6 +7,7 @@
 import { supabase } from "./supabase.js";
 import { GreskaApija, pozoviApi } from "./api.js";
 import { uIsbn13 } from "./isbn.js";
+import { BUCKET_KORICE, kodGreskeSlanja, putanjaIzAdrese, putanjaKorice } from "./korica-slika.js";
 import { redZaUpis, urediPotvrdu } from "./red-knjige.js";
 
 // 1. Naša baza. Normalizaciju teksta (ćirilica/latinica) radi baza, u funkciji
@@ -23,15 +24,24 @@ export const pretraziGoogle = (upit) => pozoviApi("/api/pretraga-google", { q: u
 // 3. Link sa sajta izdavača (preko api/iz-linka.js).
 export const izLinka = (url) => pozoviApi("/api/iz-linka", { url });
 
+// Preuzimanje slike korice sa predloga iz izLinka u naš Storage (samo bibliotekar). Server
+// čuva sliku, upisuje korice_url, korice_izvor='preuzeto' i korice_poreklo. Vraća
+// { korica_url, korica_poreklo }; baca GreskaApija (kod prevodi porukaGreske).
+export async function koricaIzLinka(knjigaId, url) {
+  const rezultati = await pozoviApi("/api/korica-iz-linka", { knjigaId, url });
+  if (!rezultati[0]?.korica_url) throw new GreskaApija("greska_servera");
+  return rezultati[0];
+}
+
 // `knjiga` je ili red iz naše baze (ima `id`), ili POTVRĐENI spoljni rezultat:
-// { podaci, izvor, korica }, gde su `podaci` izlaz iz urediPotvrdu (ono što je član
+// { podaci }, gde su `podaci` izlaz iz urediPotvrdu (ono što je član
 // video u formi i potvrdio). Vraća id knjige u našoj bazi, a ako je još nema, upisuje je.
 // Upis radi običan član: okidač u bazi svakako postavlja izvor='clan' i u_fondu=false,
 // pa član ne može da proglasi knjigu delom fonda.
 async function nadjiIliUpisi(knjiga) {
   if (knjiga.id) return { id: knjiga.id, uFondu: knjiga.u_fondu ?? null };
 
-  const { podaci, izvor, korica } = knjiga;
+  const { podaci } = knjiga;
 
   // Ista knjiga po ISBN-u (isti ISBN-13 iz različitih izvora): ne pravi se duplikat,
   // a postojeći zapis se ne menja.
@@ -41,7 +51,7 @@ async function nadjiIliUpisi(knjiga) {
     if (ista) return { id: ista.id, uFondu: ista.u_fondu };
   }
 
-  const { data, error } = await supabase.from("knjige").insert(redZaUpis(podaci, izvor, korica)).select("id, u_fondu").single();
+  const { data, error } = await supabase.from("knjige").insert(redZaUpis(podaci)).select("id, u_fondu").single();
   if (error) throw error;
   return { id: data.id, uFondu: data.u_fondu };
 }
@@ -64,16 +74,117 @@ export function dodajRucno(clanId, naslov, autor) {
   return dodajNaPolicu(clanId, { podaci: r.podaci, izvor: "clan" }, "zelim");
 }
 
-// Korica za PRIKAZ (PLAN.md, „Korice"): adresa iz naše baze ili iz rezultata (Google
-// korica se samo prikazuje, ne čuva se), pa Open Library po ISBN-u, pa pločica (u
-// komponenti Korica). Ovde samo poredak adresa koje vredi probati.
-export function adreseKorica(knjiga) {
-  const isbn = uIsbn13(knjiga.isbn);
-  return [
-    knjiga.korice_url ?? knjiga.korica,
-    // default=false: Open Library vraća 404 kad korice nema, pa lanac ide dalje
-    isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false` : null,
-  ].filter(Boolean);
+// ───────────────────────── korice: fotografije u Storage-u ─────────────────────────
+// Korica dolazi samo iz fotografije koju bibliotekar okači (bucket „korice", migracija 0013);
+// redosled prikaza (fotografija → Open Library → pločica) je u korica-slika.js.
+
+// Jedna knjiga za stranicu knjige (/knjiga/:id). null ako ne postoji (ili je ne vidi RLS).
+export async function ucitajKnjigu(id) {
+  const { data, error } = await supabase
+    .from("knjige")
+    .select("id, naslov, autor, izdavac, godina, isbn, zanrovi, opis, signatura, korice_url, korice_izvor, korice_poreklo, u_fondu, broj_primeraka, broj_slobodnih")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+const greskaKorice = (kod) => Object.assign(new Error(kod), { kod });
+
+// Okači fotografiju (već smanjenu, korica-slika.js) i postavi je kao koricu knjige:
+//   1. upis u Storage pod novim imenom <id knjige>/<vreme>.<tip> (politika iz 0013: samo
+//      bibliotekar i administrator, samo jpeg/png/webp do 1 MB);
+//   2. knjige.korice_url = javna adresa, korice_izvor = 'fotografija'. Okidač u bazi
+//      (0009) propušta adresu jer je domen Storage-a na listi;
+//   3. stara fotografija (ako je bila naša) se briše; neuspelo brisanje ništa ne kvari.
+// Ako korak 2 ne uspe, nova slika se uklanja iz Storage-a, da ne ostane siroče.
+// Baca grešku sa `kod` (tekst.korice.greske): slika_velika, korica_upload, korica_upis,
+// korica_nije_prihvacena. Vraća javnu adresu nove korice.
+export async function postaviKoricu(knjigaId, blob, staraAdresa = null) {
+  const putanja = putanjaKorice(knjigaId, Date.now(), blob.type);
+  const skladiste = supabase.storage.from(BUCKET_KORICE);
+
+  const { error: greskaSlanja } = await skladiste.upload(putanja, blob, {
+    contentType: blob.type,
+    cacheControl: "31536000", // ime je novo pri svakoj zameni, pa se slika sme dugo keširati
+    upsert: false,
+  });
+  if (greskaSlanja) {
+    console.error("upis korice u Storage:", greskaSlanja);
+    throw greskaKorice(kodGreskeSlanja(greskaSlanja));
+  }
+
+  const adresa = skladiste.getPublicUrl(putanja).data.publicUrl;
+  const ukloniNovu = async () => {
+    try {
+      await skladiste.remove([putanja]);
+    } catch (e) {
+      console.error("uklanjanje nove korice:", e);
+    }
+  };
+
+  const { data, error } = await supabase
+    .from("knjige")
+    .update({ korice_url: adresa, korice_izvor: "fotografija", korice_poreklo: null })
+    .eq("id", knjigaId)
+    .select("korice_url")
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("upis adrese korice:", error);
+    await ukloniNovu();
+    // izmena koju je RLS filtrirala (nema reda) ili odbila (42501) znači: nema dozvole
+    throw greskaKorice(error?.code === "42501" || (!error && !data) ? "nema_dozvole" : "korica_upis");
+  }
+  if (data.korice_url !== adresa) {
+    // okidač je adresu postavio na NULL (domen Storage-a nije na listi, npr. drugi projekat)
+    await ukloniNovu();
+    throw greskaKorice("korica_nije_prihvacena");
+  }
+
+  const prefiks = adresa.slice(0, adresa.length - putanja.length);
+  const stara = staraAdresa && staraAdresa !== adresa ? putanjaIzAdrese(staraAdresa, prefiks) : null;
+  if (stara && stara.startsWith(`${knjigaId}/`)) {
+    try {
+      await skladiste.remove([stara]);
+    } catch (e) {
+      console.error("brisanje stare korice:", e);
+    }
+  }
+  return adresa;
+}
+
+// Uklanja koricu knjige: prazni korice_url, korice_izvor i korice_poreklo, pa briše fajl iz
+// Storage-a (običnim klijentom, politika brisanja iz 0013). Prvo se menja knjiga, pa tek onda
+// briše fajl: ako brisanje fajla ne uspe, ostaje samo siroče u bucket-u, a ne pokvaren prikaz.
+// Fajl se briše samo ako je adresa sa našeg bucket-a i iz fascikle ove knjige. Vraća
+// { fajlObrisan }: true, false (fajl nije obrisan) ili null (adresa nije naša, nema šta da se briše).
+export async function ukloniKoricu(knjigaId, staraAdresa) {
+  const skladiste = supabase.storage.from(BUCKET_KORICE);
+  const { data, error } = await supabase
+    .from("knjige")
+    .update({ korice_url: null, korice_izvor: null, korice_poreklo: null })
+    .eq("id", knjigaId)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("uklanjanje korice iz knjige:", error);
+    throw greskaKorice(error?.code === "42501" || (!error && !data) ? "nema_dozvole" : "korica_upis");
+  }
+
+  const javniPrefiks = skladiste.getPublicUrl("x").data.publicUrl.slice(0, -1);
+  const putanja = staraAdresa ? putanjaIzAdrese(staraAdresa, javniPrefiks) : null;
+  if (!putanja || !putanja.startsWith(`${knjigaId}/`)) return { fajlObrisan: null };
+  try {
+    const r = await skladiste.remove([putanja]);
+    if (r.error) {
+      console.error("brisanje fajla korice:", r.error);
+      return { fajlObrisan: false };
+    }
+    return { fajlObrisan: r.data?.length > 0 };
+  } catch (e) {
+    console.error("brisanje fajla korice:", e);
+    return { fajlObrisan: false };
+  }
 }
 
 // ───────────────────────── ekran za bibliotekare (unos linkovima) ─────────────────────────

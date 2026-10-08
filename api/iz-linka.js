@@ -1,6 +1,8 @@
 // POST /api/iz-linka   (Authorization: Bearer <Supabase JWT člana>)
 // Telo: { url }  — adresa stranice knjige (samo https, samo domeni sa bele liste)
-// Odgovor: { rezultati: [{ naslov, autori, izdavac, godina, isbn, opis, korica, izvor: 'link', url }] }
+// Odgovor: { rezultati: [{ naslov, autori, izdavac, godina, isbn, korica, izvor: 'link', url }] }
+// `korica` je samo PREDLOG adrese slike (JSON-LD image ili og:image), ili null. Slika se ne
+// preuzima ovde; to radi api/korica-iz-linka.js na zahtev bibliotekara. Opis se ne čita.
 //
 // Čita jednu stranicu koju je član sam zalepio (kao pregled linka), uz keš po
 // adresi i ograničenje zahteva na sat: 30 za čitaoce, 200 za bibliotekare i
