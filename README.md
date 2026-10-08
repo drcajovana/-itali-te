@@ -74,6 +74,23 @@ samo za prikaz uživo. `iz-linka` dodaje `korica`: samo **predlog adrese** slike
 | `api/iz-linka.js` | čita Open Graph i JSON-LD jedne stranice knjige: bibliotekarska polja (naslov, autor, izdavač, godina, ISBN; `izvor: 'link'`) i predlog adrese korice; kad parser ne nađe ništa, vraća bar naslov iz `<title>` |
 | `api/korica-iz-linka.js` | **samo bibliotekar i administrator** (uloga se čita na serveru): preuzima predloženu sliku jednom i čuva je u Storage (vidi „Korice”) |
 
+Kandidati za koricu se traže na ovim mestima, redom: JSON-LD `image` (tekst, niz ili objekat sa
+`url`), `og:image:secure_url`, `og:image`, `og:image:url`, `twitter:image`, `link rel="image_src"`,
+`itemprop="image"`. Svaka adresa se prvo **dopunjava prema konačnoj adresi stranice** (relativne i one
+koje počinju sa `//`), pa se tek onda proverava bezbednost (https, bez korisnika i porta, bez IP
+adrese i localhost-a, najviše 500 znakova). Slike iz `<img>` oznaka (`cover`, `korica`, `product`,
+`book`) se samo navode u dijagnostici, ne predlažu se same. Delfi je prazna ljuska (SPA), pa se njegova
+slika čita iz odgovora njihovog API-ja (`images`, redom xl, xxl, l, m, s); ISBN iz `barcode` samo ako je
+ispravan ISBN-13.
+
+**Dijagnostika (samo bibliotekar i administrator):** odgovor `iz-linka` ima i polje `dijagnostika`
+(uloga se čita na serveru; čitalac ga ne dobija ni iz keša). Sadrži iz kog izvora je pročitano svako
+polje (naslov, autor, izdavač, godina, ISBN, korica) i sve kandidate za koricu: sirova vrednost, vrsta
+(apsolutna, relativna, `//`), adresa posle dopune, ishod (prihvaćena ili odbijena) i razlog (nije
+https, port, IP adresa, duža od 500 znakova, data:...). Najviše 30 kandidata, vrednosti skraćene na
+300 znakova, nikad ceo HTML. Vidi se u odgovoru (Network u pregledaču). Keš odgovora (7 dana) je
+verzionisan: stariji zapisi, bez korice i dijagnostike, se ne koriste.
+
 `iz-linka` čita samo https adrese sa bele liste domena u
 [`api/_lib/bela-lista.js`](api/_lib/bela-lista.js) (jedan niz, dodaje se domen),
 odbija IP adrese, `localhost` i privatne/link-local adrese (provera je u samom

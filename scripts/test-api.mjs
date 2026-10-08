@@ -389,6 +389,133 @@ provera("<title> „Naslov - Autor” daje i autora; pcelica.rs fiksira izdavač
 }
 
 // ───────────────────────── 6. ISBN i ključ keša ─────────────────────────
+faza("5b. Korica sa stranice: dopuna adresa prema konačnoj adresi, JSON-LD image, dijagnostika");
+{
+  const STR = "https://www.laguna.rs/knjiga/1";
+  const sa = (head, telo = "") => parser.izvuciIzHtmla(`<html><head><meta property="og:title" content="Knjiga"><meta property="og:image" content="">${head}</head><body>${telo}</body></html>`, STR, { dijagnostika: true });
+  const og = (adresa, oznaka = "og:image") => `<meta property="${oznaka}" content="${adresa}">`;
+
+  // relativne i // adrese se DOPUNJAVAJU, pa prolaze (ne odbijaju se)
+  for (const [naziv, adresa, ocekivano] of [
+    ["apsolutna putanja (/slike/g.jpg)", "/slike/g.jpg", "https://www.laguna.rs/slike/g.jpg"],
+    ["relativna putanja (slike/g.jpg) prema /knjiga/1", "slike/g.jpg", "https://www.laguna.rs/knjiga/slike/g.jpg"],
+    ["relativna sa ../", "../slike/g.jpg", "https://www.laguna.rs/slike/g.jpg"],
+    ["bez protokola (//cdn.laguna.rs/g.jpg)", "//cdn.laguna.rs/g.jpg", "https://cdn.laguna.rs/g.jpg"],
+    ["bez protokola, drugi domen", "//cdn.drugi-domen.example/g.jpg", "https://cdn.drugi-domen.example/g.jpg"],
+    ["sa razmakom u imenu (kodira se)", "/slike/moja korica.jpg", "https://www.laguna.rs/slike/moja%20korica.jpg"],
+  ]) {
+    const r = sa(og(adresa));
+    const k = r.dijagnostika.kandidati.find((c) => c.izvor === "og:image");
+    provera(`dopuna: ${naziv} → ${ocekivano}`, r.korica === ocekivano && k?.ishod === "prihvacena" && k.dopunjena === ocekivano && k.izabrana === true, { korica: r.korica, k });
+  }
+  {
+    const r = sa(og("//cdn.laguna.rs/g.jpg"));
+    const k = r.dijagnostika.kandidati[0];
+    provera("dijagnostika čuva i sirovu vrednost i vrstu (relativna, //), uz dopunjenu adresu", k.sirova === "//cdn.laguna.rs/g.jpg" && k.vrsta === "bez protokola (//)" && k.dopunjena === "https://cdn.laguna.rs/g.jpg", k);
+  }
+
+  // dopuna ide prema KONAČNOJ adresi stranice (posle preusmeravanja)
+  {
+    const html = `<html><head><title>Knjiga</title><meta property="og:image" content="slika.jpg"><meta property="twitter:image" content="//cdn.laguna.rs/t.jpg"></head></html>`;
+    const rez = await parser.izvuciIzLinka("https://laguna.rs/stara/adresa", { preuzmiFn: async () => ({ url: new URL("https://www.laguna.rs/nova/putanja/strana"), telo: html }) });
+    provera("dopuna prema konačnoj adresi stranice (posle preusmeravanja), ne prema onoj koju je član nalepio", rez.korica === "https://www.laguna.rs/nova/putanja/slika.jpg" && rez.dijagnostika.stranica === "https://www.laguna.rs/nova/putanja/strana", { korica: rez.korica, stranica: rez.dijagnostika?.stranica });
+  }
+
+  // odbijene adrese, sa razlogom (bezbednost se proverava posle dopune)
+  {
+    const r = sa(
+      [
+        og("http://cdn.laguna.rs/nesigurno.jpg"),
+        og("https://cdn.laguna.rs:8443/port.jpg", "og:image:secure_url"),
+        og("https://93.184.216.34/ip.jpg", "twitter:image"),
+        `<link rel="image_src" href="https://localhost/l.jpg">`,
+        `<span itemprop="image" content="https://korisnik:lozinka@cdn.laguna.rs/k.jpg"></span>`,
+        og(`https://cdn.laguna.rs/${"a".repeat(600)}.jpg`, "og:image:url"),
+        og("data:image/png;base64,iVBORw0KGgo=", "twitter:image:src"),
+      ].join("")
+    );
+    const po = (izvor) => r.dijagnostika.kandidati.find((c) => c.izvor === izvor);
+    provera("odbijeno: nije https", po("og:image")?.ishod === "odbijena" && po("og:image").razlog.includes("nije https"), po("og:image"));
+    provera("odbijeno: nestandardan port", po("og:image:secure_url")?.ishod === "odbijena" && po("og:image:secure_url").razlog.includes("port 8443"), po("og:image:secure_url"));
+    provera("odbijeno: IP adresa", po("twitter:image")?.ishod === "odbijena" && po("twitter:image").razlog.includes("IP adresa"), po("twitter:image"));
+    provera("odbijeno: localhost", po('link rel="image_src"')?.ishod === "odbijena" && po('link rel="image_src"').razlog.includes("localhost"), po('link rel="image_src"'));
+    provera("odbijeno: korisnik i lozinka u adresi", po("itemprop=image (span)")?.ishod === "odbijena" && po("itemprop=image (span)").razlog.includes("korisnik"), po("itemprop=image (span)"));
+    provera("odbijeno: duža od 500 znakova", po("og:image:url")?.ishod === "odbijena" && po("og:image:url").razlog.includes("500"), po("og:image:url"));
+    provera("odbijeno: data: adresa", po("twitter:image:src")?.ishod === "odbijena" && po("twitter:image:src").razlog.includes("data:"), po("twitter:image:src"));
+    provera("ako je sve odbijeno, korica je null, a svi kandidati su u dijagnostici (sa ishodom)", r.korica === null && r.dijagnostika.izabrana === null && r.dijagnostika.polja.korica === null && r.dijagnostika.kandidati.length >= 7 && r.dijagnostika.kandidati.every((c) => c.ishod === "odbijena"), r.dijagnostika.kandidati.map((c) => [c.izvor, c.ishod]));
+  }
+
+  // JSON-LD "image": tekst, niz (tekstova i objekata) i objekat sa url / contentUrl
+  for (const [naziv, image, ocekivano, oblik] of [
+    ["tekst", "https://cdn.laguna.rs/t.jpg", "https://cdn.laguna.rs/t.jpg", "tekst"],
+    ["niz tekstova", ["https://cdn.laguna.rs/1.jpg", "https://cdn.laguna.rs/2.jpg"], "https://cdn.laguna.rs/1.jpg", "niz"],
+    ["objekat sa url", { "@type": "ImageObject", url: "/slike/o.jpg" }, "https://www.laguna.rs/slike/o.jpg", "objekat"],
+    ["objekat sa contentUrl", { "@type": "ImageObject", contentUrl: "//cdn.laguna.rs/c.jpg" }, "https://cdn.laguna.rs/c.jpg", "objekat"],
+    ["niz objekata (prvi nebezbedan, drugi ispravan)", [{ url: "http://cdn.laguna.rs/x.jpg" }, { url: "/slike/drugi.jpg" }], "https://www.laguna.rs/slike/drugi.jpg", "niz"],
+    ["niz sa relativnim i // adresama", ["slika.jpg", "//cdn.laguna.rs/k.jpg"], "https://www.laguna.rs/knjiga/slika.jpg", "niz"],
+  ]) {
+    const r = parser.izvuciIzHtmla(`<html><head>${jsonLd({ "@type": "Book", name: "Knjiga", image })}</head></html>`, STR, { dijagnostika: true });
+    provera(`JSON-LD image kao ${naziv}`, r.korica === ocekivano && r.dijagnostika.polja.korica === `JSON-LD image (${oblik})`, { korica: r.korica, polja: r.dijagnostika.polja.korica });
+  }
+
+  // redosled i izvor polja
+  {
+    const html = `<html><head>${jsonLd({ "@type": "Book", name: "Naslov", author: "Autor A", isbn: "978-86-521-2603-3", publisher: "Laguna", datePublished: "2019", image: "/a.jpg" })}
+      <meta property="og:image" content="https://cdn.laguna.rs/og.jpg"><meta property="og:image:secure_url" content="https://cdn.laguna.rs/secure.jpg"><meta name="twitter:image" content="https://cdn.laguna.rs/tw.jpg">
+      <link rel="image_src" href="/src.jpg"><span itemprop="image" content="/ip.jpg"></span></head>
+      <body><img class="product-cover" src="/slike/telo.jpg"><img alt="Korica knjige" data-src="//cdn.laguna.rs/lazy.jpg"><img src="/logo.png"><img class="logo" src="/ikona.svg"></body></html>`;
+    const r = parser.izvuciIzHtmla(html, STR, { dijagnostika: true });
+    const izvori = r.dijagnostika.kandidati.map((c) => c.izvor);
+    provera("kandidati redom: JSON-LD, og:image:secure_url, og:image, twitter:image, image_src, itemprop, <img>",
+      JSON.stringify(izvori.map((x) => x.split(" (")[0])) === JSON.stringify(["JSON-LD image", "og:image:secure_url", "og:image", "twitter:image", 'link rel="image_src"', "itemprop=image", "<img>", "<img>"]), izvori);
+    provera("predlog je prvi prihvaćen (JSON-LD), tačno jedan kandidat je izabran", r.korica === "https://www.laguna.rs/a.jpg" && r.dijagnostika.kandidati.filter((c) => c.izabrana).length === 1 && r.dijagnostika.kandidati[0].izabrana, r.korica);
+    provera("<img> sa cover/korica/product/book se navodi u dijagnostici (do 5), a logo i ikona ne", izvori.filter((x) => x.startsWith("<img>")).length === 2 && !r.dijagnostika.kandidati.some((c) => c.sirova.includes("logo") || c.sirova.includes("ikona")), izvori);
+    provera("polja u dijagnostici navode izvor: naslov, autor, ISBN, izdavač, godina, korica", r.dijagnostika.polja.naslov === "JSON-LD name" && r.dijagnostika.polja.autor === "JSON-LD author" && r.dijagnostika.polja.isbn === "JSON-LD isbn" && r.dijagnostika.polja.izdavac === "JSON-LD publisher/brand" && r.dijagnostika.polja.godina === "JSON-LD datePublished" && r.dijagnostika.polja.korica.startsWith("JSON-LD image"), r.dijagnostika.polja);
+  }
+  {
+    // slike iz <img> same ne postaju predlog
+    const r = sa("", `<img class="product-cover" src="/slike/telo.jpg">`);
+    const k = r.dijagnostika.kandidati.find((c) => c.izvor.startsWith("<img>"));
+    provera("samo <img> kandidat: u dijagnostici je prihvaćen, ali se ne predlaže sam od sebe (korica je null)", r.korica === null && k?.ishod === "prihvacena" && k.izabrana === false && k.dopunjena === "https://www.laguna.rs/slike/telo.jpg", { korica: r.korica, k });
+  }
+  {
+    // izvori ostalih polja
+    const og1 = parser.izvuciIzHtmla(`<html><head><meta property="og:title" content="Gospođica - Ivo Andrić | Delfi"><meta property="book:isbn" content="9788652126033"></head></html>`, STR, { dijagnostika: true });
+    provera("izvor polja: og:title (naslov), og:title pretpostavka (autor), meta book:isbn", og1.dijagnostika.polja.naslov === "og:title" && og1.dijagnostika.polja.autor === "og:title (pretpostavka)" && og1.dijagnostika.polja.isbn === "meta book:isbn", og1.dijagnostika.polja);
+    const t1 = parser.izvuciIzHtmla("<html><head><title>Seobe - Miloš Crnjanski</title></head></html>", STR, { dijagnostika: true });
+    provera("izvor polja: <title> (naslov) i <title> pretpostavka (autor); bez slike", t1.dijagnostika.polja.naslov === "<title>" && t1.dijagnostika.polja.autor === "<title> (pretpostavka)" && t1.dijagnostika.polja.korica === null && t1.dijagnostika.kandidati.length === 0, t1.dijagnostika);
+    const o1 = parser.izvuciIzHtmla('<html><body><h1>Bajka</h1><span>Autor: Desanka Maksimović<br>Izdavač: Dereta</span></body></html>', STR, { dijagnostika: true });
+    provera("izvor polja: <h1> (naslov), oznaka „Autor:” i „Izdavač:”", o1.dijagnostika.polja.naslov === "<h1>" && o1.dijagnostika.polja.autor.startsWith("oznaka") && o1.dijagnostika.polja.izdavac.startsWith("oznaka"), o1.dijagnostika.polja);
+  }
+
+  // veličina dijagnostike: bez celog HTML-a
+  {
+    const marker = "OVO-JE-TELO-STRANICE-KOJE-NE-SME-U-ODGOVOR";
+    const mnogo = Array.from({ length: 300 }, (_, i) => `<img class="product" src="/slike/${"x".repeat(900)}${i}.jpg" alt="${marker}">`).join("");
+    const html = `<html><head><meta property="og:image" content="/${"y".repeat(5000)}.jpg">${Array.from({ length: 60 }, (_, i) => og(`/m${i}.jpg`, "twitter:image")).join("")}</head><body><p>${marker}</p>${mnogo}</body></html>`;
+    const r = parser.izvuciIzHtmla(html, STR, { dijagnostika: true });
+    const tekstD = JSON.stringify(r.dijagnostika);
+    provera("dijagnostika je ograničena: najviše 30 kandidata, sirove vrednosti skraćene, bez celog HTML-a", r.dijagnostika.kandidati.length <= 30 && r.dijagnostika.kandidati.every((c) => c.sirova.length <= 301) && tekstD.length < 15000 && !tekstD.includes(marker) && !tekstD.includes("<p>") && html.length > 200000, { kandidata: r.dijagnostika.kandidati.length, bajtova: tekstD.length, html: html.length });
+  }
+
+  // Delfi: slika je u odgovoru API-ja (HTML je prazna ljuska)
+  {
+    const API = "https://delfi.rs/api/pc-frontend-api/overview/249340";
+    const proizvod = (dopuna = {}) => JSON.stringify({ data: { product: { title: "Fikser", authors: [{ authorName: "Goran Gocić" }], barcode: "9788663695528", images: { s: "/_img/artikli/Knjiga/249340/m/a.jpg", m: "/_img/artikli/Knjiga/249340/s/a.jpg", l: "/_img/artikli/Knjiga/249340/v/a.jpg", xl: "/_img/artikli/Knjiga/249340/vv/a.jpg", xxl: "/_img/artikli/Knjiga/249340/org/a.jpg", fb: "" }, ...dopuna } } });
+    const delfi = (telo) => ({ preuzmiFn: async (adresa) => (adresa === API ? { url: new URL(API), telo } : (() => { throw new Error(`neočekivan poziv: ${adresa}`); })()) });
+    const LINK = "https://delfi.rs/knjige/249340-fikser-knjiga-delfi-knjizare.html";
+    let rez = await parser.izvuciIzLinka(LINK, delfi(proizvod()));
+    provera("Delfi: korica iz API-ja (images.xl), relativna putanja dopunjena prema adresi stranice", rez.korica === "https://delfi.rs/_img/artikli/Knjiga/249340/vv/a.jpg" && rez.dijagnostika.polja.korica === "Delfi API images.xl" && rez.dijagnostika.kandidati[0].vrsta === "relativna" && rez.dijagnostika.kandidati.length === 5, { korica: rez.korica, polja: rez.dijagnostika?.polja });
+    provera("Delfi: naslov, autor i ISBN (iz barcode, jer je ispravan ISBN-13) su tu", rez.naslov === "Fikser" && rez.autori.join() === "Goran Gocić" && rez.isbn === "9788663695528" && rez.dijagnostika.polja.isbn === "Delfi API barcode", rez);
+    rez = await parser.izvuciIzLinka(LINK, delfi(proizvod({ barcode: "2000000000008", images: { xl: "", l: "/_img/l.jpg" } })));
+    provera("Delfi: barcode koji nije ISBN (ne počinje sa 978/979) se ne uzima; prazna veličina se preskače, uzima se sledeća (l)", rez.isbn === null && rez.korica === "https://delfi.rs/_img/l.jpg" && rez.dijagnostika.polja.korica === "Delfi API images.l", { isbn: rez.isbn, korica: rez.korica });
+    rez = await parser.izvuciIzLinka(LINK, delfi(proizvod({ images: undefined })));
+    provera("Delfi: bez slika u odgovoru korica je null, a dijagnostika to kaže (nema kandidata)", rez.korica === null && rez.dijagnostika.kandidati.length === 0 && rez.dijagnostika.polja.korica === null, rez.dijagnostika);
+    rez = await parser.izvuciIzLinka(LINK, delfi(proizvod({ images: { xl: "http://delfi.rs/_img/nesigurno.jpg", xxl: "/_img/ok.jpg" } })));
+    provera("Delfi: nebezbedna veličina (http) se odbija, uzima se sledeća bezbedna", rez.korica === "https://delfi.rs/_img/ok.jpg" && rez.dijagnostika.kandidati[0].ishod === "odbijena", rez.dijagnostika.kandidati);
+  }
+}
+
 faza("6. ISBN i ključ keša");
 provera("ISBN-13 sa crticama se čisti", ocistiIsbn("978-86-521-2603-3") === "9788652126033");
 provera("ISBN-10 se pretvara u ISBN-13", uIsbn13("0-306-40615-2") === "9780306406157", uIsbn13("0-306-40615-2"));
@@ -1406,6 +1533,61 @@ faza("14. Korica sa linka (api/korica-iz-linka.js): samo bibliotekar, slika se p
   }
   bf.unutrasnje.jedanZahtev = original;
   resetuj();
+  stanje.brojac.clear();
+}
+
+faza("15. Dijagnostika iz-linka: samo bibliotekar i administrator, bez celog HTML-a");
+{
+  const { readFileSync } = await import("node:fs");
+  const MARKER = "OVO-JE-TELO-STRANICE-KOJE-NE-SME-U-ODGOVOR";
+  const html = `<html><head><title>Fikser - Goran Gocić</title>${jsonLd({ "@type": "Book", name: "Fikser", author: "Goran Gocić", image: "/slike/f.jpg" })}<meta property="og:image" content="http://cdn.laguna.rs/nesigurno.jpg"></head><body><p>${MARKER}</p>${"<div>sadržaj</div>".repeat(2000)}</body></html>`;
+  let broj = 0;
+  bf.unutrasnje.jedanZahtev = async () => (broj++, stranica(html));
+  stanje.brojac.clear();
+  const ADRESA = "https://www.laguna.rs/dijagnostika/prva";
+  const telo = { url: ADRESA };
+
+  let o = await z(linkHandler, { token: "tok-bib", telo });
+  const d = o.telo?.rezultati?.[0]?.dijagnostika;
+  provera("BIBLIOTEKAR dobija dijagnostiku (polja sa izvorom i kandidati sa ishodom)", o.status === 200 && d?.polja?.naslov === "JSON-LD name" && d.kandidati?.length >= 2 && d.kandidati[0].ishod === "prihvacena" && d.izabrana === "https://www.laguna.rs/slike/f.jpg", o.telo);
+  provera("odgovor ima i korica kao predlog (dopunjena adresa)", o.telo.rezultati[0].korica === "https://www.laguna.rs/slike/f.jpg", o.telo.rezultati[0].korica);
+  provera("odgovor NE sadrži ceo HTML: ni marker iz tela stranice, ni <html, ni <script, ni <div", !o.sirovo.includes(MARKER) && !o.sirovo.includes("<html") && !o.sirovo.includes("<script") && !o.sirovo.includes("<div") && o.sirovo.length < html.length / 5, { odgovor: o.sirovo.length, html: html.length });
+  provera("u odgovoru nema ničeg što liči na ključ", !TAJNE.some((k) => o.sirovo.includes(k)));
+  provera("odgovor ne nosi interno polje keša (kesVerzija)", !("kesVerzija" in o.telo.rezultati[0]));
+
+  o = await z(linkHandler, { token: "tok-admin", telo: { url: "https://www.laguna.rs/dijagnostika/druga" } });
+  provera("ADMINISTRATOR takođe dobija dijagnostiku", Boolean(o.telo?.rezultati?.[0]?.dijagnostika?.kandidati), o.status);
+
+  // čitalac: ni sa svežim čitanjem, ni iz keša
+  o = await z(linkHandler, { token: "tok-a", telo: { url: "https://www.laguna.rs/dijagnostika/treca" } });
+  provera("ČITALAC ne dobija dijagnostiku (sveže čitanje)", o.status === 200 && !("dijagnostika" in o.telo.rezultati[0]) && o.telo.rezultati[0].naslov === "Fikser" && !o.sirovo.includes("kandidati") && !o.sirovo.includes("JSON-LD name"), o.telo);
+  o = await z(linkHandler, { token: "tok-a", telo: { url: "https://www.laguna.rs/dijagnostika/treca", uloga: "bibliotekar", role: "administrator", dijagnostika: true }, zaglavlja: { "x-uloga": "bibliotekar" } });
+  provera("čitalac koji u telu i zaglavljima tvrdi da je bibliotekar i traži dijagnostiku je ne dobija", o.status === 200 && !("dijagnostika" in o.telo.rezultati[0]), o.telo);
+  const n0 = broj;
+  o = await z(linkHandler, { token: "tok-a", telo });
+  provera("ČITALAC ne dobija dijagnostiku ni kad je odgovor u kešu, a keš je napunio bibliotekar (ima dijagnostiku u kešu)", o.status === 200 && o.telo.rezultati[0].izKesa === true && !("dijagnostika" in o.telo.rezultati[0]) && !("kesVerzija" in o.telo.rezultati[0]) && broj === n0, { izKesa: o.telo.rezultati?.[0]?.izKesa, mreza: broj - n0 });
+  o = await z(linkHandler, { token: "tok-bib", telo });
+  provera("bibliotekar iz keša i dalje dobija dijagnostiku", o.telo.rezultati[0].izKesa === true && Boolean(o.telo.rezultati[0].dijagnostika?.kandidati?.length) && broj === n0, o.telo.rezultati[0].izKesa);
+
+  // stari keš (bez kesVerzija, bez dijagnostike, korica null) se ne koristi: stranica se čita iznova
+  const STARA = "https://www.laguna.rs/dijagnostika/stari-kes";
+  stanje.kes.set((await import("../api/_lib/kes.js")).kljucKesa(STARA), { naslov: "Stari keširani naslov", autori: [], korica: null, izvor: "link", url: STARA });
+  const n1 = broj;
+  o = await z(linkHandler, { token: "tok-bib", telo: { url: STARA } });
+  provera("zapis iz keša stare verzije (bez korice i dijagnostike) se zanemaruje: stranica se čita iznova", o.telo.rezultati[0].naslov === "Fikser" && o.telo.rezultati[0].korica === "https://www.laguna.rs/slike/f.jpg" && broj === n1 + 1 && !o.telo.rezultati[0].izKesa, { naslov: o.telo.rezultati?.[0]?.naslov, mreza: broj - n1 });
+
+  // pristup: uloga se čita na serveru; bez nje (lokalno bez baze) nema dijagnostike
+  const izvorHandlera = readFileSync(new URL("../api/iz-linka.js", import.meta.url), "utf8");
+  provera("iz-linka: dijagnostika zavisi od uloge pročitane na serveru (obradi ulogu prosleđuje), ne od tela zahteva", izvorHandlera.includes("jeBibliotekarskaUloga(uloga)") && !/telo\.(uloga|role|dijagnostika)/.test(izvorHandlera));
+
+  // bez menjanja User-Agent-a, bez headless pregledača i novih zavisnosti
+  const fetchKod = readFileSync(new URL("../api/_lib/bezbedan-fetch.js", import.meta.url), "utf8");
+  provera("User-Agent je nepromenjen (Citaliste/1.0, pošteno predstavljanje)", fetchKod.includes('const KORISNICKI_AGENT = "Citaliste/1.0 (link preview for library members; Narodna biblioteka Negotin)";') && !/Mozilla|Chrome|Safari/.test(fetchKod.replace(/\/\/.*$/gm, "")));
+  const paket2 = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const sveZavisnosti = [...Object.keys(paket2.dependencies), ...Object.keys(paket2.devDependencies)];
+  provera("nema headless pregledača ni novih zavisnosti (puppeteer, playwright, chromium, jsdom...)", !sveZavisnosti.some((x) => /puppeteer|playwright|chromium|selenium|jsdom|cheerio/.test(x)) && JSON.stringify(Object.keys(paket2.devDependencies).sort()) === JSON.stringify(["@electric-sql/pglite", "@eslint/js", "@types/react", "@types/react-dom", "@vitejs/plugin-react", "eslint", "eslint-plugin-react-hooks", "eslint-plugin-react-refresh", "globals", "vite", "vite-plugin-pwa"]), sveZavisnosti);
+
+  bf.unutrasnje.jedanZahtev = original;
   stanje.brojac.clear();
 }
 

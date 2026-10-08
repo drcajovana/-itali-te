@@ -23,6 +23,7 @@ import { parseHTML } from "linkedom";
 import { uIsbn13 } from "../../src/lib/isbn.js";
 import { ApiGreska } from "./greska.js";
 import { preuzmi, proveriUrl } from "./bezbedan-fetch.js";
+import { proceniKandidate, skupiKandidate } from "./slike-stranice.js";
 
 const OZNAKA_AUTOR = /^(autor|aut\.?|аутор|аут\.?)$/i;
 const OZNAKA_IZDAVAC = /^(izdava[cč]|издавач)$/i;
@@ -43,23 +44,6 @@ const DOMEN_IZDAVAC = {
 // renderuje JS-om). Njihova strana sama zove ovaj JSON API; gađamo ga direktno.
 const jeDelfi = (host) => host === "delfi.rs" || host.endsWith(".delfi.rs");
 
-// Adresa slike iz stranice (JSON-LD `image` može biti tekst, niz ili objekat). Relativne
-// adrese se razrešavaju prema stranici.
-function adreseSlika(v, osnova) {
-  const lista = Array.isArray(v) ? v : [v];
-  const adrese = [];
-  for (const stavka of lista.slice(0, 3)) {
-    const sirova = typeof stavka === "object" && stavka ? (stavka.url ?? stavka.contentUrl) : stavka;
-    if (!sirova || typeof sirova !== "string") continue;
-    try {
-      adrese.push(new URL(sirova.trim(), osnova).href);
-    } catch {
-      /* neispravna adresa slike se preskače */
-    }
-  }
-  return adrese;
-}
-
 // Ista provera kao pri preuzimanju (https, bez korisnika i porta, bez IP adrese i localhost-a;
 // domen nije ograničen listom), da se ne predlaže adresa koju bi preuzimanje odbilo.
 export function jeJavnaHttpsAdresa(adresa) {
@@ -71,8 +55,6 @@ export function jeJavnaHttpsAdresa(adresa) {
     return false;
   }
 }
-
-const predlogKorice = (adrese) => adrese.find(jeJavnaHttpsAdresa) ?? null;
 
 const NAJVISE_ELEMENATA = 8000; // gornja granica skeniranja oznaka na ogromnim stranicama
 
@@ -226,8 +208,11 @@ function izdavacZaDomen(host) {
 
 // ───────────────────────── glavni parser ─────────────────────────
 
-// Čita HTML jedne stranice i vraća sirove podatke (bez ograničenja dužine).
-export function izvuciIzHtmla(html, urlStr) {
+// Čita HTML jedne stranice i vraća sirove podatke (bez ograničenja dužine). `urlStr` je KONAČNA
+// adresa stranice (posle preusmeravanja): prema njoj se dopunjuju relativne adrese slika.
+// Uz `{ dijagnostika: true }` vraća i `dijagnostika`: iz kog izvora je pročitano svako polje i svi
+// kandidati za koricu sa ishodom (nikad ceo HTML); kanal ka klijentu je samo za bibliotekare.
+export function izvuciIzHtmla(html, urlStr, { dijagnostika = false } = {}) {
   const { document: doc } = parseHTML(html);
   const host = new URL(urlStr).hostname.replace(/^www\./i, "").toLowerCase();
 
@@ -237,7 +222,8 @@ export function izvuciIzHtmla(html, urlStr) {
   let isbn = null;
   let godina = null;
   let izvor = "";
-  const slike = []; // adrese slika koje je sajt ponudio, redom (JSON-LD pa og:image)
+  const jsonLdSlike = []; // vrednosti polja „image” iz JSON-LD čvorova Book/Product
+  const izv = {}; // polje -> odakle je pročitano (za dijagnostiku)
 
   // 1) JSON-LD (schema.org Book / Product)
   for (const blok of doc.querySelectorAll('script[type="application/ld+json"]')) {
@@ -251,24 +237,30 @@ export function izvuciIzHtmla(html, urlStr) {
       const tipovi = [].concat(cvor["@type"] ?? []);
       if (!tipovi.includes("Book") && !tipovi.includes("Product")) continue;
       izvor ||= "json-ld";
-      naslov ||= imeIz(cvor.name);
-      if (!autori.length) autori = imenaIz(cvor.author);
-      izdavac ||= imeIz(cvor.publisher) || imeIz(cvor.brand);
-      isbn ||= prviIsbn(cvor);
-      godina ||= godinaIz(cvor.datePublished ?? cvor.copyrightYear);
-      slike.push(...adreseSlika(cvor.image, urlStr));
+      if (!naslov && imeIz(cvor.name)) (naslov = imeIz(cvor.name)), (izv.naslov = "JSON-LD name");
+      if (!autori.length && imenaIz(cvor.author).length) (autori = imenaIz(cvor.author)), (izv.autor = "JSON-LD author");
+      if (!izdavac && (imeIz(cvor.publisher) || imeIz(cvor.brand))) (izdavac = imeIz(cvor.publisher) || imeIz(cvor.brand)), (izv.izdavac = "JSON-LD publisher/brand");
+      if (!isbn && prviIsbn(cvor)) (isbn = prviIsbn(cvor)), (izv.isbn = "JSON-LD isbn");
+      if (!godina && godinaIz(cvor.datePublished ?? cvor.copyrightYear)) (godina = godinaIz(cvor.datePublished ?? cvor.copyrightYear)), (izv.godina = "JSON-LD datePublished");
+      if (cvor.image !== undefined) jsonLdSlike.push(cvor.image);
     }
   }
 
   // 2) oznake „Autor:" / „Izdavač:", pa CSS klase
   if (!autori.length) {
-    const a = skenirajOznaku(doc, OZNAKA_AUTOR) || skenirajPoKlasi(doc, /autor|author/i);
+    const poOznaci = skenirajOznaku(doc, OZNAKA_AUTOR);
+    const a = poOznaci || skenirajPoKlasi(doc, /autor|author/i);
     if (a) {
       autori = [urediTekst(a)];
+      izv.autor = poOznaci ? "oznaka „Autor:”" : "CSS klasa (autor/author)";
       izvor ||= "oznake";
     }
   }
-  if (!izdavac) izdavac = skenirajOznaku(doc, OZNAKA_IZDAVAC) || skenirajPoKlasi(doc, /izdava[cč]|publisher/i);
+  if (!izdavac) {
+    const poOznaci = skenirajOznaku(doc, OZNAKA_IZDAVAC);
+    izdavac = poOznaci || skenirajPoKlasi(doc, /izdava[cč]|publisher/i);
+    if (izdavac) izv.izdavac = poOznaci ? "oznaka „Izdavač:”" : "CSS klasa (izdavac/publisher)";
+  }
 
   // 3) Open Graph / meta kao rezerva
   let ogPretpostavka = null;
@@ -277,35 +269,45 @@ export function izvuciIzHtmla(html, urlStr) {
     if (ogNaslov) {
       const p = parseOgNaslov(ogNaslov);
       naslov = p.naslov;
+      if (naslov) izv.naslov = "og:title";
       ogPretpostavka = p.autorPretpostavka;
       izvor ||= "og";
     } else {
       naslov = (doc.querySelector("h1")?.textContent || "").trim();
-      if (naslov) izvor ||= "og";
+      if (naslov) (izvor ||= "og"), (izv.naslov = "<h1>");
     }
   }
   if (!autori.length) {
-    const a = metaSadrzaj(doc, 'meta[property="book:author"]') || metaSadrzaj(doc, 'meta[name="author"]'); // meta[name=author] je poslednje mesto: često nosi ime CMS-a
-    if (a) autori = [urediTekst(a)];
+    const poKnjizi = metaSadrzaj(doc, 'meta[property="book:author"]');
+    const a = poKnjizi || metaSadrzaj(doc, 'meta[name="author"]'); // meta[name=author] je poslednje mesto: često nosi ime CMS-a
+    if (a) (autori = [urediTekst(a)]), (izv.autor = poKnjizi ? "meta book:author" : "meta author");
   }
-  if (!izdavac) izdavac = metaSadrzaj(doc, 'meta[property="og:site_name"]');
-  if (!autori.length && ogPretpostavka) autori = [ogPretpostavka]; // apsolutno poslednji pokušaj
-  isbn ||= uIsbn13(metaSadrzaj(doc, 'meta[property="book:isbn"]'));
-  godina ||= godinaIz(metaSadrzaj(doc, 'meta[property="book:release_date"]'));
-  slike.push(...adreseSlika(metaSadrzaj(doc, 'meta[property="og:image"]'), urlStr));
+  if (!izdavac) {
+    izdavac = metaSadrzaj(doc, 'meta[property="og:site_name"]');
+    if (izdavac) izv.izdavac = "og:site_name";
+  }
+  if (!autori.length && ogPretpostavka) (autori = [ogPretpostavka]), (izv.autor = "og:title (pretpostavka)"); // apsolutno poslednji pokušaj
+  if (!isbn) {
+    isbn = uIsbn13(metaSadrzaj(doc, 'meta[property="book:isbn"]'));
+    if (isbn) izv.isbn = "meta book:isbn";
+  }
+  if (!godina) {
+    godina = godinaIz(metaSadrzaj(doc, 'meta[property="book:release_date"]'));
+    if (godina) izv.godina = "meta book:release_date";
+  }
 
   // 4) Dekontaminacija naslova preko <h1>: neki sajtovi (npr. Laguna) trpaju
   // „Sajt - Naslov - Autor - Slogan" i u JSON-LD „name", ne samo u og:title.
   // Ako je čist <h1> sadržan u naslovu, naslov je „h1 + SEO smeće".
   const h1 = (doc.querySelector("h1")?.textContent || "").trim();
-  if (h1 && naslov && naslov.length > h1.length && naslov.toLowerCase().includes(h1.toLowerCase())) naslov = h1;
+  if (h1 && naslov && naslov.length > h1.length && naslov.toLowerCase().includes(h1.toLowerCase())) (naslov = h1), (izv.naslov = "<h1> (očišćeno od naziva sajta)");
 
   // 5) NOVO: <title> kao poslednja rezerva, da se ne vrati prazan rezultat.
   if (!naslov) {
     const p = parseOgNaslov(doc.querySelector("title")?.textContent ?? "");
     naslov = p.naslov;
-    if (!autori.length && p.autorPretpostavka) autori = [p.autorPretpostavka];
-    if (naslov) izvor = "title";
+    if (!autori.length && p.autorPretpostavka) (autori = [p.autorPretpostavka]), (izv.autor = "<title> (pretpostavka)");
+    if (naslov) (izvor = "title"), (izv.naslov = "<title>");
   }
 
   // 6) goli domen kao izdavač → bez nastavka
@@ -313,9 +315,23 @@ export function izvuciIzHtmla(html, urlStr) {
 
   // 7) poznati preprodavci: uvek imaju prednost nad JSON-LD izdavačem
   const fiksni = izdavacZaDomen(host);
-  if (fiksni) izdavac = fiksni;
+  if (fiksni) (izdavac = fiksni), (izv.izdavac = `poznati preprodavac (${host})`);
 
-  return { naslov, autori, izdavac, godina, isbn, korica: predlogKorice(slike), izvorPodataka: izvor || null };
+  // Korica: svi kandidati sa stranice se dopunjuju prema konačnoj adresi stranice, pa tek onda
+  // proveravaju (slike-stranice.js).
+  const slike = proceniKandidate(skupiKandidate(doc, jsonLdSlike), urlStr);
+
+  const rezultat = { naslov, autori, izdavac, godina, isbn, korica: slike.korica, izvorPodataka: izvor || null };
+  if (dijagnostika) {
+    rezultat.dijagnostika = {
+      izvor: "html",
+      stranica: urlStr,
+      polja: { naslov: izv.naslov ?? null, autor: izv.autor ?? null, izdavac: izv.izdavac ?? null, godina: izv.godina ?? null, isbn: izv.isbn ?? null, korica: slike.izvor },
+      kandidati: slike.kandidati,
+      izabrana: slike.korica,
+    };
+  }
+  return rezultat;
 }
 
 // Normalizovan oblik, isti kao za Google Books; sve je ograničeno po dužini.
@@ -332,6 +348,9 @@ export function urediRezultat(sirovo, urlStr) {
     izvor: "link",
     url: urlStr,
     izvorPodataka: sirovo.izvorPodataka ?? null,
+    // dijagnostika (iz kog izvora je pročitano svako polje i svi kandidati za koricu) vidi samo
+    // bibliotekar: api/iz-linka.js je skida iz odgovora ostalima
+    ...(sirovo.dijagnostika ? { dijagnostika: sirovo.dijagnostika } : {}),
   };
 }
 
@@ -346,12 +365,45 @@ async function izDelfijaApija(u, preuzmiFn) {
   const proizvod = JSON.parse(telo)?.data?.product;
   if (!proizvod) return null;
   const autori = (proizvod.authors || []).map((a) => a.authorName).filter(Boolean);
+  // ISBN: polje isbn ili ean; barcode samo ako je ispravan ISBN-13 (978 ili 979), da se ne uzme EAN
+  // proizvoda koji nije knjiga.
+  let isbn = uIsbn13(proizvod.isbn ?? proizvod.ean ?? "");
+  let izvorIsbn = isbn ? (proizvod.isbn ? "Delfi API isbn" : "Delfi API ean") : null;
+  if (!isbn && /^97[89]/.test(String(proizvod.barcode ?? ""))) {
+    isbn = uIsbn13(String(proizvod.barcode));
+    if (isbn) izvorIsbn = "Delfi API barcode";
+  }
+
+  // Slika: HTML Delfija je prazna ljuska (SPA), pa ni og:image ni JSON-LD ne postoje. Sama slika je u
+  // odgovoru API-ja: product.images je objekat sa relativnim putanjama po veličinama (xl, xxl, l, m, s).
+  // Redosled: xl (srednje velika), xxl (original, može biti velik), pa manje. Relativna putanja se
+  // dopunjuje prema adresi stranice, tek onda proverava (slike-stranice.js).
+  const slike = proceniKandidate(
+    ["xl", "xxl", "l", "m", "s"].map((velicina) => ({ izvor: `Delfi API images.${velicina}`, sirova: proizvod.images?.[velicina], predlog: true })).filter((c) => typeof c.sirova === "string" && c.sirova.trim()),
+    u.href
+  );
+
   return {
     naslov: proizvod.title || "",
     autori,
     izdavac: "Delfi",
-    isbn: uIsbn13(proizvod.isbn ?? proizvod.ean ?? ""),
+    isbn,
+    korica: slike.korica,
     izvorPodataka: "delfi-api",
+    dijagnostika: {
+      izvor: "delfi-api",
+      stranica: u.href,
+      polja: {
+        naslov: "Delfi API title",
+        autor: autori.length ? "Delfi API authors" : null,
+        izdavac: "poznati preprodavac (delfi.rs)",
+        godina: null,
+        isbn: izvorIsbn,
+        korica: slike.izvor,
+      },
+      kandidati: slike.kandidati,
+      izabrana: slike.korica,
+    },
   };
 }
 
@@ -372,7 +424,7 @@ export async function izvuciIzLinka(ulaz, { preuzmiFn = preuzmi } = {}) {
   }
 
   const { url, telo } = await preuzmiFn(u.href);
-  const sirovo = izvuciIzHtmla(telo, url.href);
+  const sirovo = izvuciIzHtmla(telo, url.href, { dijagnostika: true });
   if (!urediTekst(sirovo.naslov)) {
     throw new ApiGreska(422, "nema_podataka", "Na stranici nema podataka o knjizi.");
   }

@@ -134,7 +134,7 @@ export function procitajTelo(req) {
 }
 
 // proveri(telo) → parametri za radi (baca ApiGreska za neispravan zahtev);
-// radi(parametri, clan) → niz rezultata;
+// radi(parametri, clan, { uloga }) → niz rezultata (uloga je pročitana na serveru ili null);
 // ogranicenje(uloga) → { kanta, najvise } (neobavezno): kad ga funkcija zada, uloga se
 // čita u bazi; bez njega važi opšta kanta (30 na sat) i uloga se ne čita.
 export async function obradi(req, res, { proveri, radi, ogranicenje: granicaZa }) {
@@ -146,9 +146,13 @@ export async function obradi(req, res, { proveri, radi, ogranicenje: granicaZa }
     const clan = await proveriClana(req);
     const parametri = proveri(procitajTelo(req));
     let granica = { kanta: KANTA_OPSTA, najvise: NAJVISE_ZAHTEVA };
-    if (granicaZa && !lokalnoBezBaze()) granica = granicaZa(await ulogaClana(clan.id));
+    let uloga = null; // samo ako je pročitana u bazi (nikad iz zahteva); inače null
+    if (granicaZa && !lokalnoBezBaze()) {
+      uloga = await ulogaClana(clan.id);
+      granica = granicaZa(uloga);
+    }
     const ogranicenje = await ogranici(clan.id, granica.kanta, granica.najvise);
-    const rezultati = await radi(parametri, clan);
+    const rezultati = await radi(parametri, clan, { uloga });
     posalji(res, 200, { rezultati }, { "X-RateLimit-Remaining": String(ogranicenje.preostalo) });
   } catch (e) {
     posaljiGresku(res, e);
