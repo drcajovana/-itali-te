@@ -1591,6 +1591,98 @@ faza("15. Dijagnostika iz-linka: samo bibliotekar i administrator, bez celog HTM
   stanje.brojac.clear();
 }
 
+faza("16. Polica, stranica knjige i utisci (polica-logika.js, izgled i tekst)");
+{
+  const L = await import("../src/lib/polica-logika.js");
+  const { tekst: TK } = await import("../src/lib/tekst.js");
+  const { readFileSync } = await import("node:fs");
+  const izvor = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  const DAN = "2026-10-20";
+
+  // datum u lokalnom vremenu
+  provera("danas(): lokalni datum (a ne UTC): 20. 10. 2026. u 00:30 po lokalnom vremenu je 2026-10-20", L.danas(new Date(2026, 9, 20, 0, 30)) === "2026-10-20" && L.danas(new Date(2026, 0, 5, 23, 59)) === "2026-01-05");
+  provera("formatDatum: 2026-10-20 → 20. 10. 2026.; neispravan ulaz se ne menja", L.formatDatum("2026-10-20") === "20. 10. 2026." && L.formatDatum("2026-01-05") === "5. 1. 2026." && L.formatDatum("juče") === "juče" && L.formatDatum(null) === "");
+
+  // prelaz stanja
+  provera("Želim: samo stanje, datum kraja se briše; ništa drugo se ne dira", JSON.stringify(L.promenaStanja({ status: "citam", datum_pocetka: "2026-10-01", napredak: 40 }, "zelim", DAN)) === JSON.stringify({ status: "zelim", datum_kraja: null }));
+  provera("Čitam (nova knjiga): datum početka je danas, napredak 0", JSON.stringify(L.promenaStanja(null, "citam", DAN)) === JSON.stringify({ status: "citam", datum_pocetka: DAN, datum_kraja: null, napredak: 0 }));
+  provera("Čitam (već početo): datum početka i napredak se čuvaju", JSON.stringify(L.promenaStanja({ status: "zelim", datum_pocetka: "2026-10-01", napredak: 35 }, "citam", DAN)) === JSON.stringify({ status: "citam", datum_pocetka: "2026-10-01", datum_kraja: null, napredak: 35 }));
+  provera("Čitam posle Pročitano (ponovno čitanje): kreće od 0%, datum kraja se briše", L.promenaStanja({ status: "procitano", datum_pocetka: "2026-09-01", datum_kraja: "2026-09-20", napredak: 100 }, "citam", DAN).napredak === 0 && L.promenaStanja({ status: "procitano", datum_kraja: "2026-09-20", napredak: 100 }, "citam", DAN).datum_kraja === null);
+  provera("Pročitano („Označi kao pročitano”): datum kraja je danas, napredak 100, datum početka se ne izmišlja", JSON.stringify(L.promenaStanja({ status: "citam", napredak: 40 }, "procitano", DAN)) === JSON.stringify({ status: "procitano", datum_kraja: DAN, napredak: 100 }) && !("datum_pocetka" in L.promenaStanja(null, "procitano", DAN)));
+  provera("nepoznato stanje je greška", (() => { try { L.promenaStanja(null, "gotovo", DAN); return false; } catch { return true; } })());
+
+  // napredak
+  for (const [ulaz, ocekivano] of [[0, 0], [45, 45], [100, 100], ["70", 70], [" 80 ", 80], [-1, null], [101, null], [45.5, null], ["abc", null], ["", null], [null, null], ["1e2", null], ["1000", null]]) {
+    provera(`uredjenNapredak(${JSON.stringify(ulaz)}) = ${ocekivano}`, L.uredjenNapredak(ulaz) === ocekivano, L.uredjenNapredak(ulaz));
+  }
+  provera("prikazani napredak: pročitano je 100, želim je 0, čitam je ono što piše (i 0 za neispravno)", L.prikazaniNapredak({ status: "procitano", napredak: 0 }) === 100 && L.prikazaniNapredak({ status: "zelim", napredak: 60 }) === 0 && L.prikazaniNapredak({ status: "citam", napredak: 60 }) === 60 && L.prikazaniNapredak({ status: "citam", napredak: 999 }) === 0 && L.prikazaniNapredak(null) === 0);
+
+  // grupisanje police
+  {
+    const redovi = [
+      { id: "a", status: "zelim", izmenjeno: "2026-10-01T10:00:00Z" },
+      { id: "b", status: "citam", izmenjeno: "2026-10-03T10:00:00Z" },
+      { id: "c", status: "citam", izmenjeno: "2026-10-05T10:00:00Z" },
+      { id: "d", status: "procitano", izmenjeno: "2026-09-01T10:00:00Z" },
+      { id: "e", status: "nepoznato", izmenjeno: "2026-10-06T10:00:00Z" },
+    ];
+    const g = L.grupisiPolicu(redovi);
+    provera("grupisanje: tri stanja, najskorije izmenjeno prvo, nepoznato stanje se ne prikazuje", g.citam.map((x) => x.id).join() === "c,b" && g.zelim.map((x) => x.id).join() === "a" && g.procitano.map((x) => x.id).join() === "d", g);
+    provera("grupisanje prazne police daje tri prazna niza", JSON.stringify(L.grupisiPolicu([])) === JSON.stringify({ citam: [], procitano: [], zelim: [] }) && JSON.stringify(L.grupisiPolicu(undefined)) === JSON.stringify({ citam: [], procitano: [], zelim: [] }));
+    provera("podrazumevana kartica: prva neprazna (Čitam, Želim, Pročitano)", L.podrazumevanaKartica(g) === "citam" && L.podrazumevanaKartica({ citam: [], zelim: [1], procitano: [1] }) === "zelim" && L.podrazumevanaKartica({ citam: [], zelim: [], procitano: [1] }) === "procitano" && L.podrazumevanaKartica({ citam: [], zelim: [], procitano: [] }) === "citam");
+  }
+
+  // prosečna ocena
+  provera("prosečna ocena: 8.3 → „8,3”, bez ocena → null", L.prosecnaOcena({ prosecna_ocena: "8.3", broj_ocena: 4 }) === "8,3" && L.prosecnaOcena({ prosecna_ocena: 7, broj_ocena: 1 }) === "7,0" && L.prosecnaOcena({ prosecna_ocena: null, broj_ocena: 0 }) === null && L.prosecnaOcena(null) === null && L.prosecnaOcena({ prosecna_ocena: "8.0", broj_ocena: 0 }) === null);
+
+  // utisak
+  {
+    const dobar = L.urediUtisak({ ocena: 8, tekst: "  Odlična knjiga.  ", vidljivost: "prijatelji", spojler: true });
+    provera("utisak: ocena, tekst (bez razmaka sa krajeva), vidljivost i spojler", dobar.ok && dobar.red.ocena === 8 && dobar.red.tekst === "Odlična knjiga." && dobar.red.vidljivost === "prijatelji" && dobar.red.spojler === true, dobar);
+    provera("utisak: samo ocena (iz forme dolazi kao tekst), podrazumevano javno; spojler bez teksta ne važi", JSON.stringify(L.urediUtisak({ ocena: "7", tekst: "", spojler: true })) === JSON.stringify({ ok: true, red: { ocena: 7, tekst: null, vidljivost: "javno", spojler: false } }));
+    provera("utisak: samo tekst (bez ocene) je dozvoljen", L.urediUtisak({ ocena: "", tekst: "Samo reč." }).ok === true && L.urediUtisak({ ocena: null, tekst: "Samo reč." }).red.ocena === null);
+    for (const [naziv, unos, polje, razlog] of [
+      ["bez ocene i bez teksta (isto pravilo kao ograničenje u bazi)", { ocena: "", tekst: "   " }, "ocena", "prazno"],
+      ["ocena 0", { ocena: 0, tekst: "x" }, "ocena", "neispravno"],
+      ["ocena 11", { ocena: 11, tekst: "x" }, "ocena", "neispravno"],
+      ["ocena 7.5", { ocena: 7.5 }, "ocena", "neispravno"],
+      ["ocena „abc”", { ocena: "abc" }, "ocena", "neispravno"],
+      ["tekst duži od 3000 znakova", { ocena: 5, tekst: "x".repeat(3001) }, "tekst", "predugo"],
+      ["nepoznata vidljivost", { ocena: 5, vidljivost: "svima" }, "vidljivost", "neispravno"],
+    ]) {
+      const r = L.urediUtisak(unos);
+      provera(`utisak odbija: ${naziv}`, r.ok === false && r.polje === polje && r.razlog === razlog, r);
+    }
+    provera("utisak: tačno 3000 znakova prolazi; sve tri vidljivosti prolaze", L.urediUtisak({ ocena: 5, tekst: "x".repeat(3000) }).ok === true && L.VIDLJIVOSTI.every((v) => L.urediUtisak({ ocena: 5, vidljivost: v }).ok));
+    provera("forma utiska: iz postojećeg reda i prazna", JSON.stringify(L.formaUtiska({ ocena: 6, tekst: "t", vidljivost: "samo_ja", spojler: true })) === JSON.stringify({ ocena: 6, tekst: "t", vidljivost: "samo_ja", spojler: true }) && JSON.stringify(L.formaUtiska(null)) === JSON.stringify({ ocena: "", tekst: "", vidljivost: "javno", spojler: false }));
+  }
+
+  // tekst: natpisi i opisi ocena
+  provera("ocene 1 do 10 imaju opis vrednosti", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((n) => typeof TK.utisak.ocene[n] === "string" && TK.utisak.ocene[n].length > 2) && new Set(Object.values(TK.utisak.ocene)).size === 10, TK.utisak.ocene);
+  provera("natpisi: stanja police, Rezerviši, Označi kao pročitano, vidljivost, spojler", TK.knjigaEkran.polica.stanja.zelim === "Želim" && TK.knjigaEkran.polica.stanja.citam === "Čitam" && TK.knjigaEkran.polica.stanja.procitano === "Pročitano" && TK.knjigaEkran.rezervacija.dugme === "Rezerviši" && TK.knjigaEkran.polica.oznaciProcitano === "Označi kao pročitano" && TK.utisak.vidljivosti.javno === "Svi članovi" && TK.utisak.vidljivosti.prijatelji === "Samo povezani" && TK.utisak.vidljivosti.samo_ja === "Samo ja" && TK.utisak.spojler === "Sadrži spojler");
+  provera("dostupnost: „U fondu, N primeraka” i „Nema u fondu, na listi za nabavku”", TK.knjigaEkran.uFondu === "U fondu, {primeraka}" && TK.knjigaEkran.nijeUFondu === "Nema u fondu, na listi za nabavku");
+  provera("početna: tri kartice Čitam / Pročitano / Želim i prazna stanja za svaku", TK.pocetna.kartice.citam === "Čitam" && TK.pocetna.kartice.procitano === "Pročitano" && TK.pocetna.kartice.zelim === "Želim" && ["citam", "procitano", "zelim"].every((s) => TK.pocetna.prazneKartice[s].length > 5) && TK.pocetna.prazno.length > 10 && TK.utisak.tudji.nema.length > 10);
+
+  // izvorni kod: RLS se ne filtrira u React kodu; palete; tekst samo iz tekst.js
+  const polica = izvor("src/lib/polica.js");
+  const bezKomentara = (s) => s.replace(/\/\/.*$/gm, "");
+  provera("polica.js: moja polica se traži po clan_id (RLS pokazuje i policu povezanih), a tuđi utisci se čitaju iz pogleda bez filtriranja vidljivosti",
+    /from\("polica"\)[\s\S]*?\.eq\("clan_id", clanId\)/.test(polica) && polica.includes('from("utisci_sa_autorom")') && !/\.(?:eq|neq|in|not|filter)\([^)]*(?:vidljivost|skriven|su_povezani)/.test(bezKomentara(polica)));
+  provera("tuđi utisci: uslov je samo knjiga i „nije moj” (da se moj ne prikaže dvaput); nema filtra po vidljivosti, skrivenosti ni vezi", (() => { const m = /ucitajTudjeUtiske[\s\S]*?order\(/.exec(polica)?.[0] ?? ""; return m.includes('.eq("knjiga_id", knjigaId)') && m.includes('.neq("clan_id", clanId)') && !/\.(eq|neq|in|filter|not)\("(vidljivost|skriven)/.test(m); })());
+  const komponente = ["src/pages/Pocetna.jsx", "src/pages/Knjiga.jsx", "src/components/StanjePolice.jsx", "src/components/Utisci.jsx", "src/components/PlocicaKnjige.jsx", "src/components/TrakaNapretka.jsx"];
+  for (const p of komponente) {
+    const kod = bezKomentara(izvor(p));
+    provera(`${p}: samo boje iz teme (papir, mastilo, pecat, pecat-svetli, ivica, white); bez novih hex vrednosti i tuđih paleta`,
+      !/#[0-9a-fA-F]{3,8}\b/.test(kod) && !/\b(?:bg|text|border|ring|accent|fill|stroke|from|to|via|outline|divide)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone|black)(?:-\d{2,3})?\b/.test(kod) && !/\[#/.test(kod));
+  }
+  provera("dodirne mete: dugmad na početnoj i stranici knjige imaju najmanje min-h-11 (44 px)", ["src/pages/Pocetna.jsx", "src/components/StanjePolice.jsx", "src/components/Utisci.jsx"].every((p) => izvor(p).split("<button").slice(1).every((deo) => /min-h-(11|12|14)/.test(deo.split("</button>")[0]) || /className=\{/.test(deo.split("</button>")[0]))));
+  provera("početna i stranica knjige ne pišu natpise direktno: nema ćiriličnih ni dugih srpskih rečenica izvan tekst.js (provera: svaki JSX tekst dolazi iz T/tekst)", komponente.every((p) => !/>\s*[A-ZČĆŠŽĐ][a-zčćšžđ]+(?:\s+[a-zčćšžđ]+){2,}[.!?]?\s*</.test(izvor(p))));
+  provera("početna čita policu preko ucitajPolicu (moja polica), a stranica knjige poziva StanjePolice i Utisci", izvor("src/pages/Pocetna.jsx").includes("ucitajPolicu(clan.id)") && izvor("src/pages/Knjiga.jsx").includes("<StanjePolice") && izvor("src/pages/Knjiga.jsx").includes("<Utisci"));
+  provera("spojler: tuđi tekst je zamagljen (blur) i sakriven od čitača ekrana dok se ne dodirne", izvor("src/components/Utisci.jsx").includes("blur-md") && izvor("src/components/Utisci.jsx").includes("aria-hidden={zamagljen}"));
+  provera("rezervacija se nudi samo za knjigu u fondu (interfejs) — a baza to proverava (0017)", izvor("src/components/StanjePolice.jsx").includes("knjiga.u_fondu && rezervacija !== undefined") && /k\.u_fondu/.test(izvor("supabase/migrations/0017_polica_napredak_utisci_autor.sql")));
+  provera("stranica knjige: ručno upisana knjiga (izvor 'clan', u_fondu=false) ima oznaku „Nema u fondu, na listi za nabavku”", izvor("src/pages/Knjiga.jsx").includes("knjiga.u_fondu ? T.uFondu") && izvor("src/pages/Knjiga.jsx").includes(": T.nijeUFondu") && izvor("src/components/PlocicaKnjige.jsx").includes("!knjiga.u_fondu"));
+}
+
 faza("11. Tajne");
 provera("ni u jednom odgovoru (telo i zaglavlja) nema ključeva", sviOdgovori.every((t) => !TAJNE.some((k) => t.includes(k))), "neki odgovor sadrži ključ");
 

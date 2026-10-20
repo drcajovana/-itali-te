@@ -95,7 +95,8 @@ try {
   const STORAGE = fajlovi.filter((f) => /^001[34]_/.test(f));
   const ISPRAVKA = fajlovi.filter((f) => /^0015_/.test(f));
   const PUTANJA = fajlovi.filter((f) => /^0016_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x))) await pusti(f);
+  const POLICA = fajlovi.filter((f) => /^0017_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -210,6 +211,9 @@ try {
   ok(!/create\s+(or\s+replace\s+)?function|drop\s/i.test(izvor16) && (izvor16.match(/alter function/g) ?? []).length === 4, "0016 samo menja postojeće funkcije (alter function), ne piše ih iznova", izvor16);
   await db.exec(fs.readFileSync(path.join(MIGRACIJE, PUTANJA[0]), "utf8"));
   ok(JSON.stringify(await putanje()) === JSON.stringify(posle16), "0016 je idempotentna: drugo puštanje ništa ne menja", await putanje());
+
+  faza("Migracija 0017: napredak čitanja, autor utiska (nadimak), rezervacija samo za fond");
+  for (const f of POLICA) await pusti(f);
 
   // ───────── podaci za dalje provere ─────────
   const A = "11111111-1111-4111-8111-111111111111";
@@ -709,6 +713,100 @@ try {
   await db.exec(fs.readFileSync(path.join(MIGRACIJE, STORAGE[1]), "utf8"));
   const posle14 = (await db.query("select (select count(*)::int from pg_constraint where conrelid = 'public.knjige'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%korice_izvor%') as ogr, (select count(*)::int from pg_trigger where tgrelid = 'public.knjige'::regclass and tgname = 'knjige_korice_biu') as okidaci, (select count(*)::int from storage.buckets where id = 'korice') as bucketi")).rows[0];
   ok(posle14.ogr === 1 && posle14.okidaci === 1 && posle14.bucketi === 1, "0014 je idempotentna: drugo puštanje ne duplira ograničenje, okidač ni bucket", posle14);
+
+  // ───────── 0017: polica, utisci sa autorom, rezervacije ─────────
+  faza("0017: utisci_sa_autorom (RLS važi, samo nadimak), napredak čitanja, rezervacija samo za knjigu u fondu");
+  const UA = A; // povezan sa UB
+  const UB = "66666666-6666-4666-8666-666666666666";
+  const UC = "77777777-7777-4777-8777-777777777777";
+  await db.query("insert into auth.users (id) values ($1), ($2)", [UB, UC]);
+  await db.query(
+    `insert into clanovi (id, broj_kartice, ime, nadimak, uloga, aktivan) values
+       ($1, 'UB1', 'Pravo Ime B', 'Nadimak B', 'citalac', true),
+       ($2, 'UC1', 'Pravo Ime C', null, 'citalac', true)`,
+    [UB, UC]
+  );
+  await db.query("insert into veze (pozivalac_id, pozvani_id, status) values ($1, $2, 'prihvacena')", [UA, UB]);
+  const nova = async (naslov, uFondu = true, spojena = null) =>
+    (await db.query("insert into knjige (naslov, izvor, u_fondu, broj_primeraka, broj_slobodnih, spojena_sa_id) values ($1, 'fond', $2, $3, $3, $4) returning id", [naslov, uFondu, uFondu ? 1 : 0, spojena])).rows[0].id;
+  const K1 = await nova("U1 javni");
+  const K2 = await nova("U2 prijatelji");
+  const K3 = await nova("U3 samo ja");
+  const K4 = await nova("U4 skriven");
+  const KN = await nova("U5 nije u fondu", false);
+  const KD = await nova("U6 spojeni duplikat", true, K1);
+  await db.query(
+    `insert into utisci (clan_id, knjiga_id, ocena, tekst, vidljivost, skriven) values
+       ($1, $2, 8, 'B javno', 'javno', false), ($1, $3, 7, 'B prijatelji', 'prijatelji', false), ($1, $4, 6, 'B samo ja', 'samo_ja', false), ($1, $5, 5, 'B skriven', 'javno', true),
+       ($6, $2, 3, 'C javno', 'javno', false), ($6, $3, 4, 'C prijatelji', 'prijatelji', false), ($7, $2, 9, 'A javno', 'javno', false)`,
+    [UB, K1, K2, K3, K4, UC, UA]
+  );
+  const vidiUtiske = (uloga, sub, knjiga, pogled = "utisci_sa_autorom") => kao(uloga, sub, `select * from public.${pogled} where knjiga_id = $1 order by tekst`, [knjiga]);
+  const tekstovi = (r) => (r.redovi ?? []).map((x) => x.tekst).join("|");
+
+  r = await vidiUtiske("authenticated", UA, K1);
+  ok(!r.greska && tekstovi(r) === "A javno|B javno|C javno", "pogled: povezani čitalac A vidi svoj i javne utiske (B, C)", r.greska?.message ?? tekstovi(r));
+  ok(r.redovi.find((x) => x.tekst === "B javno")?.autor === "Nadimak B" && r.redovi.find((x) => x.tekst === "C javno")?.autor === null, "pogled: uz utisak ide NADIMAK autora (null kad ga nema), ne pravo ime", r.redovi.map((x) => [x.tekst, x.autor]));
+  r = await vidiUtiske("authenticated", UA, K2);
+  ok(tekstovi(r) === "B prijatelji", "pogled: A vidi „prijatelji” utisak povezanog B, ne i stranca C", r.greska?.message ?? tekstovi(r));
+  r = await vidiUtiske("authenticated", UC, K2);
+  ok(tekstovi(r) === "C prijatelji", "pogled: stranac C ne vidi „prijatelji” utisak B (samo svoj)", r.greska?.message ?? tekstovi(r));
+  r = await vidiUtiske("authenticated", UA, K3);
+  ok(r.redovi?.length === 0, "pogled: „samo ja” utisak niko ne vidi (ni povezani)", r.greska?.message ?? tekstovi(r));
+  r = await vidiUtiske("authenticated", UA, K4);
+  ok(r.redovi?.length === 0, "pogled: skriven utisak (moderacija) obični čitalac ne vidi", r.greska?.message ?? tekstovi(r));
+  r = await vidiUtiske("authenticated", UB, K4);
+  ok(tekstovi(r) === "B skriven" && r.redovi[0].skriven === true, "pogled: autor vidi svoj skriven utisak (označen kao skriven)", r.greska?.message ?? tekstovi(r));
+  r = await vidiUtiske("authenticated", BIB, K3);
+  ok(tekstovi(r) === "B samo ja", "pogled: bibliotekar vidi i „samo ja” (isto kao tabela utisci)", r.greska?.message ?? tekstovi(r));
+  r = await vidiUtiske("authenticated", BIB, K4);
+  ok(tekstovi(r) === "B skriven", "pogled: bibliotekar vidi i skrivene utiske", r.greska?.message ?? tekstovi(r));
+
+  // pogled ne širi i ne sužava ono što RLS pokazuje na tabeli
+  for (const [naziv, uloga, sub] of [["A", "authenticated", UA], ["B", "authenticated", UB], ["C", "authenticated", UC], ["bibliotekar", "authenticated", BIB]]) {
+    const t = await kao(uloga, sub, "select id from public.utisci order by id");
+    const p = await kao(uloga, sub, "select id from public.utisci_sa_autorom order by id");
+    ok(!t.greska && !p.greska && JSON.stringify(t.redovi) === JSON.stringify(p.redovi), `pogled i tabela utisci pokazuju ISTE redove (${naziv})`, t.greska?.message ?? p.greska?.message ?? { tabela: t.redovi?.length, pogled: p.redovi?.length });
+  }
+  const kolonePogleda = (await db.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'utisci_sa_autorom' order by 1")).rows.map((x) => x.column_name);
+  ok(JSON.stringify(kolonePogleda) === JSON.stringify(["autor", "clan_id", "izmenjeno", "knjiga_id", "kreiran", "id", "ocena", "skriven", "spojler", "tekst", "vidljivost"].sort()), "pogled nema ni pravo ime, ni broj karte, ni uneo_bibliotekar_id (samo autor = nadimak)", kolonePogleda);
+  r = await kao("anon", null, "select * from public.utisci_sa_autorom");
+  ok(nemaPrava(r), "anon ne sme da čita utisci_sa_autorom", r.greska?.message ?? r.redovi);
+  r = await kao("anon", null, "select privatno.javno_ime($1)", [UB]);
+  ok(nemaPrava(r), "anon ne sme da zove privatno.javno_ime", r.greska?.message ?? r.redovi);
+  const defView = (await db.query("select c.reloptions from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = 'utisci_sa_autorom'")).rows[0];
+  ok(JSON.stringify(defView?.reloptions) === JSON.stringify(["security_invoker=true"]), "pogled je security_invoker (RLS tabele utisci važi za onoga ko čita)", defView);
+
+  // napredak čitanja
+  const polici = await kao("authenticated", UA, "insert into public.polica (clan_id, knjiga_id, status) values ($1, $2, 'citam') returning id, napredak", [UA, K1]);
+  ok(!polici.greska && polici.redovi[0].napredak === 0, "polica.napredak ima podrazumevanu vrednost 0", polici.greska?.message ?? polici.redovi);
+  const pid = polici.redovi?.[0]?.id;
+  for (const [naziv, vrednost, dobro] of [["0", 0, true], ["45", 45, true], ["100", 100, true], ["-1", -1, false], ["101", 101, false]]) {
+    r = await kao("authenticated", UA, "update public.polica set napredak = $2 where id = $1 returning napredak", [pid, vrednost]);
+    ok(dobro ? !r.greska && r.redovi[0]?.napredak === vrednost : Boolean(r.greska), `polica.napredak ${naziv}: ${dobro ? "prolazi" : "odbija baza (0 do 100)"}`, r.greska?.message ?? r.redovi);
+  }
+  r = await kao("authenticated", UB, "update public.polica set napredak = 10 where id = $1 returning id", [pid]);
+  ok(!r.greska && r.redovi.length === 0, "tuđu policu (napredak) ne može da menja ni povezani B", r.greska?.message ?? r.redovi);
+
+  // rezervacija samo za knjigu u fondu
+  const REZ = "insert into public.rezervacije (clan_id, knjiga_id) values ($1, $2) returning id";
+  r = await kao("authenticated", UA, REZ, [UA, K2]);
+  ok(!r.greska && r.redovi.length === 1, "rezervacija knjige u fondu prolazi", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, REZ, [UA, K2]);
+  ok(Boolean(r.greska), "ista knjiga se ne rezerviše dvaput dok prva stoji (postojeće ograničenje)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, REZ, [UA, KN]);
+  ok(r.greska?.message?.includes("row-level security"), "REZERVACIJA knjige koja nije u fondu se odbija u bazi", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, REZ, [UA, KD]);
+  ok(r.greska?.message?.includes("row-level security"), "rezervacija spojenog duplikata se odbija u bazi", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, REZ, [UB, K3]);
+  ok(r.greska?.message?.includes("row-level security"), "rezervaciju u tuđe ime ne može da upiše ni povezani član", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "update public.rezervacije set status = 'otkazana' where clan_id = $1 and knjiga_id = $2 returning status", [UA, K2]);
+  ok(!r.greska && r.redovi[0]?.status === "otkazana", "član otkazuje svoju rezervaciju (postojeće pravo i dalje radi)", r.greska?.message ?? r.redovi);
+
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, POLICA[0]), "utf8"));
+  const politikeRez = (await db.query("select count(*)::int as n from pg_policy where polrelid = 'public.rezervacije'::regclass and polname = 'rezervacije_insert'")).rows[0].n;
+  r = await kao("authenticated", UC, "select count(*)::int as n from public.utisci_sa_autorom where knjiga_id = $1", [K1]);
+  ok(politikeRez === 1 && r.redovi?.[0]?.n === 3, "0017 je idempotentna: drugo puštanje ne duplira politiku i pogled i dalje radi", { politike: politikeRez, pogled: r.redovi });
 
   // ───────── opšte ─────────
   faza("Opšta pravila");

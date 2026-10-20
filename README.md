@@ -17,7 +17,8 @@ Aplikacija još nema ekrane.
 | 3. Pretraga knjiga | ✅ `/pretraga`: naša baza, Google Books, link, ručni upis; dodavanje na policu. Pre dodavanja spoljne knjige član potvrđuje izmenljiva polja. **0013 i 0014 (Storage za korice) treba zalepiti u SQL Editor, tim redom**, a Google Books traži API ključ (vidi niže) |
 | 3a. Unos linkom | ✅ `api/iz-linka.js`, parser prenet iz `docs/nabavka-extract.js` |
 | 3b. Korice | ✅ lanac: naša slika iz Storage-a (fotografija bibliotekara, ili slika preuzeta sa linka na njegov zahtev) → Open Library po ISBN-u → pločica sa naslovom i autorom. Slika se nikad ne učitava sa tuđeg servera. Google sličica se samo prikazuje u rezultatima pretrage, ne čuva se. **Trebaju migracije 0013 i 0014** |
-| 4–11. | ⬜ |
+| 4–5. Polica, stranica knjige, utisci | ✅ početna „Moja polica”, `/knjiga/:id` sa stanjem police, napretkom, rezervacijom i utiscima (vidi „Polica, stranica knjige i utisci”). **Treba migracija 0017** |
+| 6–11. | ⬜ |
 
 ## Pokretanje
 
@@ -49,6 +50,7 @@ Migracije se puštaju redom, brojevima:
 | `0014_korice_preuzeto.sql` | `knjige.korice_poreklo`, izvor korice `'preuzeto'`, okidač koji čuva poreklo, i granica bucket-a podignuta na 1.5 MB. Puštati posle 0013 (ponovno puštanje 0013 vraća 1 MB, pa tada ponoviti i 0014) |
 | `0015_domeni_korica_ispravka.sql` | ispravka liste domena za korice u bazi: briše `books.google.com` i `books.googleusercontent.com`, dodaje naš Supabase domen; idempotentna (može i na već ispravljenoj bazi) |
 | `0016_search_path_pomocne_funkcije.sql` | `search_path = pg_catalog` za `privatno.norm_tekst`, `norm_sifra`, `dodirni_izmenjeno` i `isbn13` (`alter function`, idempotentno) |
+| `0017_polica_napredak_utisci_autor.sql` | `polica.napredak` (0–100), pogled `utisci_sa_autorom` (nadimak autora uz utisak, RLS važi), rezervacija samo za knjigu u fondu |
 
 Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na
 `privatno.su_povezani()` iz `0002`, a politika na `preporuke` gleda u `prijave`,
@@ -193,6 +195,24 @@ adrese (`og_slika`) se ne prikazuju. Pri prelasku na drugi Supabase projekat men
 anon može da čita, bibliotekar može da upiše i obriše, loš tip i veličina se odbijaju, čitalac ne
 može da lažira izvor `'preuzeto'`. Preuzimanje sa linka proverava samo `test:api` (lažni Supabase).
 
+### Polica, stranica knjige i utisci
+
+- **Početna („Moja polica”)**: knjige u toku sa trakom napretka, tri kartice (**Čitam**, **Pročitano**, **Želim**,
+  svaka sa brojem knjiga) i mreža korica izabrane kartice (naša slika, pa Open Library po ISBN-u, pa složena
+  pločica sa naslovom i autorom). Knjiga koja nije u fondu ima oznaku „nije u fondu”. Prazna polica, prazna kartica
+  i greška pri učitavanju imaju svoje poruke. Čita se samo SVOJA polica (RLS pokazuje i policu povezanih članova).
+- **`/knjiga/:id`**: dostupnost („U fondu, N primeraka” ili „Nema u fondu, na listi za nabavku”), prosečna ocena
+  iz pogleda `ocene_knjiga`, promena stanja (Želim, Čitam, Pročitano), napredak u procentima za knjige u toku,
+  **Označi kao pročitano** (datum kraja je danas, napredak 100) i **Rezerviši** (poruka bibliotekaru; samo za knjige u
+  fondu, što proverava i baza; zaduženja vodi biblioteka). Datum početka čitanja se upisuje kad knjiga postane „Čitam”.
+- **Utisak**: ocena 1 do 10 sa opisom vrednosti, tekst, vidljivost (svi članovi / samo povezani / samo ja), kvačica
+  „Sadrži spojler”; izmena i brisanje (uz potvrdu) sopstvenog utiska. **Tuđi utisci**: samo oni koje RLS pokazuje, uz
+  nadimak autora; tekst sa spojlerom je zamagljen dok se ne dodirne. Ni ovde nema filtriranja po vidljivosti u React
+  kodu: pogled `utisci_sa_autorom` je `security_invoker`, pa važe politike tabele `utisci`.
+- **Ručni upis naslova koji nemamo** (pretraga) ostaje; takva knjiga je „nije u fondu” i ulazi u izveštaj za nabavku.
+- Pravila (prelaz stanja, napredak, ocena, utisak) su u `src/lib/polica-logika.js`, upiti u `src/lib/polica.js`.
+  `test:db` proverava pogled, napredak i rezervaciju; `test:rls` (faza 12) isto na pravoj bazi.
+
 ### Prvi administrator
 
 ```bash
@@ -247,12 +267,12 @@ nule ako ijedna provera padne.
 ### Migracije su puštene ručno
 
 Port 5432 je blokiran sa razvojne mreže, pa `supabase db push` ne radi. Migracije
-se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0016 treba zalepiti, tim redom). Zato je tabela
+se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0017 treba zalepiti, tim redom). Zato je tabela
 `supabase_migrations.schema_migrations` u bazi **prazna** i CLI misli da ništa
 nije primenjeno. Kad se ostvari veza, uskladiti:
 
 ```bash
-npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016
+npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017
 ```
 
 Do tada: izmena postojeće migracije u repozitorijumu **nije** u bazi dok se

@@ -45,10 +45,28 @@ const lat = {
     neaktivan: "Vaše članstvo nije aktivno. Javite se bibliotekaru.",
   },
 
+  // Početna: „Moja polica" (korak 5 iz PLAN.md).
   pocetna: {
     pozdrav: "Dobro došli",
-    uIzradi: "Aplikacija je u izradi.",
     trazi: "Potražite knjigu",
+    naslov: "Moja polica",
+    uToku: "Trenutno čitam",
+    nemaUToku: "Trenutno ne čitate nijednu knjigu.",
+    prazno: "Vaša polica je prazna. Potražite knjigu i dodajte je na policu, ili upišite naslov koji nemamo.",
+    ucitava: "Učitavam vašu policu…",
+    greska: "Ne mogu da učitam vašu policu. Proverite internet i pokušajte ponovo.",
+    ponovo: "Pokušaj ponovo",
+    prikaz: "Prikaz police",
+    kartice: { citam: "Čitam", procitano: "Pročitano", zelim: "Želim" },
+    prazneKartice: {
+      citam: "Nijednu knjigu trenutno ne čitate.",
+      procitano: "Još nema pročitanih knjiga.",
+      zelim: "Nema knjiga na listi želja.",
+    },
+    napredak: "Napredak: {n}%",
+    napredakOznaka: "Napredak čitanja",
+    nijeUFondu: "nije u fondu",
+    otvori: "Otvori knjigu „{naslov}”",
   },
 
   profil: {
@@ -342,7 +360,7 @@ const lat = {
 
   // Stranica jedne knjige (/knjiga/:id).
   knjigaEkran: {
-    nazad: "Nazad na pretragu",
+    nazad: "Nazad",
     nijeNadjena: "Ove knjige nema.",
     greska: "Ne mogu da učitam knjigu. Proverite internet i pokušajte ponovo.",
     koricaOdeljak: "Korica",
@@ -355,6 +373,94 @@ const lat = {
     signatura: "Signatura",
     koricaPoreklo: "Korica preuzeta sa",
     opis: "Opis",
+
+    // dostupnost u fondu
+    uFondu: "U fondu, {primeraka}",
+    slobodnih: "Slobodnih: {n}",
+    sviIzdati: "Svi primerci su trenutno izdati",
+    nijeUFondu: "Nema u fondu, na listi za nabavku",
+
+    // prosečna ocena
+    ocenaNaslov: "Ocena čitalaca",
+    ocenaVrednost: "{ocena} od 10",
+    ocenaBroj: "ocena: {n}",
+    ocenaNema: "Još nema ocena.",
+
+    // moja polica
+    polica: {
+      naslov: "Moja polica",
+      grupa: "Stanje na vašoj polici",
+      stanja: { zelim: "Želim", citam: "Čitam", procitano: "Pročitano" },
+      nijeNaPolici: "Ove knjige nema na vašoj polici. Izaberite stanje da je dodate.",
+      oznaciProcitano: "Označi kao pročitano",
+      pocetak: "Počeli ste da čitate {datum}",
+      kraj: "Pročitano {datum}",
+      sacuvano: "Sačuvano.",
+      greska: "Promena nije sačuvana. Pokušajte ponovo.",
+      napredak: "Napredak čitanja",
+      napredakVrednost: "{n}%",
+      napredakSacuvaj: "Sačuvaj napredak",
+      napredakGreska: "Napredak nije sačuvan. Pokušajte ponovo.",
+    },
+
+    // rezervacija
+    rezervacija: {
+      dugme: "Rezerviši",
+      rezervisano: "Rezervisano. Bibliotekar će vas obavestiti.",
+      otkazi: "Otkaži rezervaciju",
+      napomena: "Rezervacija je poruka bibliotekaru. Zaduženja vodi biblioteka.",
+      otkazana: "Rezervacija je otkazana.",
+      sacuvano: "Rezervisano. Bibliotekar će vas obavestiti.",
+      greske: {
+        rezervacija_vec_postoji: "Ovu knjigu ste već rezervisali.",
+        rezervacija_nije_u_fondu: "Ovu knjigu nije moguće rezervisati: nije u fondu.",
+        rezervacija_nije_otkazana: "Rezervacija nije otkazana. Pokušajte ponovo.",
+        opste: "Rezervacija nije uspela. Pokušajte ponovo.",
+      },
+    },
+  },
+
+  // Utisak (ocena, tekst, vidljivost, spojler) i tuđi utisci na stranici knjige.
+  utisak: {
+    naslov: "Vaš utisak",
+    ocena: "Ocena",
+    bezOcene: "Bez ocene",
+    ocenaOpis: "{ocena} od 10: {opis}",
+    ocene: { 1: "užasno", 2: "veoma loše", 3: "loše", 4: "slabije", 5: "osrednje", 6: "dobro", 7: "prilično dobro", 8: "vrlo dobro", 9: "odlično", 10: "remek-delo" },
+    tekst: "Vaš utisak (po želji)",
+    vidljivost: "Ko može da ga vidi",
+    vidljivosti: { javno: "Svi članovi", prijatelji: "Samo povezani", samo_ja: "Samo ja" },
+    spojler: "Sadrži spojler",
+    sacuvaj: "Sačuvaj utisak",
+    cuvam: "Čuvam…",
+    odustani: "Odustani",
+    izmeni: "Izmeni utisak",
+    obrisi: "Obriši utisak",
+    obrisiPitanje: "Obrisati vaš utisak?",
+    obrisiDa: "Da, obriši",
+    obrisiNe: "Ne, ostavi",
+    sacuvano: "Utisak je sačuvan.",
+    obrisano: "Utisak je obrisan.",
+    sakrivenMoj: "Bibliotekar je sakrio vaš utisak, pa ga drugi ne vide.",
+    nemaMog: "Još niste napisali utisak o ovoj knjizi.",
+    greske: {
+      utisak_ocena_prazno: "Izaberite ocenu ili napišite tekst.",
+      utisak_ocena_neispravno: "Ocena mora biti ceo broj od 1 do 10.",
+      utisak_tekst_predugo: "Tekst je predugačak (najviše 3000 znakova).",
+      utisak_vidljivost_neispravno: "Izaberite ko može da vidi utisak.",
+      utisak_nije_obrisan: "Utisak nije obrisan. Pokušajte ponovo.",
+      opste: "Utisak nije sačuvan. Pokušajte ponovo.",
+    },
+    tudji: {
+      naslov: "Utisci drugih čitalaca",
+      nema: "Još nema utisaka drugih čitalaca. Budite prvi: napišite svoj.",
+      ucitava: "Učitavam utiske…",
+      greska: "Ne mogu da učitam utiske. Proverite internet i pokušajte ponovo.",
+      autorBezImena: "Član biblioteke",
+      spojler: "Sadrži spojler. Dodirnite da pročitate.",
+      sakrijSpojler: "Sakrij spojler",
+      sakriven: "Sakriven (moderacija)",
+    },
   },
 
   zasticeno: {

@@ -1002,6 +1002,64 @@ async function main() {
     if (r.error) return `greška: ${r.error.message}`;
     return (await uFascikli()).includes(fajl("a")) ? "fajl je ostao u bucket-u" : true;
   });
+
+  // ───────────────────────── 12. Pogled utisci_sa_autorom, napredak, rezervacija (migracija 0017) ─────────────────────────
+  // Samo ono što ranije nije proveravano: vidljivost utisaka na tabeli (faze 2, 3, 7) je već pokrivena,
+  // ovde se proverava da ISTO važi i za pogled sa nadimkom autora, pa napredak i rezervacija.
+  faza("12. Utisci sa autorom (pogled), napredak čitanja i rezervacija (migracija 0017)");
+
+  await S.from("clanovi").update({ nadimak: `RLS-nadimak-B-${RUN}` }).eq("id", B.id);
+  const pogled = (db, knjigaId) => db.from("utisci_sa_autorom").select("*").eq("knjiga_id", knjigaId);
+
+  await provera("pogled: čitalac vidi javne utiske (B i C o K1) i uz njih NADIMAK autora", async () => {
+    const r = await pogled(A.db, K1.id);
+    if (r.error) return opis(r);
+    const b = r.data.find((x) => x.clan_id === B.id);
+    return b?.autor === `RLS-nadimak-B-${RUN}` && r.data.some((x) => x.clan_id === C.id) && r.data.some((x) => x.clan_id === A.id)
+      ? true
+      : `utisaka: ${r.data.length}, autor B: ${b?.autor}`;
+  });
+  await provera("pogled: nema pravog imena ni broja karte (kolona ime ne postoji u pogledu)", async () => {
+    const r = await A.db.from("utisci_sa_autorom").select("ime, broj_kartice").limit(1);
+    return r.error ? true : "pogled vraća ime ili broj karte";
+  });
+  await provera("pogled: „samo ja” i skriveni utisci se ne vide (C ne vidi A-in K3 ni K4), a vlasnik i bibliotekar vide", async () => {
+    const c3 = await pogled(C.db, K3.id);
+    const c4 = await pogled(C.db, K4.id);
+    const a3 = await pogled(A.db, K3.id);
+    const bib4 = await pogled(BIB.db, K4.id);
+    return tacno(c3, 0, "C, K3") === true && tacno(c4, 0, "C, K4") === true && a3.data?.length === 1 && bib4.data?.length >= 1 ? true : `${opis(c3)} / ${opis(c4)} / ${opis(a3)} / ${opis(bib4)}`;
+  });
+  await provera("pogled: „samo prijatelji” utisak (A, K2) stranac C ne vidi", async () => nistaNeVidi(await pogled(C.db, K2.id).eq("clan_id", A.id), "C, K2"));
+  await provera("pogled i tabela utisci daju iste redove za čitaoca C (pogled ne širi RLS)", async () => {
+    const t = await C.db.from("utisci").select("id").in("knjiga_id", [K1.id, K2.id, K3.id, K4.id]);
+    const p = await C.db.from("utisci_sa_autorom").select("id").in("knjiga_id", [K1.id, K2.id, K3.id, K4.id]);
+    if (t.error || p.error) return `${opis(t)} / ${opis(p)}`;
+    return JSON.stringify(t.data.map((x) => x.id).sort()) === JSON.stringify(p.data.map((x) => x.id).sort()) ? true : `tabela ${t.data.length}, pogled ${p.data.length}`;
+  });
+  await provera("anon ne sme da čita utisci_sa_autorom", async () => {
+    const r = await anon.from("utisci_sa_autorom").select("*").limit(1);
+    return r.error || (r.data ?? []).length === 0 ? true : "anon je dobio redove";
+  });
+
+  await provera("napredak čitanja: član menja svoj (0 do 100); 101 i -1 odbija baza; tuđi se ne menja", async () => {
+    const red = (await S.from("polica").select("id, napredak").eq("clan_id", A.id).eq("knjiga_id", K1.id).single()).data;
+    const dobar = await A.db.from("polica").update({ napredak: 40 }).eq("id", red.id).select("napredak");
+    const lose = await Promise.all([101, -1].map((n) => A.db.from("polica").update({ napredak: n }).eq("id", red.id).select()));
+    const tudji = await pokusaj(C.db.from("polica").update({ napredak: 99 }).eq("id", red.id).select());
+    const posle = await stanje("polica", red.id);
+    return !dobar.error && dobar.data[0].napredak === 40 && lose.every((r) => r.error) && tudji.pogodjeno === 0 && posle.napredak === 40 ? true : `dobar: ${opis(dobar)}; loše: ${lose.map((r) => r.error?.code).join()}; tuđi: ${tudji.pogodjeno}; u bazi: ${posle.napredak}`;
+  });
+
+  await provera("rezervacija: knjiga u fondu prolazi, knjiga koja nije u fondu se odbija u bazi", async () => {
+    const dobra = await A.db.from("rezervacije").insert({ clan_id: A.id, knjiga_id: K2.id }).select("id");
+    const losa = await A.db.from("rezervacije").insert({ clan_id: A.id, knjiga_id: DUP1.id }).select("id");
+    return !dobra.error && dobra.data.length === 1 && losa.error?.code === "42501" ? true : `u fondu: ${opis(dobra)}; nije u fondu: ${losa.error?.code ?? "prošlo"}`;
+  });
+  await provera("rezervacija: u tuđe ime ne može da se upiše", async () => {
+    const r = await A.db.from("rezervacije").insert({ clan_id: B.id, knjiga_id: K3.id }).select("id");
+    return r.error?.code === "42501" ? true : opis(r);
+  });
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────
