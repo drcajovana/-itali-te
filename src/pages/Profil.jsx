@@ -1,21 +1,22 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../lib/auth-context.js";
+import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 
 const NAJVISE_ZNAKOVA = 40;
 
 function Red({ naziv, children }) {
   return (
-    <div className="border-b border-ivica py-3">
-      <dt className="text-base text-mastilo/70">{naziv}</dt>
-      <dd className="mt-1 text-xl">{children}</dd>
+    <div className="border-b border-linija py-3 last:border-b-0">
+      <dt className="text-sm text-mastilo-2">{naziv}</dt>
+      <dd className="mt-1 text-lg">{children}</dd>
     </div>
   );
 }
 
 export default function Profil() {
-  const { clan, osveziClana } = useAuth();
+  const { clan, osveziClana, odjavi } = useAuth();
   const [nadimak, setNadimak] = useState(clan.nadimak ?? "");
   const [saljem, setSaljem] = useState(false);
   const [ishod, setIshod] = useState(null); // 'sacuvano' | 'nijeSacuvano'
@@ -47,19 +48,19 @@ export default function Profil() {
 
   return (
     <>
-      <h1 className="text-3xl font-semibold text-pecat">{tekst.profil.naslov}</h1>
+      <h1 className={stil.naslov}>{tekst.profil.naslov}</h1>
 
-      <dl className="mt-4">
+      <dl className={`${stil.karta} mt-4 py-1`}>
         <Red naziv={tekst.profil.ime}>{clan.ime}</Red>
         <Red naziv={tekst.profil.kartica}>{clan.broj_kartice}</Red>
         <Red naziv={tekst.profil.sifra}>
-          <span className="font-mono text-2xl font-semibold tracking-wide">{clan.sifra_poziva}</span>
-          <span className="mt-1 block text-base text-mastilo/70">{tekst.profil.sifraPomoc}</span>
+          <span className="font-naslov text-2xl font-bold tracking-wide text-bordo">{clan.sifra_poziva}</span>
+          <span className="mt-1 block text-sm text-mastilo-2">{tekst.profil.sifraPomoc}</span>
         </Red>
       </dl>
 
-      <form onSubmit={sacuvaj} className="mt-6 space-y-3">
-        <label htmlFor="nadimak" className="text-lg font-medium">
+      <form onSubmit={sacuvaj} className={`${stil.karta} mt-5 space-y-3`}>
+        <label htmlFor="nadimak" className="text-sm font-medium text-mastilo-2">
           {tekst.profil.nadimak}
         </label>
         <input
@@ -73,24 +74,24 @@ export default function Profil() {
             setNadimak(e.target.value);
             setIshod(null);
           }}
-          className="block w-full rounded-lg border-2 border-ivica bg-white px-4 py-3 text-xl focus:border-pecat focus:outline-none"
+          className={stil.polje}
         />
-        <p className="text-base text-mastilo/70">{tekst.profil.nadimakPomoc}</p>
+        <p className="text-sm text-mastilo-2">{tekst.profil.nadimakPomoc}</p>
 
         {ishod && (
-          <p role="status" className={`text-lg font-medium ${ishod === "sacuvano" ? "text-mastilo" : "text-pecat"}`}>
+          <p role="status" className={`text-base font-medium ${ishod === "sacuvano" ? "text-mastilo" : "text-bordo"}`}>
             {tekst.profil[ishod]}
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={saljem || !promenjeno}
-          className="block w-full rounded-lg bg-pecat px-5 py-4 text-xl font-semibold text-white disabled:opacity-50 sm:w-auto"
-        >
+        <button type="submit" disabled={saljem || !promenjeno} className={stil.veliko}>
           {saljem ? tekst.opste.sacekajte : tekst.profil.sacuvaj}
         </button>
       </form>
+
+      <button type="button" onClick={odjavi} className={`${stil.okvirno} mt-5`}>
+        {tekst.meni.odjava}
+      </button>
     </>
   );
 }

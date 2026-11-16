@@ -95,3 +95,20 @@ export function formatDatum(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ""));
   return m ? `${Number(m[3])}. ${Number(m[2])}. ${m[1]}.` : String(iso ?? "");
 }
+
+// Doba dana za pozdrav: „jutro" (5–11 h), „dan" (12–17 h), „vece" (ostalo).
+export function dobaDana(d = new Date()) {
+  const sat = d.getHours();
+  return sat >= 5 && sat < 12 ? "jutro" : sat >= 12 && sat < 18 ? "dan" : "vece";
+}
+
+// Oblik množine za broj: „nula", „jedan" (1, 21...), „paukal" (2–4, 22–24...), „mnogo" (ostalo).
+// Isto pravilo kao primeraka() u unos-knjiga.js, ali vraća ključ za tekst.js.
+export function oblikBroja(n) {
+  if (n === 0) return "nula";
+  const poslednja = n % 10;
+  const poslednje2 = n % 100;
+  if (poslednja === 1 && poslednje2 !== 11) return "jedan";
+  if (poslednja >= 2 && poslednja <= 4 && !(poslednje2 >= 12 && poslednje2 <= 14)) return "paukal";
+  return "mnogo";
+}

@@ -4,6 +4,7 @@ import RutaZaBibliotekare from "./components/RutaZaBibliotekare.jsx";
 import ZasticenaRuta from "./components/ZasticenaRuta.jsx";
 import BibliotekarUnos from "./pages/BibliotekarUnos.jsx";
 import Knjiga from "./pages/Knjiga.jsx";
+import Citaoci from "./pages/Citaoci.jsx";
 import Pocetna from "./pages/Pocetna.jsx";
 import Prijava from "./pages/Prijava.jsx";
 import Pretraga from "./pages/Pretraga.jsx";
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/" element={<Pocetna />} />
           <Route path="/pretraga" element={<Pretraga />} />
           <Route path="/knjiga/:id" element={<Knjiga />} />
+          <Route path="/citaoci" element={<Citaoci />} />
           <Route path="/profil" element={<Profil />} />
           <Route element={<RutaZaBibliotekare />}>
             <Route path="/bibliotekar/unos" element={<BibliotekarUnos />} />

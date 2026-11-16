@@ -3,7 +3,7 @@ import { smanjiSliku } from "../lib/korica-slika.js";
 import { tekst } from "../lib/tekst.js";
 
 const T = tekst.korice;
-const dugme = "flex min-h-12 w-full items-center justify-center rounded-lg px-5 py-3 text-xl font-semibold disabled:opacity-60 sm:w-auto";
+const dugme = "flex min-h-12 w-full items-center justify-center rounded-full px-5 py-3 text-base font-semibold disabled:opacity-60 sm:w-auto";
 
 // Izbor korice PRE čuvanja knjige (kartica sa predlogom korice iz api/iz-linka). Ništa se ne šalje
 // dok se knjiga ne sačuva: ovde se samo bira, a čuvanje (BibliotekarUnos) onda upiše knjigu, pa
@@ -47,14 +47,14 @@ export default function KoricaPrePregled({ naslov, predlog, izbor, slika, onIzbo
   const dolaziSaSajta = prikaz === predlog;
 
   return (
-    <fieldset className="min-w-0 space-y-3 rounded-lg border-2 border-ivica p-3" disabled={onemoguceno}>
+    <fieldset className="min-w-0 space-y-3 rounded-srednji border border-linija p-3" disabled={onemoguceno}>
       <legend className="px-1 text-base font-medium">{T.korica}</legend>
       <div className="flex flex-col gap-3">
-        <div className="h-44 w-32 shrink-0 overflow-hidden rounded border border-ivica bg-white">
+        <div className="h-44 w-32 shrink-0 overflow-hidden rounded border border-linija bg-povrsina">
           {izbor === "bez" ? (
-            <p className="p-2 text-sm text-mastilo/70">{T.bezOdluka}</p>
+            <p className="p-2 text-sm text-mastilo-2">{T.bezOdluka}</p>
           ) : dolaziSaSajta && predlogNeVidi ? (
-            <p className="p-2 text-sm text-mastilo/70">{T.predlogNijeUcitan}</p>
+            <p className="p-2 text-sm text-mastilo-2">{T.predlogNijeUcitan}</p>
           ) : (
             <img
               src={prikaz}
@@ -70,30 +70,30 @@ export default function KoricaPrePregled({ naslov, predlog, izbor, slika, onIzbo
           )}
         </div>
         <div className="min-w-0 space-y-2">
-          <label className="flex min-h-11 items-center gap-3 text-lg">
+          <label className="flex min-h-11 items-center gap-3 text-base">
             <input
               type="checkbox"
               checked={izbor === "preuzmi"}
               onChange={(e) => onIzbor(e.target.checked ? "preuzmi" : "bez")}
-              className="h-6 w-6 accent-pecat"
+              className="h-6 w-6 accent-bordo"
             />
             {T.preuzmiKvacica}
           </label>
-          <p className="text-base text-mastilo/70">{izbor === "slika" ? T.izabranaSlika : T.preuzmiNapomena}</p>
+          <p className="text-base text-mastilo-2">{izbor === "slika" ? T.izabranaSlika : T.preuzmiNapomena}</p>
         </div>
       </div>
 
       <input ref={ulaz} type="file" accept="image/*" onChange={naIzbor} tabIndex={-1} aria-hidden="true" className="sr-only" />
       <div className="flex flex-col gap-2 sm:flex-row">
-        <button type="button" onClick={() => ulaz.current?.click()} disabled={radi} className={`${dugme} border-2 border-pecat text-pecat`}>
+        <button type="button" onClick={() => ulaz.current?.click()} disabled={radi} className={`${dugme} border border-bordo text-bordo`}>
           {radi ? T.radi : T.drugaSlika}
         </button>
-        <button type="button" onClick={() => onIzbor("bez")} className={`${dugme} border-2 border-ivica`}>
+        <button type="button" onClick={() => onIzbor("bez")} className={`${dugme} border border-linija`}>
           {T.bez}
         </button>
       </div>
       {greska && (
-        <p role="alert" className="text-base font-medium text-pecat">
+        <p role="alert" className="text-base font-medium text-bordo">
           {greska}
         </p>
       )}

@@ -9,7 +9,7 @@ import { nasaFotografija } from "../lib/korica-slika.js";
 import { lokalnoNeispravan, obradiRedom, pocetnaForma, razdvojiLinkove, sledecaZaObradu, urediUnos } from "../lib/unos-knjiga.js";
 
 const T = tekst.unos;
-const dugme = "block w-full rounded-lg bg-pecat px-5 py-3 text-xl font-semibold text-white disabled:opacity-60 sm:w-auto";
+const dugme = "block w-full rounded-full bg-bordo px-5 py-3 text-base font-semibold text-white disabled:opacity-60 sm:w-auto";
 
 
 function porukaKartice(u) {
@@ -223,8 +223,8 @@ export default function BibliotekarUnos() {
 
   return (
     <>
-      <h1 className="text-3xl font-semibold text-pecat">{T.naslov}</h1>
-      <p className="mt-1 text-lg">{T.uvod}</p>
+      <h1 className="text-3xl font-semibold text-bordo">{T.naslov}</h1>
+      <p className="mt-1 text-base">{T.uvod}</p>
 
       <form onSubmit={procitaj} className="mt-4 space-y-3" noValidate>
         <label htmlFor="linkovi" className="sr-only">
@@ -239,7 +239,7 @@ export default function BibliotekarUnos() {
           value={tekstLinkova}
           onChange={(e) => setTekstLinkova(e.target.value)}
           disabled={radi}
-          className="block w-full rounded-lg border-2 border-ivica bg-white px-4 py-3 font-mono text-base focus:border-pecat focus:outline-none"
+          className="block w-full rounded-srednji border border-linija bg-povrsina px-4 py-3 font-mono text-base focus:bg-povrsina focus:outline-2 focus:-outline-offset-1 focus:outline-bordo"
         />
         <div className="flex flex-col gap-3 sm:flex-row">
           <button type="submit" disabled={radi || cuvaSve} className={dugme}>
@@ -251,7 +251,7 @@ export default function BibliotekarUnos() {
               onClick={() => {
                 stopRef.current = true;
               }}
-              className="block w-full rounded-lg border-2 border-pecat px-5 py-3 text-xl font-semibold text-pecat sm:w-auto"
+              className="block w-full rounded-full border border-bordo px-5 py-3 text-base font-semibold text-bordo sm:w-auto"
             >
               {T.prekini}
             </button>
@@ -260,14 +260,14 @@ export default function BibliotekarUnos() {
       </form>
 
       {obavest && (
-        <p role={obavest.greska ? "alert" : "status"} className={`mt-4 rounded-lg border-2 p-3 text-lg font-medium ${obavest.greska ? "border-pecat text-pecat" : "border-ivica"}`}>
+        <p role={obavest.greska ? "alert" : "status"} className={`mt-4 rounded-srednji border p-3 text-base font-medium ${obavest.greska ? "border-bordo text-bordo" : "border-linija"}`}>
           {obavest.poruka}
         </p>
       )}
 
       {stavke.length > 0 && (
         <section className="mt-6" aria-live="polite">
-          <p className="text-lg font-medium">{T.obradjeno.replace("{n}", String(obradjeno)).replace("{ukupno}", String(stavke.length))}</p>
+          <p className="text-base font-medium">{T.obradjeno.replace("{n}", String(obradjeno)).replace("{ukupno}", String(stavke.length))}</p>
           <ul className="mt-3 space-y-4">
             {stavke.map((s) => (
               <KarticaUnosa

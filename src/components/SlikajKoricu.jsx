@@ -62,14 +62,14 @@ export default function SlikajKoricu({
         type="button"
         disabled={radi || onemoguceno}
         onClick={() => ulaz.current?.click()}
-        className={`flex min-h-12 w-full items-center justify-center rounded-lg px-5 py-3 text-xl font-semibold disabled:opacity-60 sm:w-auto ${
-          glavno ? "bg-pecat text-white" : "border-2 border-pecat text-pecat"
+        className={`flex min-h-12 w-full items-center justify-center rounded-full px-5 py-3 text-base font-semibold disabled:opacity-60 sm:w-auto ${
+          glavno ? "bg-bordo text-white" : "border border-bordo text-bordo"
         }`}
       >
         {radi ? T.radi : oznaka}
       </button>
       {greska && (
-        <p role="alert" className="mt-2 text-base font-medium text-pecat">
+        <p role="alert" className="mt-2 text-base font-medium text-bordo">
           {greska}
         </p>
       )}

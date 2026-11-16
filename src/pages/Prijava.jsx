@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth-context.js";
+import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 
-// Velika polja i dugmad; font polja je najmanje 16px (17px osnova), pa telefon
-// ne zumira kad se polje otvori.
-const polje =
-  "mt-1 block w-full rounded-lg border-2 border-ivica bg-white px-4 py-3 text-xl focus:border-pecat focus:outline-none";
+// Polja su najmanje 16 px (telefon ne zumira kad se polje otvori) i 44 px visine.
+const polje = `${stil.polje} mt-1.5`;
+const NAZIV = tekst.aplikacija.naziv;
 
 export default function Prijava() {
   const { sesija, prijavi, obavest, ocistiObavest } = useAuth();
@@ -36,16 +36,27 @@ export default function Prijava() {
   const poruka = razlog ? tekst.prijava.greske[razlog] : obavest === "neaktivan" ? tekst.prijava.neaktivan : null;
 
   return (
-    <main className="mx-auto max-w-md p-4 sm:p-6">
-      <h1 className="text-3xl font-semibold text-pecat">{tekst.aplikacija.naziv}</h1>
-      <p className="mt-1 text-mastilo/70">{tekst.aplikacija.ustanova}</p>
+    <main className="mx-auto w-full max-w-[520px] px-5 pb-10 pt-8">
+      <div className="flex items-center gap-3">
+        <div
+          aria-hidden="true"
+          className="flex size-[34px] flex-none items-center justify-center rounded-full border-[1.5px] border-zlato bg-bordo font-naslov text-[10px] font-bold tracking-tight text-zlato-svetlo"
+        >
+          {tekst.aplikacija.godina}
+        </div>
+        <span className="font-naslov text-[19px] font-extrabold tracking-[-0.03em]">
+          {NAZIV.slice(0, 4)}
+          <span className="text-bordo">{NAZIV.slice(4)}</span>
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-mastilo-2">{tekst.aplikacija.ustanova}</p>
 
-      <h2 className="mt-8 text-2xl font-semibold">{tekst.prijava.naslov}</h2>
-      <p className="mt-1 text-lg">{tekst.prijava.uvod}</p>
+      <h1 className={`${stil.naslov} mt-8`}>{tekst.prijava.naslov}</h1>
+      <p className={stil.uvod}>{tekst.prijava.uvod}</p>
 
-      <form onSubmit={posalji} className="mt-6 space-y-5" noValidate>
+      <form onSubmit={posalji} className={`${stil.karta} mt-5 space-y-5`} noValidate>
         <div>
-          <label htmlFor="kartica" className="text-lg font-medium">
+          <label htmlFor="kartica" className="text-sm font-medium text-mastilo-2">
             {tekst.prijava.kartica}
           </label>
           <input
@@ -64,7 +75,7 @@ export default function Prijava() {
         </div>
 
         <div>
-          <label htmlFor="pin" className="text-lg font-medium">
+          <label htmlFor="pin" className="text-sm font-medium text-mastilo-2">
             {tekst.prijava.pin}
           </label>
           <div className="flex gap-2">
@@ -78,34 +89,26 @@ export default function Prijava() {
               enterKeyHint="go"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
-              className={polje}
+              className={`${polje} min-w-0 flex-1`}
             />
-            <button
-              type="button"
-              onClick={() => setVidiPin((v) => !v)}
-              className="mt-1 shrink-0 rounded-lg border-2 border-ivica px-3 text-base font-medium text-pecat"
-            >
+            <button type="button" onClick={() => setVidiPin((v) => !v)} className={`${stil.okvirno} mt-1.5 w-auto! shrink-0 px-4 text-sm`}>
               {vidiPin ? tekst.prijava.sakrijPin : tekst.prijava.prikaziPin}
             </button>
           </div>
         </div>
 
         {poruka && (
-          <p role="alert" className="rounded-lg border-2 border-pecat bg-white p-3 text-lg font-medium text-pecat">
+          <p role="alert" className="rounded-srednji border border-bordo bg-bordo-svetla p-3 text-base font-medium text-bordo">
             {poruka}
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={saljem}
-          className="block w-full rounded-lg bg-pecat px-5 py-4 text-xl font-semibold text-white disabled:opacity-60"
-        >
+        <button type="submit" disabled={saljem} className={stil.veliko}>
           {saljem ? tekst.opste.sacekajte : tekst.prijava.dugme}
         </button>
       </form>
 
-      <p className="mt-6 text-mastilo/70">{tekst.prijava.pomoc}</p>
+      <p className="mt-5 text-sm text-mastilo-2">{tekst.prijava.pomoc}</p>
     </main>
   );
 }

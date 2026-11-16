@@ -5,7 +5,7 @@ import { tekst } from "../lib/tekst.js";
 import SlikajKoricu from "./SlikajKoricu.jsx";
 
 const T = tekst.korice;
-const dugme = "flex min-h-12 w-full items-center justify-center rounded-lg px-5 py-3 text-xl font-semibold disabled:opacity-60 sm:w-auto";
+const dugme = "flex min-h-12 w-full items-center justify-center rounded-full px-5 py-3 text-base font-semibold disabled:opacity-60 sm:w-auto";
 
 const STATUS = { preuzimanje: T.preuzimam, slanje: T.radi, uklanjanje: T.uklanjam };
 
@@ -75,7 +75,7 @@ export default function KoricaIzbor({
     return (
       <div className="space-y-2">
         <p className="text-base font-medium">{T.bezOdluka}</p>
-        <button type="button" onClick={() => onBez(false)} className={`${dugme} border-2 border-ivica`}>
+        <button type="button" onClick={() => onBez(false)} className={`${dugme} border border-linija`}>
           {T.predomislio}
         </button>
       </div>
@@ -86,9 +86,9 @@ export default function KoricaIzbor({
     <div className="space-y-3" aria-busy={onemoguceno}>
       {predlog && !korica && (
         <figure className="flex gap-3">
-          <div className="h-44 w-32 shrink-0 overflow-hidden rounded border border-ivica bg-white">
+          <div className="h-44 w-32 shrink-0 overflow-hidden rounded border border-linija bg-povrsina">
             {predlogNeVidi ? (
-              <p className="p-2 text-sm text-mastilo/70">{T.predlogNijeUcitan}</p>
+              <p className="p-2 text-sm text-mastilo-2">{T.predlogNijeUcitan}</p>
             ) : (
               <img
                 src={predlog}
@@ -105,13 +105,13 @@ export default function KoricaIzbor({
           </div>
           <figcaption className="min-w-0 text-base">
             <span className="font-semibold">{T.predlog}</span>
-            <span className="mt-1 block text-mastilo/70">{T.predlogNapomena}</span>
+            <span className="mt-1 block text-mastilo-2">{T.predlogNapomena}</span>
           </figcaption>
         </figure>
       )}
 
       {predlog && (
-        <button type="button" disabled={onemoguceno} onClick={koristiPredlog} className={`${dugme} ${korica ? "border-2 border-pecat text-pecat" : "bg-pecat text-white"}`}>
+        <button type="button" disabled={onemoguceno} onClick={koristiPredlog} className={`${dugme} ${korica ? "border border-bordo text-bordo" : "bg-bordo text-white"}`}>
           {zauzet === "preuzimanje" ? T.preuzimam : T.koristi}
         </button>
       )}
@@ -144,24 +144,24 @@ export default function KoricaIzbor({
       />
 
       {onBez && !korica && (
-        <button type="button" disabled={onemoguceno} onClick={() => onBez(true)} className={`${dugme} border-2 border-ivica`}>
+        <button type="button" disabled={onemoguceno} onClick={() => onBez(true)} className={`${dugme} border border-linija`}>
           {T.bez}
         </button>
       )}
 
       {mozeUklanjanje && korica && !potvrda && (
-        <button type="button" disabled={onemoguceno} onClick={() => setPotvrda(true)} className={`${dugme} border-2 border-pecat text-pecat`}>
+        <button type="button" disabled={onemoguceno} onClick={() => setPotvrda(true)} className={`${dugme} border border-bordo text-bordo`}>
           {T.ukloni}
         </button>
       )}
       {mozeUklanjanje && korica && potvrda && (
-        <div role="group" aria-label={T.ukloniPitanje} className="space-y-2 rounded-lg border-2 border-pecat p-3">
-          <p className="text-lg font-semibold">{T.ukloniPitanje}</p>
+        <div role="group" aria-label={T.ukloniPitanje} className="space-y-2 rounded-srednji border border-bordo p-3">
+          <p className="text-base font-semibold">{T.ukloniPitanje}</p>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" disabled={onemoguceno} onClick={ukloni} className={`${dugme} bg-pecat text-white`}>
+            <button type="button" disabled={onemoguceno} onClick={ukloni} className={`${dugme} bg-bordo text-white`}>
               {T.ukloniDa}
             </button>
-            <button type="button" disabled={onemoguceno} onClick={() => setPotvrda(false)} className={`${dugme} border-2 border-ivica`}>
+            <button type="button" disabled={onemoguceno} onClick={() => setPotvrda(false)} className={`${dugme} border border-linija`}>
               {T.ukloniNe}
             </button>
           </div>
@@ -174,7 +174,7 @@ export default function KoricaIzbor({
         </p>
       )}
       {poruka && !zauzet && (
-        <p role={poruka.greska ? "alert" : "status"} className={`text-base font-medium ${poruka.greska ? "text-pecat" : ""}`}>
+        <p role={poruka.greska ? "alert" : "status"} className={`text-base font-medium ${poruka.greska ? "text-bordo" : ""}`}>
           {poruka.tekst}
         </p>
       )}

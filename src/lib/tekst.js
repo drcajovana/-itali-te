@@ -11,6 +11,7 @@ const lat = {
     ustanova: "Narodna biblioteka „Dositej Novaković” u Negotinu",
     opis: "Čitalačka platforma Narodne biblioteke „Dositej Novaković” u Negotinu",
     jezik: "sr-Latn-RS",
+    godina: "1846", // grb u zaglavlju (prototip)
   },
 
   opste: {
@@ -18,12 +19,31 @@ const lat = {
     sacekajte: "Sačekajte…",
   },
 
+  // Donja navigacija (prototip): Polica, Traži, Čitaoci, Profil.
   meni: {
-    pocetna: "Početna",
-    pretraga: "Pretraga",
+    oznaka: "Glavna navigacija",
+    pocetna: "Polica",
+    pretraga: "Traži",
+    citaoci: "Čitaoci",
+    profil: "Profil",
     unos: "Unos knjiga",
-    profil: "Moj profil",
     odjava: "Odjavi se",
+  },
+
+  // Čitaoci: šifra za poziv. Povezivanje čitalaca je sledeći korak plana.
+  citaoci: {
+    naslov: "Čitaoci",
+    uvod: "Vezu pravi pozivnica. Niko ne može da vam priđe bez vaše šifre.",
+    sifraOznaka: "Vaša šifra za poziv",
+    sifraPomoc: "Ovu šifru dajete samo osobama koje želite da povežete sa sobom. Bez nje vas niko ne može naći.",
+    podeli: "Kopiraj šifru",
+    kopirano: "Šifra je kopirana.",
+    nijeKopirano: "Šifru nije moguće kopirati. Prepišite je ručno.",
+    preporuke: "Preporučeno vama",
+    nemaPreporuka: "Nema novih preporuka.",
+    povezani: "Povezani",
+    nemaPovezanih: "Još niste povezani ni sa jednim čitaocem.",
+    uIzradi: "Povezivanje čitalaca i preporuke stižu uskoro. Do tada drugima možete dati svoju šifru.",
   },
 
   prijava: {
@@ -47,9 +67,17 @@ const lat = {
 
   // Početna: „Moja polica" (korak 5 iz PLAN.md).
   pocetna: {
-    pozdrav: "Dobro došli",
+    pozdrav: { jutro: "Dobro jutro", dan: "Dobar dan", vece: "Dobro veče" },
     trazi: "Potražite knjigu",
     naslov: "Moja polica",
+    uvod: {
+      nula: "Nijedna knjiga nije u toku.",
+      jedan: "Jedna knjiga je u toku.",
+      paukal: "{n} knjige su u toku.",
+      mnogo: "{n} knjiga je u toku.",
+    },
+    napredakPostotak: "{n}% pročitano",
+    fond: { slobodno: "u fondu", izdato: "izdato", nema: "nije u fondu" },
     uToku: "Trenutno čitam",
     nemaUToku: "Trenutno ne čitate nijednu knjigu.",
     prazno: "Vaša polica je prazna. Potražite knjigu i dodajte je na policu, ili upišite naslov koji nemamo.",
@@ -373,6 +401,14 @@ const lat = {
     signatura: "Signatura",
     koricaPoreklo: "Korica preuzeta sa",
     opis: "Opis",
+
+    uBiblioteci: "U biblioteci",
+    podaci: "Podaci o knjizi",
+    preporuci: {
+      naslov: "Preporuči čitaocu",
+      nema: "Preporuke stižu kad se povežete sa drugim čitaocima. Šifru za poziv nalazite na ekranu Čitaoci.",
+      dugme: "Otvori Čitaoce",
+    },
 
     // dostupnost u fondu
     uFondu: "U fondu, {primeraka}",

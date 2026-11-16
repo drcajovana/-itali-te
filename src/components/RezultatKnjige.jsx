@@ -2,13 +2,15 @@ import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { porukaGreske } from "../lib/api.js";
 import { urediPotvrdu } from "../lib/red-knjige.js";
+import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 import Korica from "./Korica.jsx";
 
 const STATUSI = ["zelim", "citam", "procitano"];
 const T = tekst.pretraga;
 
-const polje = "mt-1 block w-full rounded-lg border-2 border-ivica bg-white px-3 py-2 text-lg focus:border-pecat focus:outline-none";
+const polje = `${stil.polje} mt-1`;
+const izbor = `${stil.polje} w-auto`;
 
 // Jedan rezultat: iz naše baze (ima `id`, `u_fondu`) ili spoljni (Google Books,
 // link: `autori`, `izvor`).
@@ -80,32 +82,32 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
   const izGoogle = knjiga.izvor === "google_books";
 
   return (
-    <li className="flex gap-3 rounded-lg border-2 border-ivica bg-white p-3">
+    <li className={`${stil.karta} flex gap-3`}>
       <Korica knjiga={knjiga} autor={autor} google={izGoogle ? { url: knjiga.url } : null} />
       <div className="min-w-0 flex-1">
-        <h3 className="text-xl font-semibold leading-snug">{knjiga.naslov}</h3>
-        <p className="text-lg">{autor || T.knjiga.bezAutora}</p>
-        {izdavac && <p className="text-base text-mastilo/70">{izdavac}</p>}
+        <h3 className="font-naslov text-[17px] font-bold leading-tight tracking-[-0.025em]">{knjiga.naslov}</h3>
+        <p className="mt-0.5 text-[13.5px] text-mastilo-2">{autor || T.knjiga.bezAutora}</p>
+        {izdavac && <p className="text-xs text-mastilo-2">{izdavac}</p>}
 
         {dostupnost && (
-          <p className={`mt-1 inline-block rounded px-2 py-0.5 text-base font-medium ${knjiga.u_fondu ? "bg-ivica" : "border border-ivica"}`}>
-            {dostupnost}
-          </p>
+          <p className={`mt-2 ${knjiga.u_fondu ? stil.izvorFond : stil.izvor}`}>{dostupnost}</p>
         )}
         {izBaze && (
           <div className="mt-1">
-            <Link to={`/knjiga/${knjiga.id}`} className="inline-flex min-h-11 items-center text-lg text-pecat underline">
+            <Link to={`/knjiga/${knjiga.id}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-bordo underline">
               {T.knjiga.detalji}
             </Link>
           </div>
         )}
         {!izBaze && (
-          <p className="mt-1 text-base text-mastilo/70">
+          <p className="mt-2 text-xs text-mastilo-2">
+            <span className={izGoogle ? stil.izvorSpolja : stil.izvor}>{izGoogle ? T.knjiga.googleBooks : T.knjiga.saLinka}</span>
+            {" "}
             {T.knjiga.sa}: {izGoogle ? T.knjiga.googleBooks : T.knjiga.saLinka}
             {knjiga.url && (
               <>
                 {" · "}
-                <a href={knjiga.url} target="_blank" rel="noopener noreferrer" className="text-pecat underline">
+                <a href={knjiga.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-bordo underline">
                   {izGoogle ? T.knjiga.pogledaj : new URL(knjiga.url).hostname.replace(/^www\./, "")}
                 </a>
               </>
@@ -120,7 +122,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="rounded-lg border-2 border-ivica bg-white px-3 py-2 text-lg"
+                className={izbor}
               >
                 {STATUSI.map((s) => (
                   <option key={s} value={s}>
@@ -133,7 +135,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
               type="button"
               onClick={klikDodaj}
               disabled={saljem}
-              className="rounded-lg bg-pecat px-5 py-2 text-lg font-semibold text-white disabled:opacity-60"
+              className={`${stil.veliko} sm:flex-1`}
             >
               {saljem ? tekst.opste.sacekajte : T.polica.dodaj}
             </button>
@@ -141,8 +143,8 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
         )}
 
         {forma && (
-          <form onSubmit={potvrdi} className="mt-3 space-y-3 rounded-lg border-2 border-pecat p-3" noValidate>
-            <h4 className="text-lg font-semibold">{T.potvrda.naslov}</h4>
+          <form onSubmit={potvrdi} className="mt-3 space-y-3 rounded-srednji border border-bordo bg-povrsina p-3" noValidate>
+            <h4 className="text-base font-bold">{T.potvrda.naslov}</h4>
             <p className="text-base">{izGoogle ? T.potvrda.uvodGoogle : T.potvrda.uvodLink}</p>
             {[
               ["naslov", 300],
@@ -152,7 +154,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
               ["isbn", 20],
             ].map(([ime, najvise]) => (
               <div key={ime}>
-                <label htmlFor={`${id}-${ime}`} className="text-base font-medium">
+                <label htmlFor={`${id}-${ime}`} className="text-sm font-medium text-mastilo-2">
                   {T.potvrda.polja[ime]}
                 </label>
                 <input
@@ -172,7 +174,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="rounded-lg border-2 border-ivica bg-white px-3 py-2 text-lg"
+                className={izbor}
               >
                 {STATUSI.map((s) => (
                   <option key={s} value={s}>
@@ -182,19 +184,19 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
               </select>
             </label>
             {greskaForme && (
-              <p role="alert" className="text-base font-medium text-pecat">
+              <p role="alert" className="text-base font-medium text-bordo">
                 {greskaForme}
               </p>
             )}
             <div className="flex flex-col gap-2 sm:flex-row">
-              <button type="submit" disabled={saljem} className="rounded-lg bg-pecat px-5 py-2 text-lg font-semibold text-white disabled:opacity-60">
+              <button type="submit" disabled={saljem} className={stil.veliko}>
                 {saljem ? tekst.opste.sacekajte : T.potvrda.potvrdi}
               </button>
               <button
                 type="button"
                 disabled={saljem}
                 onClick={() => setForma(null)}
-                className="rounded-lg border-2 border-ivica px-5 py-2 text-lg font-semibold"
+                className={stil.tiho}
               >
                 {T.potvrda.odustani}
               </button>
@@ -203,7 +205,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
         )}
 
         {ishod && (
-          <p role="status" className={`mt-2 text-base font-medium ${ishod.greska ? "text-pecat" : ""}`}>
+          <p role="status" className={`mt-2 text-base font-medium ${ishod.greska ? "text-bordo" : ""}`}>
             {ishod.poruka}
           </p>
         )}

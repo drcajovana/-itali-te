@@ -4,15 +4,20 @@ import Korica from "../components/Korica.jsx";
 import PlocicaKnjige from "../components/PlocicaKnjige.jsx";
 import TrakaNapretka from "../components/TrakaNapretka.jsx";
 import { useAuth } from "../lib/auth-context.js";
-import { grupisiPolicu, podrazumevanaKartica, prikazaniNapredak } from "../lib/polica-logika.js";
+import { dobaDana, grupisiPolicu, oblikBroja, podrazumevanaKartica, prikazaniNapredak } from "../lib/polica-logika.js";
 import { ucitajPolicu } from "../lib/polica.js";
+import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 
 const T = tekst.pocetna;
 const KARTICE = ["citam", "procitano", "zelim"];
 
-// Početna: „Moja polica". Knjige u toku sa trakom napretka, tri kartice (Čitam, Pročitano, Želim) i
-// mreža korica izabrane kartice. Čita samo SVOJU policu (RLS pokazuje i policu povezanih članova).
+// Gde je knjiga u biblioteci, za red „čitam": u fondu (ima slobodnih), izdato ili nije u fondu.
+const gdeJe = (k) => (k.u_fondu ? (k.broj_slobodnih > 0 ? T.fond.slobodno : T.fond.izdato) : T.fond.nema);
+
+// Početna: „Moja polica" (prototip, ekran Polica). Pozdrav po dobu dana, knjige u toku sa trakom
+// napretka, segmentna kontrola (Čitam, Pročitano, Želim) i mreža korica izabrane kartice. Čita samo
+// SVOJU policu (RLS pokazuje i policu povezanih članova).
 export default function Pocetna() {
   const { clan } = useAuth();
   const [stanje, setStanje] = useState({ ucitava: true, redovi: [], greska: false });
@@ -35,29 +40,30 @@ export default function Pocetna() {
   const { ucitava, redovi, greska } = stanje;
   const grupe = grupisiPolicu(redovi);
   const kartica = izabrana ?? podrazumevanaKartica(grupe);
+  const ime = clan.nadimak || String(clan.ime ?? "").split(/\s+/)[0];
+  const uToku = grupe.citam.length;
 
   return (
     <>
-      <h1 className="text-3xl font-semibold text-pecat">{T.naslov}</h1>
-      <p className="mt-1 text-lg text-mastilo/70">
-        {T.pozdrav}, {clan.nadimak || clan.ime}
-      </p>
-      <Link to="/pretraga" className="mt-4 flex min-h-12 items-center justify-center rounded-lg bg-pecat px-5 py-3 text-center text-xl font-semibold text-white sm:inline-flex">
-        {T.trazi}
-      </Link>
+      <h1 className={`${stil.naslov} pt-2`}>
+        {T.pozdrav[dobaDana()]},
+        <br />
+        {ime}
+      </h1>
+      {!ucitava && !greska && redovi.length > 0 && <p className={stil.uvod}>{T.uvod[oblikBroja(uToku)].replace("{n}", String(uToku))}</p>}
 
-      {ucitava && <p className="mt-6 text-lg text-mastilo/70">{T.ucitava}</p>}
+      {ucitava && <p className="mt-6 text-base text-mastilo-2">{T.ucitava}</p>}
 
       {greska && (
-        <div role="alert" className="mt-6 space-y-3 rounded-lg border-2 border-pecat p-4">
-          <p className="text-lg font-medium text-pecat">{T.greska}</p>
+        <div role="alert" className={`${stil.karta} mt-6 space-y-3`}>
+          <p className="text-base font-medium text-bordo">{T.greska}</p>
           <button
             type="button"
             onClick={() => {
               setStanje({ ucitava: true, redovi: [], greska: false });
               setPokusaj((n) => n + 1);
             }}
-            className="flex min-h-12 w-full items-center justify-center rounded-lg bg-pecat px-5 py-3 text-xl font-semibold text-white sm:w-auto"
+            className={stil.veliko}
           >
             {T.ponovo}
           </button>
@@ -65,28 +71,35 @@ export default function Pocetna() {
       )}
 
       {!ucitava && !greska && redovi.length === 0 && (
-        <p className="mt-6 rounded-lg border-2 border-ivica bg-white p-4 text-lg">{T.prazno}</p>
+        <div className={`${stil.karta} mt-6 space-y-4`}>
+          <p className="text-base">{T.prazno}</p>
+          <Link to="/pretraga" className={stil.veliko}>
+            {T.trazi}
+          </Link>
+        </div>
       )}
 
       {!ucitava && !greska && redovi.length > 0 && (
         <>
-          <section className="mt-8" aria-labelledby="u-toku">
-            <h2 id="u-toku" className="text-2xl font-semibold">
-              {T.uToku}
-            </h2>
+          <section className="mt-4" aria-label={T.uToku}>
             {grupe.citam.length === 0 ? (
-              <p className="mt-2 text-lg text-mastilo/70">{T.nemaUToku}</p>
+              <p className="mt-2 text-base text-mastilo-2">{T.nemaUToku}</p>
             ) : (
-              <ul className="mt-3 space-y-3">
+              <ul className="space-y-3">
                 {grupe.citam.map((r) => (
                   <li key={r.id}>
-                    <Link to={`/knjiga/${r.knjiga.id}`} className="flex min-h-11 gap-3 rounded-lg border-2 border-ivica bg-white p-3">
-                      <Korica knjiga={r.knjiga} autor={r.knjiga.autor} />
-                      <span className="flex min-w-0 flex-1 flex-col justify-center gap-2">
-                        <span className="text-xl font-semibold leading-snug">{r.knjiga.naslov}</span>
-                        {r.knjiga.autor && <span className="text-base text-mastilo/70">{r.knjiga.autor}</span>}
-                        <TrakaNapretka procenat={prikazaniNapredak(r)} />
-                        <span className="text-base font-medium">{T.napredak.replace("{n}", String(prikazaniNapredak(r)))}</span>
+                    <Link to={`/knjiga/${r.knjiga.id}`} className={`${stil.karta} flex min-h-11 gap-[15px] transition active:scale-[.988]`}>
+                      <Korica knjiga={r.knjiga} autor={r.knjiga.autor} velicina="glavna" />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="font-naslov text-lg font-bold leading-[1.18] tracking-[-0.025em]">{r.knjiga.naslov}</span>
+                        {r.knjiga.autor && <span className="mt-[3px] text-[13.5px] text-mastilo-2">{r.knjiga.autor}</span>}
+                        <span className="mt-auto pt-3">
+                          <TrakaNapretka procenat={prikazaniNapredak(r)} />
+                        </span>
+                        <span className="mt-2 flex items-center justify-between gap-2 text-[12px] tabular-nums text-mastilo-2">
+                          <span>{T.napredakPostotak.replace("{n}", String(prikazaniNapredak(r)))}</span>
+                          <span>{gdeJe(r.knjiga)}</span>
+                        </span>
                       </span>
                     </Link>
                   </li>
@@ -95,27 +108,28 @@ export default function Pocetna() {
             )}
           </section>
 
-          <section className="mt-8" aria-label={T.prikaz}>
-            <div role="group" aria-label={T.prikaz} className="grid grid-cols-3 gap-2">
-              {KARTICE.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  aria-pressed={kartica === s}
-                  onClick={() => setIzabrana(s)}
-                  className={`flex min-h-14 flex-col items-center justify-center rounded-lg border-2 border-pecat px-1 py-2 text-base font-semibold leading-tight ${
-                    kartica === s ? "bg-pecat text-white" : "bg-white text-pecat"
-                  }`}
-                >
-                  <span>{T.kartice[s]}</span>
-                  <span className="text-sm font-medium">{grupe[s].length}</span>
-                </button>
-              ))}
-            </div>
+          <div role="tablist" aria-label={T.prikaz} className="my-5 flex gap-1 rounded-full bg-povrsina p-1 shadow-senka">
+            {KARTICE.map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                id={`kartica-${s}`}
+                aria-selected={kartica === s}
+                aria-controls="polica-mreza"
+                onClick={() => setIzabrana(s)}
+                className="min-h-11 flex-1 rounded-full px-1.5 text-[13px] font-medium text-mastilo-2 transition aria-selected:bg-bordo aria-selected:text-white"
+              >
+                {T.kartice[s]} <span className="text-[12px] opacity-75">{grupe[s].length}</span>
+              </button>
+            ))}
+          </div>
+
+          <div role="tabpanel" id="polica-mreza" aria-labelledby={`kartica-${kartica}`}>
             {grupe[kartica].length === 0 ? (
-              <p className="mt-4 text-lg text-mastilo/70">{T.prazneKartice[kartica]}</p>
+              <p className="px-2 py-6 text-center text-sm text-mastilo-2">{T.prazneKartice[kartica]}</p>
             ) : (
-              <ul className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
+              <ul className="grid grid-cols-3 gap-x-[13px] gap-y-4 pb-2">
                 {grupe[kartica].map((r) => (
                   <li key={r.id} className="min-w-0">
                     <PlocicaKnjige knjiga={r.knjiga} />
@@ -123,7 +137,7 @@ export default function Pocetna() {
                 ))}
               </ul>
             )}
-          </section>
+          </div>
         </>
       )}
     </>

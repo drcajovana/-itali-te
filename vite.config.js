@@ -23,8 +23,8 @@ export default defineConfig({
         lang: tekst.aplikacija.jezik,
         start_url: "/",
         display: "standalone",
-        background_color: "#faf7f2",
-        theme_color: "#7c2d12",
+        background_color: "#f4efe5",
+        theme_color: "#9b1b23",
         icons: [],
       },
       workbox: {

@@ -4,13 +4,13 @@ import RezultatKnjige from "../components/RezultatKnjige.jsx";
 import { porukaGreske } from "../lib/api.js";
 import { useAuth } from "../lib/auth-context.js";
 import { dodajNaPolicu, dodajRucno, izLinka, pretraziGoogle, pretraziNasuBazu } from "../lib/knjige.js";
+import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 
 const T = tekst.pretraga;
 
-const polje =
-  "block w-full rounded-lg border-2 border-ivica bg-white px-4 py-3 text-xl focus:border-pecat focus:outline-none";
-const dugme = "block w-full rounded-lg bg-pecat px-5 py-3 text-xl font-semibold text-white disabled:opacity-60 sm:w-auto";
+const polje = stil.polje;
+const dugme = stil.veliko;
 const MIRNO = { stanje: "mirno", rezultati: [], greska: null };
 
 function Lista({ rezultati, onDodaj }) {
@@ -25,9 +25,9 @@ function Lista({ rezultati, onDodaj }) {
 
 function Odeljak({ naslov, uvod, children }) {
   return (
-    <section className="mt-10">
-      <h2 className="text-2xl font-semibold">{naslov}</h2>
-      {uvod && <p className="mt-1 text-lg">{uvod}</p>}
+    <section className="mt-2">
+      <h2 className={stil.odeljak}>{naslov}</h2>
+      {uvod && <p className="-mt-1 mb-1 text-sm text-mastilo-2">{uvod}</p>}
       {children}
     </section>
   );
@@ -35,7 +35,7 @@ function Odeljak({ naslov, uvod, children }) {
 
 const Greska = ({ poruka }) =>
   poruka ? (
-    <p role="alert" className="mt-3 rounded-lg border-2 border-pecat bg-white p-3 text-lg font-medium text-pecat">
+    <p role="alert" className="mt-3 rounded-srednji border border-bordo bg-bordo-svetla p-3 text-base font-medium text-bordo">
       {poruka}
     </p>
   ) : null;
@@ -134,26 +134,32 @@ export default function Pretraga() {
 
   return (
     <>
-      <h1 className="text-3xl font-semibold text-pecat">{T.naslov}</h1>
-      <p className="mt-1 text-lg">{T.uvod}</p>
+      <h1 className={`${stil.naslov} pt-2`}>{T.naslov}</h1>
+      <p className={stil.uvod}>{T.uvod}</p>
 
       {/* 1. naša baza */}
       <form onSubmit={pretrazi} className="mt-4 space-y-3" noValidate role="search">
         <label htmlFor="upit" className="sr-only">
           {T.polje}
         </label>
-        <input
-          id="upit"
-          type="search"
-          autoComplete="off"
-          autoCapitalize="off"
-          spellCheck={false}
-          enterKeyHint="search"
-          placeholder={T.polje}
-          value={upit}
-          onChange={(e) => setUpit(e.target.value)}
-          className={polje}
-        />
+        <div className="flex items-center gap-2.5 rounded-full bg-povrsina px-[18px] shadow-senka">
+          <svg viewBox="0 0 24 24" className="size-[18px] flex-none fill-none stroke-mastilo-3 stroke-2" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.5-3.5" />
+          </svg>
+          <input
+            id="upit"
+            type="search"
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            enterKeyHint="search"
+            placeholder={T.polje}
+            value={upit}
+            onChange={(e) => setUpit(e.target.value)}
+            className="min-w-0 flex-1 border-0 bg-transparent py-3 text-base text-mastilo placeholder:text-mastilo-3 focus:outline-none"
+          />
+        </div>
         <button type="submit" disabled={trazi} className={dugme}>
           {trazi ? T.trazi : T.dugme}
         </button>
@@ -162,7 +168,7 @@ export default function Pretraga() {
 
       {nase && (
         <Odeljak naslov={T.nase.naslov}>
-          {nase.rezultati.length ? <Lista rezultati={nase.rezultati} onDodaj={dodaj} /> : <p className="mt-2 text-lg">{T.nase.nema}</p>}
+          {nase.rezultati.length ? <Lista rezultati={nase.rezultati} onDodaj={dodaj} /> : <p className="mt-2 text-base text-mastilo-2">{T.nase.nema}</p>}
         </Odeljak>
       )}
 
@@ -173,19 +179,19 @@ export default function Pretraga() {
             type="button"
             onClick={pretraziNaGoogle}
             disabled={google.stanje === "trazi"}
-            className={`${dugme} mt-3`}
+            className={`${dugme} mt-1`}
           >
             {google.stanje === "trazi" ? T.trazi : T.google.dugme}
           </button>
           <Greska poruka={google.greska} />
           {google.stanje === "gotovo" &&
-            (google.rezultati.length ? <Lista rezultati={google.rezultati} onDodaj={dodaj} /> : <p className="mt-2 text-lg">{T.google.nema}</p>)}
+            (google.rezultati.length ? <Lista rezultati={google.rezultati} onDodaj={dodaj} /> : <p className="mt-2 text-base text-mastilo-2">{T.google.nema}</p>)}
         </Odeljak>
       )}
 
       {/* 3. link */}
       <Odeljak naslov={T.link.naslov} uvod={T.link.uvod}>
-        <form onSubmit={procitajLink} className="mt-3 space-y-3" noValidate>
+        <form onSubmit={procitajLink} className={`${stil.karta} mt-3 space-y-3`} noValidate>
           <label htmlFor="adresa" className="sr-only">
             {T.link.polje}
           </label>
@@ -211,9 +217,9 @@ export default function Pretraga() {
 
       {/* 4. ručni upis: uvek dostupan, nikad ćorsokak */}
       <Odeljak naslov={T.rucno.naslov} uvod={T.rucno.uvod}>
-        <form onSubmit={dodajRucnoNaPolicu} className="mt-3 space-y-3" noValidate>
+        <form onSubmit={dodajRucnoNaPolicu} className={`${stil.karta} mt-3 space-y-3`} noValidate>
           <div>
-            <label htmlFor="rucno-naslov" className="text-lg font-medium">
+            <label htmlFor="rucno-naslov" className="text-sm font-medium text-mastilo-2">
               {T.rucno.naslovPolje}
             </label>
             <input
@@ -223,11 +229,11 @@ export default function Pretraga() {
               maxLength={300}
               value={rucnoNaslov}
               onChange={(e) => setRucnoNaslov(e.target.value)}
-              className={`${polje} mt-1`}
+              className={`${polje} mt-1.5`}
             />
           </div>
           <div>
-            <label htmlFor="rucno-autor" className="text-lg font-medium">
+            <label htmlFor="rucno-autor" className="text-sm font-medium text-mastilo-2">
               {T.rucno.autorPolje}
             </label>
             <input
@@ -237,7 +243,7 @@ export default function Pretraga() {
               maxLength={200}
               value={rucnoAutor}
               onChange={(e) => setRucnoAutor(e.target.value)}
-              className={`${polje} mt-1`}
+              className={`${polje} mt-1.5`}
             />
           </div>
           <button type="submit" disabled={rucno.saljem} className={dugme}>
@@ -245,7 +251,7 @@ export default function Pretraga() {
           </button>
         </form>
         {rucno.poruka && (
-          <p role={rucno.greska ? "alert" : "status"} className={`mt-3 text-lg font-medium ${rucno.greska ? "text-pecat" : ""}`}>
+          <p role={rucno.greska ? "alert" : "status"} className={`mt-3 text-base font-medium ${rucno.greska ? "text-bordo" : ""}`}>
             {rucno.poruka}
           </p>
         )}

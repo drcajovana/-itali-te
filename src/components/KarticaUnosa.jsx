@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { uIsbn13 } from "../lib/isbn.js";
+import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 import { adresaZaOtvaranje, primeraka } from "../lib/unos-knjiga.js";
 import Korica from "./Korica.jsx";
@@ -8,16 +9,16 @@ import KoricaIzbor from "./KoricaIzbor.jsx";
 import KoricaPrePregled from "./KoricaPrePregled.jsx";
 
 const T = tekst.unos;
-const polje = "mt-1 block w-full rounded-lg border-2 border-ivica bg-white px-3 py-2 text-lg focus:border-pecat focus:outline-none";
+const polje = `${stil.polje} mt-1`;
 
 const OZNAKA_STATUSA = {
-  ceka: "border border-ivica",
-  trazi: "border border-ivica",
-  prepoznato: "bg-ivica",
-  delimicno: "border-2 border-ivica",
-  nije_uspelo: "border-2 border-pecat text-pecat",
-  preskoceno: "border border-ivica text-mastilo/70",
-  sacuvano: "bg-pecat text-white",
+  ceka: "border border-linija",
+  trazi: "border border-linija",
+  prepoznato: "bg-linija",
+  delimicno: "border border-linija",
+  nije_uspelo: "border border-bordo text-bordo",
+  preskoceno: "border border-linija text-mastilo-2",
+  sacuvano: "bg-bordo text-white",
 };
 
 function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
@@ -29,15 +30,15 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
   const primerci = /^\d{1,3}$/.test(String(forma.primerci).trim()) ? Number(forma.primerci) : 0;
 
   return (
-    <div className="mt-3 space-y-3 rounded-lg border-2 border-pecat p-3" role="group" aria-label={T.duplikat.naslov}>
-      <h4 className="text-lg font-semibold text-pecat">{T.duplikat.naslov}</h4>
+    <div className="mt-3 space-y-3 rounded-srednji border border-bordo p-3" role="group" aria-label={T.duplikat.naslov}>
+      <h4 className="text-base font-semibold text-bordo">{T.duplikat.naslov}</h4>
       <ul className="space-y-3">
         {stavke.map(({ k, vrsta }) => (
-          <li key={k.id} className="rounded-lg border border-ivica bg-papir p-3">
-            <p className="text-base font-medium text-pecat">{vrsta}</p>
-            <p className="text-lg font-semibold leading-snug">{k.naslov}</p>
+          <li key={k.id} className="rounded-srednji border border-linija bg-pozadina p-3">
+            <p className="text-base font-medium text-bordo">{vrsta}</p>
+            <p className="text-base font-semibold leading-snug">{k.naslov}</p>
             <p className="text-base">{[k.autor, k.izdavac, k.godina].filter(Boolean).join(" · ")}</p>
-            <p className="text-base text-mastilo/70">
+            <p className="text-base text-mastilo-2">
               {k.u_fondu ? T.duplikat.stanjeFond.replace("{primeraka}", primeraka(k.broj_primeraka)) : T.duplikat.stanjeNije}
             </p>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -45,7 +46,7 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
                 href={adresaZaOtvaranje(k)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex min-h-11 items-center justify-center rounded-lg border-2 border-ivica px-4 py-2 text-lg font-semibold"
+                className={stil.okvirno}
               >
                 {T.duplikat.otvori}
               </a>
@@ -54,7 +55,7 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
                   type="button"
                   disabled={saljem || !primerci}
                   onClick={() => onDodajPrimerke(k)}
-                  className="rounded-lg bg-pecat px-4 py-2 text-lg font-semibold text-white disabled:opacity-50"
+                  className={`${stil.pilulaPuna} flex-none disabled:opacity-50`}
                 >
                   {T.duplikat.dodajPrimerke.replace("{primeraka}", primerci ? primeraka(primerci) : "primerke")}
                 </button>
@@ -67,7 +68,7 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
         type="button"
         disabled={saljem}
         onClick={onIpak}
-        className="w-full rounded-lg border-2 border-pecat px-4 py-2 text-lg font-semibold text-pecat disabled:opacity-50 sm:w-auto"
+        className={`${stil.okvirno} disabled:opacity-50`}
       >
         {T.duplikat.ipak}
       </button>
@@ -92,16 +93,16 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
   const unesi = (ime) => (e) => onPromeni(ime, e.target.value);
 
   return (
-    <li data-kartica={stavka.id} tabIndex={-1} className="rounded-lg border-2 border-ivica bg-white p-3">
+    <li data-kartica={stavka.id} tabIndex={-1} className="rounded-srednji border border-linija bg-povrsina p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded px-2 py-0.5 text-base font-semibold ${OZNAKA_STATUSA[prikazaniStatus]}`}>{T.status[prikazaniStatus]}</span>
-        <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all text-base text-pecat underline">
+        <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all text-base text-bordo underline">
           {host}
         </a>
       </div>
 
       {status === "nije_uspelo" && (
-        <p role="alert" className="mt-2 text-lg font-medium text-pecat">
+        <p role="alert" className="mt-2 text-base font-medium text-bordo">
           {poruka} {T.nijeUspeloPomoc}
         </p>
       )}
@@ -113,9 +114,9 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
               knjiga={{ naslov: sacuvano.naslov, isbn: sacuvano.isbn, korice_url: sacuvano.korica, korice_izvor: sacuvano.korica ? "fotografija" : null }}
               autor={forma?.autor}
             />
-            <p role="status" className="min-w-0 flex-1 text-lg font-medium">
+            <p role="status" className="min-w-0 flex-1 text-base font-medium">
               {sacuvano.primerci ? T.sacuvanoPrimerci : T.sacuvano} <span className="font-semibold">{sacuvano.naslov}</span>{" "}
-              <a href={adresaZaOtvaranje({ id: sacuvano.id, naslov: sacuvano.naslov, isbn: sacuvano.isbn })} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-pecat underline">
+              <a href={adresaZaOtvaranje({ id: sacuvano.id, naslov: sacuvano.naslov, isbn: sacuvano.isbn })} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-bordo underline">
                 {T.otvori}
               </a>
             </p>
@@ -127,9 +128,9 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
             </p>
           )}
           {sacuvano.koricaStanje === "greska" && (
-            <div role="alert" className="space-y-2 rounded-lg border-2 border-pecat p-3">
-              <p className="text-base font-medium text-pecat">{tekst.korice.sacuvanaBezKorice.replace("{razlog}", sacuvano.koricaRazlog ?? "")}</p>
-              <button type="button" onClick={onKoricaPonovi} className="flex min-h-12 w-full items-center justify-center rounded-lg bg-pecat px-5 py-3 text-xl font-semibold text-white sm:w-auto">
+            <div role="alert" className="space-y-2 rounded-srednji border border-bordo p-3">
+              <p className="text-base font-medium text-bordo">{tekst.korice.sacuvanaBezKorice.replace("{razlog}", sacuvano.koricaRazlog ?? "")}</p>
+              <button type="button" onClick={onKoricaPonovi} className="flex min-h-12 w-full items-center justify-center rounded-full bg-bordo px-5 py-3 text-base font-semibold text-white sm:w-auto">
                 {tekst.korice.ponovo}
               </button>
             </div>
@@ -152,14 +153,14 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
             <button
               type="button"
               onClick={onSledeca}
-              className={`flex min-h-12 w-full items-center justify-center rounded-lg px-5 py-3 text-xl font-semibold sm:w-auto ${
-                sacuvano.uFondu && !sacuvano.korica && !sacuvano.bezKorice ? "border-2 border-pecat text-pecat" : "bg-pecat text-white"
+              className={`flex min-h-12 w-full items-center justify-center rounded-full px-5 py-3 text-base font-semibold sm:w-auto ${
+                sacuvano.uFondu && !sacuvano.korica && !sacuvano.bezKorice ? "border border-bordo text-bordo" : "bg-bordo text-white"
               }`}
             >
               {tekst.korice.sledeca}
             </button>
           ) : (
-            <p className="text-base text-mastilo/70">{tekst.korice.poslednja}</p>
+            <p className="text-base text-mastilo-2">{tekst.korice.poslednja}</p>
           )}
         </div>
       )}
@@ -208,14 +209,14 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
                   ["fond", T.kartica.uFondu],
                   ["nabavka", T.kartica.zaNabavku],
                 ].map(([vrednost, oznaka]) => (
-                  <label key={vrednost} className="flex min-h-11 items-center gap-3 text-lg">
+                  <label key={vrednost} className="flex min-h-11 items-center gap-3 text-base">
                     <input
                       type="radio"
                       name={`${id}-stanje`}
                       value={vrednost}
                       checked={forma.stanje === vrednost}
                       onChange={unesi("stanje")}
-                      className="h-6 w-6 accent-pecat"
+                      className="h-6 w-6 accent-bordo"
                     />
                     {oznaka}
                   </label>
@@ -271,21 +272,21 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
                 onemoguceno={saljem}
               />
             ) : (
-              forma.stanje === "fond" && <p className="text-base text-mastilo/70">{T.kartica.koricaNapomena}</p>
+              forma.stanje === "fond" && <p className="text-base text-mastilo-2">{T.kartica.koricaNapomena}</p>
             )}
 
             {greskaPolja && (
-              <p role="alert" className="text-base font-medium text-pecat">
+              <p role="alert" className="text-base font-medium text-bordo">
                 {greskaPolja}
               </p>
             )}
 
-            <label className="flex min-h-11 items-center gap-3 text-lg">
+            <label className="flex min-h-11 items-center gap-3 text-base">
               <input
                 type="checkbox"
                 checked={potvrdjeno}
                 onChange={(e) => onPromeni("potvrdjeno", e.target.checked)}
-                className="h-6 w-6 accent-pecat"
+                className="h-6 w-6 accent-bordo"
               />
               {T.kartica.potvrdjeno}
             </label>
@@ -294,7 +295,7 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
               type="button"
               disabled={saljem}
               onClick={onSacuvaj}
-              className="w-full rounded-lg bg-pecat px-5 py-3 text-lg font-semibold text-white disabled:opacity-60 sm:w-auto"
+              className="w-full rounded-full bg-bordo px-5 py-3 text-base font-semibold text-white disabled:opacity-60 sm:w-auto"
             >
               {saljem ? T.kartica.cuvam : T.kartica.sacuvaj}
             </button>
