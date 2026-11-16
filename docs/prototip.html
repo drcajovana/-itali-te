@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Čitalište</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;450;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --pozadina:#F4EFE5;
+  --povrsina:#FFFCF7;
+  --mastilo:#241813;
+  --mastilo-2:#6B564B;
+  --mastilo-3:#A08D7F;
+  --linija:#E8DCCA;
+  --bordo:#9B1B23;
+  --bordo-svetla:#F2DFDB;
+  --zlato:#A87A28;
+  --zlato-svetlo:#F6E9D0;
+  --r-velik:20px;
+  --r-srednji:14px;
+  --r-mali:10px;
+  --senka:0 1px 2px rgba(60,38,26,.06),0 10px 28px -18px rgba(60,38,26,.34);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--pozadina);color:var(--mastilo);
+  font-family:'Inter',system-ui,sans-serif;font-size:16px;line-height:1.5;
+  letter-spacing:-.011em;
+  display:flex;justify-content:center;min-height:100vh;
+}
+.app{width:100%;max-width:520px;padding-bottom:96px;position:relative}
+
+/* ---------- zaglavlje ---------- */
+.vrh{
+  position:sticky;top:0;z-index:20;background:var(--pozadina);
+  padding:18px 20px 12px;display:flex;align-items:center;gap:12px;
+}
+.vrh::after{
+  content:'';position:absolute;left:0;right:0;bottom:-24px;height:24px;
+  background:linear-gradient(var(--pozadina),transparent);pointer-events:none;
+}
+.grb{
+  width:34px;height:34px;border-radius:50%;flex:none;
+  background:var(--bordo);border:1.5px solid var(--zlato);
+  color:var(--zlato-svetlo);display:flex;align-items:center;justify-content:center;
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:10px;
+  letter-spacing:.01em;
+}
+.znak{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:19px;
+  letter-spacing:-.03em;flex:1;
+}
+.znak i{color:var(--bordo);font-style:normal}
+.avatar{
+  width:36px;height:36px;border-radius:50%;background:var(--bordo);
+  color:#fff;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:600;flex:none;cursor:pointer;border:none;
+}
+.avatar.z2{background:#563628}
+.avatar.z3{background:var(--zlato)}
+.avatar.z4{background:#7A3548}
+
+h1.naslov{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;
+  font-size:30px;letter-spacing:-.035em;line-height:1.1;padding:8px 20px 0;
+}
+.uvod{padding:8px 20px 0;color:var(--mastilo-2);font-size:14.5px}
+.pododeljak{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:17px;
+  letter-spacing:-.02em;padding:0 20px;margin:28px 0 12px;
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+}
+.pododeljak span{font-family:'Inter';font-size:12.5px;font-weight:450;color:var(--mastilo-3);letter-spacing:0}
+
+/* ---------- korice ---------- */
+.korica{
+  aspect-ratio:2/3;border-radius:var(--r-mali);position:relative;overflow:hidden;
+  display:flex;flex-direction:column;justify-content:space-between;
+  padding:11px 10px;flex:none;
+  box-shadow:0 1px 2px rgba(60,38,26,.10),0 12px 22px -16px rgba(60,38,26,.55);
+}
+.korica::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:5px;
+  background:rgba(255,255,255,.16);
+}
+.korica::after{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(120% 80% at 15% 0%,rgba(255,255,255,.22),transparent 60%);
+}
+.korica b{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;
+  letter-spacing:-.025em;line-height:1.12;color:#fff;
+  position:relative;z-index:1;
+}
+.korica i{
+  font-style:normal;font-size:9px;font-weight:500;letter-spacing:.02em;
+  color:rgba(255,255,255,.72);position:relative;z-index:1;line-height:1.25;
+}
+
+/* ---------- glavna karta „čitam" ---------- */
+.glavna{
+  margin:16px 20px 0;background:var(--povrsina);border-radius:var(--r-velik);
+  padding:16px;display:flex;gap:15px;box-shadow:var(--senka);
+  cursor:pointer;border:none;text-align:left;width:calc(100% - 40px);font:inherit;color:inherit;
+  transition:transform .16s ease;
+}
+.glavna:active{transform:scale(.988)}
+.glavna .korica{width:76px}
+.glavna .korica b{font-size:12.5px}
+.glavna-telo{flex:1;min-width:0;display:flex;flex-direction:column}
+.knj-naslov{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:18px;
+  letter-spacing:-.025em;line-height:1.18;
+}
+.knj-autor{font-size:13.5px;color:var(--mastilo-2);margin-top:3px}
+.traka{
+  height:6px;background:var(--pozadina);border-radius:99px;margin-top:auto;
+  overflow:hidden;
+}
+.traka i{display:block;height:100%;background:var(--bordo);border-radius:99px}
+.traka-red{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+.sitno{font-size:11.5px;color:var(--mastilo-3);font-variant-numeric:tabular-nums}
+
+/* ---------- segmentna kontrola ---------- */
+.segment{
+  display:flex;gap:4px;margin:20px;padding:4px;background:var(--povrsina);
+  border-radius:99px;box-shadow:var(--senka);
+}
+.segment button{
+  flex:1;border:none;background:none;cursor:pointer;font:inherit;
+  font-size:13px;font-weight:500;color:var(--mastilo-2);
+  padding:9px 6px;border-radius:99px;transition:background .18s,color .18s;
+}
+.segment button[aria-selected="true"]{background:var(--bordo);color:#fff}
+.segment button:focus-visible{outline:2px solid var(--zlato);outline-offset:2px}
+
+/* ---------- mreža knjiga ---------- */
+.mreza{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:16px 13px;padding:4px 20px 8px;
+}
+.mreza button{background:none;border:none;padding:0;cursor:pointer;font:inherit;color:inherit;text-align:left}
+.mreza .korica{width:100%}
+.mreza .korica b{font-size:11.5px}
+.mreza .ime{
+  font-size:12.5px;font-weight:500;line-height:1.25;margin-top:8px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.mreza .pod{font-size:11px;color:var(--mastilo-3);margin-top:2px}
+.znacka{
+  position:absolute;right:7px;top:7px;z-index:2;
+  background:rgba(255,255,255,.94);color:var(--bordo);
+  border-radius:99px;padding:3px 7px;font-size:10.5px;font-weight:600;
+  display:flex;align-items:center;gap:3px;
+}
+.znacka.upis{color:var(--zlato)}
+
+/* ---------- red karata ---------- */
+.karta{
+  background:var(--povrsina);border-radius:var(--r-velik);padding:15px 16px;
+  box-shadow:var(--senka);margin:0 20px 12px;
+}
+.karta.klik{cursor:pointer;border:none;width:calc(100% - 40px);font:inherit;color:inherit;text-align:left;display:block}
+.red{display:flex;align-items:center;gap:12px}
+.red-telo{flex:1;min-width:0}
+.ime-osobe{font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+.kada{font-size:12px;color:var(--mastilo-3);margin-top:1px}
+.citat{
+  font-size:14px;line-height:1.55;color:var(--mastilo);margin-top:11px;
+  padding-left:12px;border-left:2px solid var(--bordo-svetla);
+}
+.pilule{display:flex;gap:7px;margin-top:13px}
+.pilula{
+  flex:1;border:none;cursor:pointer;font:inherit;font-size:12.5px;font-weight:500;
+  padding:9px 10px;border-radius:99px;background:var(--pozadina);color:var(--mastilo);
+  transition:background .16s;
+}
+.pilula:hover{background:var(--bordo-svetla)}
+.pilula.puna{background:var(--bordo);color:#fff}
+.pilula.puna:hover{background:#7C121A}
+.pilula:focus-visible{outline:2px solid var(--zlato);outline-offset:2px}
+
+.ocena-znak{
+  display:inline-flex;align-items:baseline;gap:1px;
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;
+  font-size:17px;color:var(--bordo);letter-spacing:-.03em;
+}
+.ocena-znak s{text-decoration:none;font-size:11px;color:var(--mastilo-3);font-weight:500}
+
+/* ---------- pretraga ---------- */
+.trazi-polje{
+  margin:16px 20px 0;display:flex;align-items:center;gap:10px;
+  background:var(--povrsina);border-radius:99px;padding:13px 18px;box-shadow:var(--senka);
+}
+.trazi-polje input{
+  flex:1;border:none;background:none;font:inherit;font-size:15px;color:var(--mastilo);
+}
+.trazi-polje input:focus{outline:none}
+.trazi-polje svg{width:18px;height:18px;stroke:var(--mastilo-3);fill:none;stroke-width:2;flex:none}
+.izvor{
+  font-size:11px;font-weight:500;color:var(--mastilo-2);background:var(--pozadina);
+  border-radius:99px;padding:3px 9px;display:inline-block;
+}
+.izvor.gb{background:var(--zlato-svetlo);color:var(--zlato)}
+.izvor.fond{background:var(--bordo-svetla);color:var(--bordo)}
+.rezultat{
+  display:flex;gap:13px;align-items:center;padding:12px 20px;cursor:pointer;
+  border:none;background:none;font:inherit;color:inherit;text-align:left;width:100%;
+}
+.rezultat:hover{background:rgba(15,82,64,.035)}
+.rezultat .korica{width:44px;border-radius:7px}
+.rezultat .korica b{font-size:8px}
+.rezultat .korica i{display:none}
+.nema{
+  margin:8px 20px;background:var(--povrsina);border-radius:var(--r-velik);
+  padding:18px;box-shadow:var(--senka);
+}
+.nema h4{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:16px;
+  letter-spacing:-.02em;margin-bottom:5px;
+}
+.nema p{font-size:13.5px;color:var(--mastilo-2);line-height:1.5}
+.polje{
+  width:100%;border:1px solid var(--linija);border-radius:var(--r-srednji);
+  padding:12px 14px;font:inherit;font-size:14.5px;background:var(--pozadina);
+  color:var(--mastilo);margin-top:9px;
+}
+.polje:focus{outline:2px solid var(--bordo);outline-offset:-1px;background:var(--povrsina)}
+
+/* ---------- šifra ---------- */
+.sifra{
+  margin:16px 20px 0;background:var(--bordo);color:#fff;border-radius:var(--r-velik);
+  padding:20px;position:relative;overflow:hidden;
+}
+.sifra::after{
+  content:'';position:absolute;right:-40px;top:-40px;width:150px;height:150px;
+  border-radius:50%;background:rgba(255,255,255,.07);
+}
+.sifra small{font-size:12px;opacity:.75;font-weight:450}
+.sifra-broj{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:27px;
+  letter-spacing:.02em;margin-top:5px;
+}
+.sifra .pilula{background:rgba(255,255,255,.15);color:#fff;margin-top:14px;width:100%}
+.sifra .pilula:hover{background:rgba(255,255,255,.25)}
+
+/* ---------- profil ---------- */
+.brojke{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 20px;margin-top:16px}
+.brojka{background:var(--povrsina);border-radius:var(--r-srednji);padding:15px 10px;text-align:center;box-shadow:var(--senka)}
+.brojka b{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:26px;
+  letter-spacing:-.03em;display:block;line-height:1;
+}
+.brojka span{font-size:11.5px;color:var(--mastilo-3);display:block;margin-top:5px}
+.mesecni{display:flex;gap:5px;margin-top:14px}
+.mesecni i{flex:1;height:34px;border-radius:6px;background:var(--pozadina)}
+.mesecni i.puna{background:var(--bordo)}
+.stavka{
+  display:flex;justify-content:space-between;gap:14px;font-size:14px;
+  padding:13px 0;border-bottom:1px solid var(--linija);
+}
+.stavka:last-child{border-bottom:none}
+.stavka span{color:var(--mastilo-2)}
+
+/* ---------- navigacija ---------- */
+nav{
+  position:fixed;bottom:0;left:0;right:0;z-index:40;max-width:520px;margin:0 auto;
+  background:rgba(255,255,255,.86);backdrop-filter:blur(14px);
+  border-top:1px solid var(--linija);display:flex;padding:6px 8px 12px;
+}
+nav button{
+  flex:1;border:none;background:none;cursor:pointer;padding:8px 4px;
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  font:inherit;font-size:10.5px;font-weight:500;color:var(--mastilo-3);
+  border-radius:14px;transition:color .16s;
+}
+nav button[aria-current="page"]{color:var(--bordo)}
+nav .ikona{
+  width:46px;height:28px;border-radius:99px;display:flex;align-items:center;justify-content:center;
+  transition:background .2s;
+}
+nav button[aria-current="page"] .ikona{background:var(--bordo-svetla)}
+nav svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+nav button:focus-visible{outline:2px solid var(--zlato);outline-offset:-2px}
+
+/* ---------- list ---------- */
+.zastor{position:fixed;inset:0;z-index:60;background:rgba(46,28,20,.45);display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)}
+.zastor.otvoren{display:flex}
+.list{
+  background:var(--pozadina);width:100%;max-width:520px;max-height:93vh;overflow-y:auto;
+  border-radius:24px 24px 0 0;animation:gore .3s cubic-bezier(.2,.8,.25,1) both;
+}
+@keyframes gore{from{transform:translateY(34px);opacity:.5}to{transform:none;opacity:1}}
+.hvataljka{width:38px;height:4px;border-radius:99px;background:var(--mastilo-3);opacity:.4;margin:10px auto 0}
+.list-telo{padding:16px 20px 32px}
+.list-vrh{display:flex;gap:15px;margin-bottom:20px}
+.list-vrh .korica{width:88px}
+.list-vrh .korica b{font-size:13px}
+.odeljak{margin-top:26px}
+.odeljak h3{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:15px;
+  letter-spacing:-.02em;margin-bottom:11px;
+}
+.blok{background:var(--povrsina);border-radius:var(--r-velik);padding:16px;box-shadow:var(--senka)}
+.skala{display:grid;grid-template-columns:repeat(10,1fr);gap:5px}
+.skala button{
+  aspect-ratio:1;border:none;cursor:pointer;border-radius:9px;background:var(--pozadina);
+  font:inherit;font-size:13px;font-weight:600;color:var(--mastilo-2);
+  transition:background .14s,color .14s,transform .14s;
+}
+.skala button:hover{background:var(--bordo-svetla);color:var(--bordo)}
+.skala button[aria-pressed="true"]{background:var(--bordo);color:#fff;transform:scale(1.08)}
+.skala button:focus-visible{outline:2px solid var(--zlato);outline-offset:1px}
+.opis-ocene{font-size:13px;color:var(--mastilo-2);margin-top:11px;min-height:20px}
+textarea{
+  width:100%;min-height:96px;border:1px solid var(--linija);border-radius:var(--r-srednji);
+  padding:12px 14px;font:inherit;font-size:14.5px;background:var(--pozadina);
+  color:var(--mastilo);resize:vertical;
+}
+textarea:focus{outline:2px solid var(--bordo);outline-offset:-1px;background:var(--povrsina)}
+.cipovi{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.cip{
+  border:none;cursor:pointer;font:inherit;font-size:12.5px;font-weight:500;
+  padding:8px 13px;border-radius:99px;background:var(--pozadina);color:var(--mastilo-2);
+  transition:background .16s,color .16s;
+}
+.cip[aria-pressed="true"]{background:var(--mastilo);color:#fff}
+.cip:focus-visible{outline:2px solid var(--zlato);outline-offset:2px}
+.prekidac{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:13.5px;color:var(--mastilo-2);cursor:pointer}
+.prekidac input{width:17px;height:17px;accent-color:var(--bordo)}
+.veliko{
+  width:100%;border:none;cursor:pointer;font:inherit;font-size:15px;font-weight:600;
+  padding:15px;border-radius:99px;background:var(--bordo);color:#fff;margin-top:16px;
+  transition:transform .14s;
+}
+.veliko:active{transform:scale(.985)}
+.veliko.tiho{background:var(--povrsina);color:var(--mastilo);box-shadow:var(--senka)}
+.veliko:focus-visible{outline:2px solid var(--zlato);outline-offset:2px}
+.zatvori{
+  margin-left:auto;border:none;background:var(--povrsina);cursor:pointer;
+  width:32px;height:32px;border-radius:50%;font-size:17px;color:var(--mastilo-2);
+  flex:none;box-shadow:var(--senka);
+}
+
+.dostupnost{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px}
+.tacka{width:8px;height:8px;border-radius:50%;background:var(--bordo);flex:none}
+.tacka.zauzeto{background:var(--zlato)}
+
+.javljanje{
+  position:fixed;left:50%;transform:translateX(-50%) translateY(8px);bottom:108px;z-index:80;
+  background:var(--mastilo);color:#fff;padding:13px 20px;border-radius:99px;
+  font-size:13.5px;font-weight:500;opacity:0;pointer-events:none;
+  transition:opacity .22s,transform .22s;max-width:86vw;text-align:center;
+}
+.javljanje.vidi{opacity:1;transform:translateX(-50%) translateY(0)}
+.prazno{margin:20px;padding:30px 20px;text-align:center;color:var(--mastilo-3);font-size:14px}
+.ekran{display:none}
+.ekran.aktivan{display:block;animation:blago .26s ease both}
+@keyframes blago{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="vrh">
+  <div class="grb" aria-hidden="true">1846</div>
+  <div class="znak">Čita<i>lište</i></div>
+  <button class="avatar" id="ka-profilu">JĐ</button>
+</div>
+
+<!-- ===== POLICA ===== -->
+<section class="ekran aktivan" id="ekran-polica">
+  <h1 class="naslov">Dobro jutro,<br>Jovana</h1>
+  <p class="uvod">Dve knjige su u toku. Negotinska krajina te čeka od ponedeljka.</p>
+  <div id="glavne"></div>
+  <div class="segment" role="tablist">
+    <button role="tab" aria-selected="true" data-stanje="citam">Čitam</button>
+    <button role="tab" aria-selected="false" data-stanje="procitano">Pročitano</button>
+    <button role="tab" aria-selected="false" data-stanje="zelim">Želim</button>
+  </div>
+  <div class="mreza" id="mreza-police"></div>
+</section>
+
+<!-- ===== PRETRAGA ===== -->
+<section class="ekran" id="ekran-pretraga">
+  <h1 class="naslov">Pronađi knjigu</h1>
+  <p class="uvod">Prvo naš fond, pa Google Books. Ako je nema — upiši je.</p>
+  <div class="trazi-polje">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="trazi" placeholder="Naslov ili autor" aria-label="Pretraga knjiga">
+  </div>
+  <div id="rezultati"></div>
+</section>
+
+<!-- ===== ČITAOCI ===== -->
+<section class="ekran" id="ekran-citaoci">
+  <h1 class="naslov">Čitaoci</h1>
+  <p class="uvod">Vezu pravi pozivnica. Niko ne može da ti priđe bez tvoje šifre.</p>
+  <div class="sifra">
+    <small>Tvoja šifra za poziv</small>
+    <div class="sifra-broj">NEG·4471·KJ</div>
+    <button class="pilula" id="podeli">Podeli šifru</button>
+  </div>
+  <div id="pozivnice-blok"></div>
+  <div class="pododeljak">Preporučeno tebi</div>
+  <div id="preporuke"></div>
+  <div class="pododeljak">Povezani <span id="broj-veza"></span></div>
+  <div id="prijatelji"></div>
+</section>
+
+<!-- ===== PROFIL ===== -->
+<section class="ekran" id="ekran-profil">
+  <h1 class="naslov">Jovana Đorđević</h1>
+  <p class="uvod">Član od 2019 · karta NB-2019-04471</p>
+  <div class="brojke">
+    <div class="brojka"><b id="s1">7</b><span>ove godine</span></div>
+    <div class="brojka"><b id="s2">5</b><span>utisaka</span></div>
+    <div class="brojka"><b id="s3">3</b><span>čitaoca</span></div>
+  </div>
+  <div class="pododeljak">Godina čitanja <span>7 od 12</span></div>
+  <div class="karta">
+    <div class="mesecni" id="meseci"></div>
+    <p class="sitno" style="margin-top:12px;line-height:1.5">
+      Jan · Feb · Mar · Apr · Maj · Jun · Jul · Avg · Sep · Okt · Nov · Dec
+    </p>
+  </div>
+  <div class="pododeljak">Podešavanja</div>
+  <div class="karta">
+    <div class="stavka"><span>Prikazano ime</span><b>Jovana Đ.</b></div>
+    <div class="stavka"><span>Vidljivost utisaka</span><b>Svi članovi</b></div>
+    <div class="stavka"><span>Obaveštenja</span><b>SMS</b></div>
+    <div class="stavka"><span>Omiljeni žanrovi</span><b>Roman, istorija</b></div>
+  </div>
+</section>
+
+<nav aria-label="Glavna navigacija">
+  <button data-ekran="polica" aria-current="page">
+    <span class="ikona"><svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 015.5 4H10v16H5.5A1.5 1.5 0 014 18.5zM14 4h4.5A1.5 1.5 0 0120 5.5v13a1.5 1.5 0 01-1.5 1.5H14z"/></svg></span>Polica
+  </button>
+  <button data-ekran="pretraga">
+    <span class="ikona"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg></span>Traži
+  </button>
+  <button data-ekran="citaoci">
+    <span class="ikona"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c0-3.2 2.5-5.2 5.5-5.2s5.5 2 5.5 5.2M16 6.2a3 3 0 010 5.6M18 14.4c2 .6 3.2 2.1 3.2 4.3"/></svg></span>Čitaoci
+  </button>
+  <button data-ekran="profil">
+    <span class="ikona"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.7 3.1-6 7-6s7 2.3 7 6"/></svg></span>Profil
+  </button>
+</nav>
+</div>
+
+<div class="zastor" id="zastor" role="dialog" aria-modal="true">
+  <div class="list">
+    <div class="hvataljka"></div>
+    <div class="list-telo" id="list-telo"></div>
+  </div>
+</div>
+<div class="javljanje" id="javljanje" role="status" aria-live="polite"></div>
+
+<script>
+const boje=[
+ ['#8C1720','#B8323C'],['#563628','#8A5C46'],['#8A6A1E','#C09A3E'],
+ ['#3E2622','#6B4744'],['#7A3548','#A85C6E'],['#4A4128','#7C6E42'],
+ ['#93411F','#C4713D'],['#332B33','#61525F']
+];
+const opisi={1:'Nisam uspela da završim.',2:'Slabo.',3:'Ispod očekivanja.',4:'Ima mana, ali se čita.',
+ 5:'Prosečno.',6:'Solidno, ne bih ponovila.',7:'Dobra knjiga.',8:'Vrlo dobra, preporučujem.',
+ 9:'Odlična, ostaje sa mnom.',10:'Jedna od najboljih koje sam čitala.'};
+
+const knjige=[
+ {id:1,naslov:'Na Drini ćuprija',autor:'Ivo Andrić',izdavac:'Laguna',godina:2018,
+  isbn:'978-86-521-3011-4',zanr:'Roman',fond:'slobodno',primeraka:3,prosek:9.1,utisaka:14,
+  stanje:'procitano',ocena:10,datum:'12. jul 2026',b:0,
+  opis:'Hronika višegradske ćuprije i ljudi čiji se životi na njoj prepliću, od XVI veka do Prvog svetskog rata.'},
+ {id:2,naslov:'Seobe',autor:'Miloš Crnjanski',izdavac:'Zavod za udžbenike',godina:2014,
+  isbn:'978-86-17-18922-5',zanr:'Roman',fond:'izdato',vraca:'24. avgusta',prosek:8.4,utisaka:9,
+  stanje:'citam',napredak:62,b:1,
+  opis:'Slavonski puk Vuka Isakoviča na maršu kroz tuđe ratove, i beskrajni plavi krug u kome se seli ceo jedan narod.'},
+ {id:3,naslov:'Uhvati zeca',autor:'Lana Bastašić',izdavac:'Booka',godina:2019,
+  isbn:'978-86-88335-89-6',zanr:'Roman',fond:'slobodno',primeraka:2,prosek:8.0,utisaka:6,
+  stanje:'zelim',b:2,
+  opis:'Put od Dublina do Beča i nazad kroz Bosnu, i prijateljstvo koje se raspada dok se putuje.'},
+ {id:4,naslov:'Negotinska krajina u XIX veku',autor:'Grupa autora',izdavac:'Muzej Krajine',godina:2009,
+  isbn:'978-86-83063-22-1',zanr:'Zavičajna zbirka',fond:'slobodno',primeraka:1,prosek:7.8,utisaka:3,
+  stanje:'citam',napredak:24,zavicaj:true,b:3,
+  opis:'Privreda, vinogradarstvo i svakodnevni život Krajine od Hajduk Veljka do kraja veka.'},
+ {id:5,naslov:'Peščanik',autor:'Danilo Kiš',izdavac:'Arhipelag',godina:2016,
+  isbn:'978-86-523-0198-9',zanr:'Roman',fond:'slobodno',primeraka:2,prosek:8.9,utisaka:11,
+  stanje:'zelim',b:4,
+  opis:'Rekonstrukcija jednog nestalog života kroz pisma, ispitivanja i slike koje se ne slažu.'},
+ {id:6,naslov:'Sto godina samoće',autor:'Gabrijel Garsija Markes',izdavac:'Sezam Book',godina:2017,
+  isbn:'978-86-6249-107-3',zanr:'Roman',fond:'izdato',vraca:'2. septembra',prosek:9.3,utisaka:18,
+  stanje:'procitano',ocena:9,datum:'3. maj 2026',b:5,
+  opis:'Sedam generacija porodice Buendija u Makondu, gradu koji se rađa i nestaje zajedno sa njima.'},
+ {id:7,naslov:'Mokranjac i njegovo doba',autor:'Milan Bojanić',izdavac:'Krajinski zapisi',godina:2011,
+  isbn:'978-86-84925-44-0',zanr:'Zavičajna zbirka',fond:'slobodno',primeraka:1,prosek:7.5,utisaka:2,
+  stanje:'zelim',zavicaj:true,b:6,
+  opis:'Život Stevana Stojanovića Mokranjca i muzički život Negotina njegovog vremena.'},
+ {id:8,naslov:'Kad su cvetale tikve',autor:'Dragoslav Mihailović',izdavac:'Laguna',godina:2020,
+  isbn:'978-86-521-3812-7',zanr:'Roman',fond:'slobodno',primeraka:2,prosek:8.6,utisaka:7,
+  stanje:'procitano',ocena:8,datum:'19. jun 2026',b:7,
+  opis:'Ispovest boksera iz Dušanovca o gubitku, osveti i godinama koje se ne vraćaju.'},
+ {id:9,naslov:'Ljudi koje volimo',autor:'Vesna Nikolić',izdavac:'—',godina:2026,
+  isbn:'',zanr:'Poezija',fond:'nema',prosek:0,utisaka:0,stanje:'zelim',upisala:true,b:2,
+  opis:'Naslov koji si sama upisala. Prosleđen je u listu za nabavku.'}
+];
+
+const prijatelji=[
+ {ime:'Milena Stanković',ini:'MS',boja:'',cita:'Peščanik',autor:'Danilo Kiš',napredak:41,b:4,godina:23},
+ {ime:'Đorđe Pavlović',ini:'ĐP',boja:'z2',cita:'Sto godina samoće',autor:'G. G. Markes',napredak:78,b:5,godina:16},
+ {ime:'Vladan Todorović',ini:'VT',boja:'z3',cita:'Negotinska krajina u XIX veku',autor:'Grupa autora',napredak:55,b:3,godina:31}
+];
+const pozivnice=[{ime:'Anica Marković',ini:'AM',boja:'z4',kada:'juče',poruka:'Videle smo se na promociji u utorak.'}];
+const preporuke=[
+ {od:'Milena Stanković',ini:'MS',boja:'',knjiga:'Peščanik',autor:'Danilo Kiš',kada:'pre 3 dana',b:4,
+  poruka:'Pošto ti se dopala Na Drini ćuprija — ova je teža, ali mislim da je tvoja. Videla sam je juče u fondu.'},
+ {od:'Vladan Todorović',ini:'VT',boja:'z3',knjiga:'Mokranjac i njegovo doba',autor:'Milan Bojanić',kada:'pre nedelju dana',b:6,
+  poruka:'Za tvoju knjigu o razglednicama — treće poglavlje ima spisak negotinskih fotografa.'}
+];
+
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+let stanje='citam',otvorena=null,nacrt={};
+
+function korica(k,klasa=''){
+  const [a,b]=boje[k.b%boje.length];
+  return `<div class="korica ${klasa}" style="background:linear-gradient(150deg,${a},${b})">
+    <b>${k.naslov}</b><i>${k.autor}</i></div>`;
+}
+function javi(t){
+  const j=$('#javljanje');j.textContent=t;j.classList.add('vidi');
+  clearTimeout(j._t);j._t=setTimeout(()=>j.classList.remove('vidi'),2400);
+}
+
+function crtajPolicu(){
+  const uToku=knjige.filter(k=>k.stanje==='citam');
+  $('#glavne').innerHTML=uToku.map(k=>`
+    <button class="glavna" data-id="${k.id}">
+      ${korica(k)}
+      <div class="glavna-telo">
+        <div class="knj-naslov">${k.naslov}</div>
+        <div class="knj-autor">${k.autor}</div>
+        <div class="traka"><i style="width:${k.napredak}%"></i></div>
+        <div class="traka-red">
+          <span class="sitno">${k.napredak}% pročitano</span>
+          <span class="sitno">${k.fond==='slobodno'?'u fondu':'izdato'}</span>
+        </div>
+      </div>
+    </button>`).join('');
+
+  const lista=knjige.filter(k=>k.stanje===stanje);
+  $('#mreza-police').innerHTML=lista.length?lista.map(k=>`
+    <button data-id="${k.id}">
+      <div style="position:relative">
+        ${korica(k)}
+        ${k.stanje==='procitano'?`<span class="znacka">${k.ocena}/10</span>`:''}
+        ${k.upisala?'<span class="znacka upis">upisano</span>':''}
+      </div>
+      <div class="ime">${k.naslov}</div>
+      <div class="pod">${k.autor}</div>
+    </button>`).join(''):'<div class="prazno" style="grid-column:1/-1">Ovde još nema ničega.</div>';
+
+  $$('[data-id]').forEach(b=>b.onclick=()=>otvori(+b.dataset.id));
+}
+
+function crtajCitaoce(){
+  $('#broj-veza').textContent=prijatelji.length+' čitaoca';
+  $('#pozivnice-blok').innerHTML=pozivnice.length?
+    `<div class="pododeljak">Pozivnica čeka</div>`+pozivnice.map((p,i)=>`
+    <div class="karta">
+      <div class="red">
+        <div class="avatar ${p.boja}">${p.ini}</div>
+        <div class="red-telo"><div class="ime-osobe">${p.ime}</div><div class="kada">stiglo ${p.kada}</div></div>
+      </div>
+      <p class="citat">${p.poruka}</p>
+      <div class="pilule">
+        <button class="pilula puna" data-da="${i}">Prihvati</button>
+        <button class="pilula" data-ne="${i}">Odbij</button>
+      </div>
+    </div>`).join(''):'';
+
+  $('#preporuke').innerHTML=preporuke.length?preporuke.map((p,i)=>`
+    <div class="karta">
+      <div class="red">
+        <div class="avatar ${p.boja}">${p.ini}</div>
+        <div class="red-telo"><div class="ime-osobe">${p.od}</div><div class="kada">${p.kada}</div></div>
+      </div>
+      <div class="red" style="margin-top:13px">
+        ${korica({naslov:p.knjiga,autor:p.autor,b:p.b}).replace('class="korica "','class="korica"').replace('<div class="korica','<div style="width:48px" class="korica')}
+        <div class="red-telo">
+          <div class="knj-naslov" style="font-size:16px">${p.knjiga}</div>
+          <div class="knj-autor">${p.autor}</div>
+        </div>
+      </div>
+      <p class="citat">${p.poruka}</p>
+      <div class="pilule">
+        <button class="pilula puna" data-nap="${i}">Na policu</button>
+        <button class="pilula" data-odg="${i}">Odgovori</button>
+      </div>
+    </div>`).join(''):'<div class="prazno">Nema novih preporuka.</div>';
+
+  $('#prijatelji').innerHTML=prijatelji.map((p,i)=>`
+    <div class="karta">
+      <div class="red">
+        <div class="avatar ${p.boja}">${p.ini}</div>
+        <div class="red-telo">
+          <div class="ime-osobe">${p.ime}</div>
+          <div class="kada">${p.godina} knjiga ove godine</div>
+        </div>
+        <button class="pilula" style="flex:none;padding:8px 14px" data-prep="${i}">Preporuči</button>
+      </div>
+      <div class="red" style="margin-top:14px">
+        <div style="flex:1">
+          <div class="sitno" style="margin-bottom:5px">Trenutno čita · ${p.cita}</div>
+          <div class="traka"><i style="width:${p.napredak}%"></i></div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  $$('[data-da]').forEach(b=>b.onclick=()=>{
+    const p=pozivnice.splice(+b.dataset.da,1)[0];
+    prijatelji.push({ime:p.ime,ini:p.ini,boja:p.boja,cita:'Uhvati zeca',autor:'L. Bastašić',napredak:12,b:2,godina:11});
+    crtajCitaoce();crtajProfil();javi('Povezani ste');
+  });
+  $$('[data-ne]').forEach(b=>b.onclick=()=>{pozivnice.splice(+b.dataset.ne,1);crtajCitaoce();javi('Poziv odbijen');});
+  $$('[data-nap]').forEach(b=>b.onclick=()=>{
+    const k=knjige.find(x=>x.naslov===preporuke[+b.dataset.nap].knjiga);
+    if(k)k.stanje='zelim';crtajPolicu();javi('Dodato u „Želim da pročitam"');
+  });
+  $$('[data-odg]').forEach(b=>b.onclick=()=>javi('Odgovor — u izradi'));
+  $$('[data-prep]').forEach(b=>b.onclick=()=>javi('Izaberi knjigu sa police'));
+}
+
+function crtajProfil(){
+  const g=knjige.filter(k=>k.stanje==='procitano').length+4;
+  $('#s1').textContent=g;$('#s3').textContent=prijatelji.length;
+  $('#meseci').innerHTML=Array.from({length:12},(_,i)=>`<i class="${i<g?'puna':''}"></i>`).join('');
+}
+
+/* ---- pretraga ---- */
+function crtajPretragu(q){
+  const t=q.trim().toLowerCase();
+  if(!t){$('#rezultati').innerHTML='<div class="prazno">Ukucaj naslov ili ime autora.</div>';return;}
+  const nadjene=knjige.filter(k=>(k.naslov+' '+k.autor).toLowerCase().includes(t));
+  let html='';
+  if(nadjene.length){
+    html+=`<div class="pododeljak">U našem fondu <span>${nadjene.length}</span></div>`;
+    html+=nadjene.map(k=>`
+      <button class="rezultat" data-id="${k.id}">
+        ${korica(k)}
+        <div class="red-telo">
+          <div class="ime-osobe">${k.naslov}</div>
+          <div class="kada">${k.autor} · ${k.izdavac}</div>
+          <div style="margin-top:6px"><span class="izvor ${k.fond==='nema'?'':'fond'}">${k.fond==='nema'?'nije u fondu':k.fond==='slobodno'?'slobodno':'izdato'}</span></div>
+        </div>
+      </button>`).join('');
+  }
+  html+=`<div class="pododeljak">Google Books <span>dopuna</span></div>
+    <button class="rezultat" data-gb="1">
+      <div class="korica" style="background:linear-gradient(150deg,#5A4A40,#8C7A6C);width:44px"><b>${q}</b></div>
+      <div class="red-telo">
+        <div class="ime-osobe">Rezultati za „${q}"</div>
+        <div class="kada">Podaci i korice se povlače po ISBN-u</div>
+        <div style="margin-top:6px"><span class="izvor gb">spoljni izvor</span></div>
+      </div>
+    </button>`;
+  html+=`<div class="nema">
+      <h4>Nema je nigde?</h4>
+      <p>Upiši naslov i autora. Knjiga ide na tvoju policu i u listu za nabavku — po tome biblioteka bira šta da kupi.</p>
+      <input class="polje" placeholder="Naslov" value="${q}">
+      <input class="polje" placeholder="Autor">
+      <button class="veliko" id="upisi">Dodaj na policu</button>
+      <button class="veliko tiho" id="link">Umesto toga, zalepi link</button>
+    </div>`;
+  $('#rezultati').innerHTML=html;
+  $$('#rezultati [data-id]').forEach(b=>b.onclick=()=>otvori(+b.dataset.id));
+  $('[data-gb]').onclick=()=>javi('Google Books — u izradi');
+  $('#upisi').onclick=()=>javi('Dodato · prosleđeno u listu za nabavku');
+  $('#link').onclick=()=>javi('Unos linkom — u izradi');
+}
+
+/* ---- list ---- */
+function otvori(id){
+  otvorena=knjige.find(k=>k.id===id);const k=otvorena;
+  nacrt={ocena:k.ocena||null,vid:'javno'};
+  $('#list-telo').innerHTML=`
+    <div class="list-vrh">
+      ${korica(k)}
+      <div style="flex:1;min-width:0">
+        <div class="knj-naslov" style="font-size:21px">${k.naslov}</div>
+        <div class="knj-autor">${k.autor}</div>
+        <div class="knj-autor" style="font-size:12.5px;color:var(--mastilo-3);margin-top:6px">${k.izdavac}, ${k.godina} · ${k.zanr}</div>
+        ${k.prosek?`<div style="margin-top:9px"><span class="ocena-znak">${k.prosek}<s>/10</s></span>
+          <span class="sitno"> · ${k.utisaka} utisaka</span></div>`:''}
+      </div>
+      <button class="zatvori" id="x">×</button>
+    </div>
+    <p style="font-size:15px;line-height:1.6;color:var(--mastilo-2)">${k.opis}</p>
+
+    <div class="odeljak">
+      <h3>U biblioteci</h3>
+      <div class="blok">
+        <div class="dostupnost">
+          <span class="tacka ${k.fond==='slobodno'?'':'zauzeto'}"></span>
+          ${k.fond==='slobodno'?`Slobodno · ${k.primeraka} primerka`
+            :k.fond==='izdato'?`Izdato, vraća se ${k.vraca}`:'Nemamo u fondu — na listi za nabavku'}
+        </div>
+        ${k.fond!=='nema'?`<button class="veliko tiho" id="rez">${k.fond==='slobodno'?'Rezerviši primerak':'Javi mi kad se vrati'}</button>`:''}
+      </div>
+    </div>
+
+    <div class="odeljak">
+      <h3>Preporuči čitaocu</h3>
+      <div class="blok">
+        <div class="cipovi" id="kome">
+          ${prijatelji.map((p,i)=>`<button class="cip" data-kome="${i}" aria-pressed="false">${p.ime.split(' ')[0]}</button>`).join('')}
+        </div>
+        <textarea id="pp" placeholder="Zašto baš njemu ili njoj? Jedna rečenica je dovoljna." style="min-height:70px;margin-top:12px"></textarea>
+        <button class="veliko tiho" id="salji">Pošalji preporuku</button>
+      </div>
+    </div>
+
+    <div class="odeljak">
+      <h3>${k.stanje==='procitano'?'Tvoj utisak':'Kad završiš'}</h3>
+      <div class="blok">
+        <div class="skala" id="skala">
+          ${Array.from({length:10},(_,i)=>`<button data-o="${i+1}" aria-pressed="${nacrt.ocena===i+1}">${i+1}</button>`).join('')}
+        </div>
+        <div class="opis-ocene" id="oo">${nacrt.ocena?opisi[nacrt.ocena]:'Ocena od 1 do 10'}</div>
+        <textarea id="tekst" placeholder="Šta ti je ostalo posle ove knjige? Ovo čitaju komšije, ne kritičari."></textarea>
+        <div class="cipovi" id="vid">
+          <button class="cip" data-v="javno" aria-pressed="true">Svi članovi</button>
+          <button class="cip" data-v="prijatelji" aria-pressed="false">Samo povezani</button>
+          <button class="cip" data-v="ja" aria-pressed="false">Samo ja</button>
+        </div>
+        <label class="prekidac"><input type="checkbox"> Sadrži spojler</label>
+        <button class="veliko" id="cuvaj">${k.stanje==='procitano'?'Sačuvaj izmene':'Označi kao pročitano'}</button>
+        ${k.stanje==='zelim'?'<button class="veliko tiho" id="pocni">Počni da čitaš</button>':''}
+      </div>
+    </div>`;
+  vezi();
+  $('#zastor').classList.add('otvoren');
+  document.body.style.overflow='hidden';
+}
+
+function vezi(){
+  $('#x').onclick=zatvori;
+  $$('#skala button').forEach(b=>b.onclick=()=>{
+    nacrt.ocena=+b.dataset.o;
+    $$('#skala button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+    $('#oo').textContent=opisi[nacrt.ocena];
+  });
+  $$('#vid button').forEach(b=>b.onclick=()=>{
+    nacrt.vid=b.dataset.v;$$('#vid button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  });
+  let kome=null;
+  $$('#kome button').forEach(b=>b.onclick=()=>{
+    kome=+b.dataset.kome;$$('#kome button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  });
+  $('#salji').onclick=()=>{
+    if(kome===null){javi('Izaberi kome šalješ');return;}
+    javi('Preporuka poslata — '+prijatelji[kome].ime.split(' ')[0]);zatvori();
+  };
+  const r=$('#rez');
+  if(r)r.onclick=()=>javi(otvorena.fond==='slobodno'?'Rezervisano — podigni u roku od 3 dana':'Javićemo ti SMS-om');
+  const p=$('#pocni');
+  if(p)p.onclick=()=>{otvorena.stanje='citam';otvorena.napredak=0;zatvori();crtajPolicu();javi('Prebačeno u „Čitam"');};
+  $('#cuvaj').onclick=()=>{
+    if(!nacrt.ocena){javi('Izaberi ocenu od 1 do 10');return;}
+    otvorena.ocena=nacrt.ocena;otvorena.datum='19. avgust 2026';
+    const bio=otvorena.stanje;otvorena.stanje='procitano';delete otvorena.napredak;
+    zatvori();stanje='procitano';
+    $$('.segment button').forEach(t=>t.setAttribute('aria-selected',t.dataset.stanje==='procitano'));
+    crtajPolicu();crtajProfil();
+    javi(bio==='procitano'?'Utisak izmenjen':'Zabeleženo u čitalački dnevnik');
+  };
+}
+function zatvori(){$('#zastor').classList.remove('otvoren');document.body.style.overflow='';}
+$('#zastor').onclick=e=>{if(e.target===$('#zastor'))zatvori()};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')zatvori()});
+
+$$('.segment button').forEach(t=>t.onclick=()=>{
+  stanje=t.dataset.stanje;
+  $$('.segment button').forEach(x=>x.setAttribute('aria-selected',x===t));
+  crtajPolicu();
+});
+function idi(ime){
+  $$('nav button').forEach(x=>x.removeAttribute('aria-current'));
+  $(`nav button[data-ekran="${ime}"]`).setAttribute('aria-current','page');
+  $$('.ekran').forEach(e=>e.classList.remove('aktivan'));
+  $('#ekran-'+ime).classList.add('aktivan');
+  window.scrollTo(0,0);
+}
+$$('nav button').forEach(b=>b.onclick=()=>idi(b.dataset.ekran));
+$('#ka-profilu').onclick=()=>idi('profil');
+$('#podeli').onclick=()=>javi('Šifra kopirana');
+$('#trazi').oninput=e=>crtajPretragu(e.target.value);
+
+crtajPolicu();crtajCitaoce();crtajProfil();crtajPretragu('');
+</script>
+</body>
+</html>
