@@ -35,6 +35,7 @@ const IKONE = {
       <path d="M5 20c0-3.7 3.1-6 7-6s7 2.3 7 6" />
     </>
   ),
+  biblioteka: <path d="M3 21h18M5 21V10m4 11V10m6 11V10m4 11V10M3 10l9-6 9 6" />,
 };
 
 const STAVKE = [
@@ -43,6 +44,8 @@ const STAVKE = [
   { putanja: "/citaoci", kljuc: "citaoci", natpis: tekst.meni.citaoci },
   { putanja: "/profil", kljuc: "profil", natpis: tekst.meni.profil },
 ];
+// Samo za bibliotekare i administratore: ulaz u alate (članovi, rezervacije, unos knjiga).
+const STAVKA_OSOBLJA = { putanja: "/bibliotekar", kljuc: "biblioteka", natpis: tekst.meni.biblioteka };
 
 // Okvir svih stranica posle prijave (prototip): lepljivo zaglavlje sa grbom „1846", imenom i avatarom,
 // sadržaj najviše 520 px širine i donja navigacija Polica, Traži, Čitaoci, Profil.
@@ -84,7 +87,7 @@ export default function Okvir() {
         aria-label={tekst.meni.oznaka}
         className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-[520px] border-t border-linija bg-povrsina/90 px-2 pb-3 pt-1.5 backdrop-blur-md"
       >
-        {STAVKE.map((s) => (
+        {(jeBibliotekar(clan?.uloga) ? [...STAVKE, STAVKA_OSOBLJA] : STAVKE).map((s) => (
           <NavLink
             key={s.kljuc}
             to={s.putanja}

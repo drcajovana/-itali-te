@@ -33,7 +33,7 @@ export default function handler(req, res) {
     ogranicenje: granicaIzLinka,
     proveri(telo) {
       const url = typeof telo.url === "string" ? telo.url.trim() : "";
-      if (!url || url.length > 2000) throw new ApiGreska(400, "neispravan_link", "Adresa nije ispravna.");
+      if (!url || url.length > 2000) throw new ApiGreska(400, "neispravan_link", "Адреса није исправна.");
       // Neispravan ili nedozvoljen link se odbija pre ograničenja i pre mreže.
       return { url: proveriUrl(url).href };
     },

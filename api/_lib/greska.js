@@ -23,5 +23,5 @@ export function posaljiGresku(res, e) {
   }
   // Neočekivana greška: detalji idu u log, ne korisniku (mogu da sadrže interne podatke).
   console.error("neočekivana greška:", e);
-  return posalji(res, 500, { greska: { kod: "greska_servera", poruka: "Greška na serveru." } });
+  return posalji(res, 500, { greska: { kod: "greska_servera", poruka: "Грешка на серверу." } });
 }

@@ -1060,6 +1060,60 @@ async function main() {
     const r = await A.db.from("rezervacije").insert({ clan_id: B.id, knjiga_id: K3.id }).select("id");
     return r.error?.code === "42501" ? true : opis(r);
   });
+
+  // ───────────────────────── 13. Statusi rezervacije (migracija 0018) ─────────────────────────
+  // Politike na rezervacije se NISU menjale (0004, 0017); ovde se proverava da isto važi sa novim
+  // statusima: samo bibliotekar prevodi rezervaciju u spremna/preuzeta, član je ne otkazuje kad je
+  // spremna, baza odbija stari status, a otvorena (nova ili spremna) rezervacija je jedna po knjizi.
+  faza("13. Statusi rezervacije: nova, spremna, preuzeta, otkazana (migracija 0018)");
+  const rezA = (await S.from("rezervacije").select("id, status").eq("clan_id", A.id).eq("knjiga_id", K2.id).eq("status", "nova").single()).data;
+  const promeniRez = (db, id, status) => db.from("rezervacije").update({ status }).eq("id", id).select("id, status");
+
+  await provera("bibliotekar prevodi rezervaciju: nova → spremna → preuzeta", async () => {
+    const a = await promeniRez(BIB.db, rezA.id, "spremna");
+    const b = await promeniRez(BIB.db, rezA.id, "preuzeta");
+    return !a.error && a.data[0]?.status === "spremna" && !b.error && b.data[0]?.status === "preuzeta" ? true : `${opis(a)} / ${opis(b)}`;
+  });
+  await provera("baza odbija stari status 'obradjena' i nepoznat status čak i bibliotekaru", async () => {
+    const a = await promeniRez(BIB.db, rezA.id, "obradjena");
+    const b = await promeniRez(BIB.db, rezA.id, "gotova");
+    return a.error?.code === "23514" && b.error?.code === "23514" ? true : `obradjena: ${a.error?.code ?? "prošlo"}; gotova: ${b.error?.code ?? "prošlo"}`;
+  });
+  await provera("nijedna rezervacija u bazi nema stari status 'obradjena'", async () => {
+    const r = await S.from("rezervacije").select("id", { count: "exact", head: true }).eq("status", "obradjena");
+    return !r.error && r.count === 0 ? true : `${opis(r)}, count: ${r.count}`;
+  });
+  await provera("član ne može sam da postavi 'spremna' ni 'preuzeta' na svojoj rezervaciji", async () => {
+    await S.from("rezervacije").update({ status: "nova" }).eq("id", rezA.id);
+    const a = await pokusaj(A.db.from("rezervacije").update({ status: "spremna" }).eq("id", rezA.id).select());
+    const b = await pokusaj(A.db.from("rezervacije").update({ status: "preuzeta" }).eq("id", rezA.id).select());
+    const posle = await stanje("rezervacije", rezA.id);
+    return a.pogodjeno === 0 && b.pogodjeno === 0 && posle.status === "nova" ? true : `pogođeno ${a.pogodjeno}/${b.pogodjeno}, u bazi: ${posle.status}`;
+  });
+  await provera("član ne može da upiše novu rezervaciju sa statusom 'spremna'", async () => {
+    const r = await A.db.from("rezervacije").insert({ clan_id: A.id, knjiga_id: K1.id, status: "spremna" }).select("id");
+    return r.error?.code === "42501" ? true : opis(r);
+  });
+  await provera("kad je rezervacija 'spremna', član je ne otkazuje, a istu knjigu ne rezerviše ponovo", async () => {
+    const a = await promeniRez(BIB.db, rezA.id, "spremna");
+    const otkaz = await pokusaj(A.db.from("rezervacije").update({ status: "otkazana" }).eq("id", rezA.id).select());
+    const ponovo = await A.db.from("rezervacije").insert({ clan_id: A.id, knjiga_id: K2.id }).select("id");
+    const posle = await stanje("rezervacije", rezA.id);
+    return !a.error && otkaz.pogodjeno === 0 && posle.status === "spremna" && ponovo.error?.code === "23505" ? true : `spremna: ${opis(a)}; otkaz pogodio ${otkaz.pogodjeno}; stanje ${posle.status}; ponovo: ${ponovo.error?.code ?? "prošlo"}`;
+  });
+  await provera("posle 'preuzeta' ista knjiga može ponovo da se rezerviše, a član otkazuje svoju 'novu'", async () => {
+    await promeniRez(BIB.db, rezA.id, "preuzeta");
+    const nova = await A.db.from("rezervacije").insert({ clan_id: A.id, knjiga_id: K2.id }).select("id, status");
+    if (nova.error) return opis(nova);
+    const otkaz = await A.db.from("rezervacije").update({ status: "otkazana" }).eq("id", nova.data[0].id).select("status");
+    return !otkaz.error && otkaz.data[0]?.status === "otkazana" ? true : opis(otkaz);
+  });
+  await provera("tuđe rezervacije čitalac B ne vidi i ne menja, bibliotekar vidi", async () => {
+    const b = await vidi(B.db, "rezervacije", (q) => q.eq("clan_id", A.id));
+    const tudja = await pokusaj(B.db.from("rezervacije").update({ status: "otkazana" }).eq("id", rezA.id).select());
+    const bib = await vidi(BIB.db, "rezervacije", (q) => q.eq("clan_id", A.id));
+    return nistaNeVidi(b, "B") === true && tudja.pogodjeno === 0 && !bib.error && bib.data.length >= 2 ? true : `${opis(b)} / pogođeno ${tudja.pogodjeno} / ${opis(bib)}`;
+  });
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────

@@ -44,18 +44,18 @@ export function proveriUrl(ulaz, lista = DOZVOLJENI_DOMENI) {
   try {
     u = new URL(String(ulaz));
   } catch {
-    throw new ApiGreska(400, "neispravan_link", "Adresa nije ispravna.");
+    throw new ApiGreska(400, "neispravan_link", "Адреса није исправна.");
   }
-  if (u.protocol !== "https:") throw new ApiGreska(422, "nije_https", "Dozvoljene su samo https adrese.");
-  if (u.username || u.password) throw new ApiGreska(422, "neispravan_link", "Adresa ne sme da sadrži korisnika.");
-  if (u.port && u.port !== "443") throw new ApiGreska(422, "neispravan_link", "Port nije dozvoljen.");
+  if (u.protocol !== "https:") throw new ApiGreska(422, "nije_https", "Дозвољене су само https адресе.");
+  if (u.username || u.password) throw new ApiGreska(422, "neispravan_link", "Адреса не сме да садржи корисника.");
+  if (u.port && u.port !== "443") throw new ApiGreska(422, "neispravan_link", "Порт није дозвољен.");
 
   const host = u.hostname.toLowerCase();
   if (net.isIP(host) || host.startsWith("[") || host === "localhost" || host.endsWith(".")) {
-    throw new ApiGreska(422, "domen_nije_dozvoljen", "Domen nije dozvoljen.");
+    throw new ApiGreska(422, "domen_nije_dozvoljen", "Домен није дозвољен.");
   }
   if (lista && !domenJeDozvoljen(host, lista)) {
-    throw new ApiGreska(422, "domen_nije_dozvoljen", "Domen nije na listi dozvoljenih.");
+    throw new ApiGreska(422, "domen_nije_dozvoljen", "Домен није на листи дозвољених.");
   }
   return u;
 }
@@ -97,7 +97,7 @@ export function lookupZasticen(hostname, opcije, cb) {
   dns.lookup(hostname, { all: true, verbatim: true }, (err, adrese) => {
     if (err) return cb(err);
     if (!adrese.length || adrese.some((a) => !jeJavnaAdresa(a.address))) {
-      return cb(new ApiGreska(422, "domen_nije_dozvoljen", "Domen se razrešava na nedozvoljenu adresu."));
+      return cb(new ApiGreska(422, "domen_nije_dozvoljen", "Домен се разрешава на недозвољену адресу."));
     }
     // Node 20+ zove lookup sa all:true kad bira između IPv4 i IPv6.
     if (opcije && opcije.all) return cb(null, adrese);
@@ -168,7 +168,7 @@ export const unutrasnje = {
           }
           if (Number(res.headers["content-length"]) > najviseBajtova) {
             res.destroy();
-            return gotovo(reject, new ApiGreska(422, "prevelika_stranica", "Stranica je prevelika."));
+            return gotovo(reject, new ApiGreska(422, "prevelika_stranica", "Страница је превелика."));
           }
           let tok = res;
           try {
@@ -187,7 +187,7 @@ export const unutrasnje = {
             ukupno += deo.length;
             if (ukupno > najviseBajtova) {
               req.destroy();
-              return gotovo(reject, new ApiGreska(422, "prevelika_stranica", "Stranica je prevelika."));
+              return gotovo(reject, new ApiGreska(422, "prevelika_stranica", "Страница је превелика."));
             }
             delovi.push(deo);
           });
@@ -198,7 +198,7 @@ export const unutrasnje = {
       // Rok za ceo zahtev (ne samo za neaktivnu vezu).
       const sat = setTimeout(() => {
         req.destroy();
-        gotovo(reject, new ApiGreska(504, "predugo", "Sajt predugo odgovara."));
+        gotovo(reject, new ApiGreska(504, "predugo", "Сајт предуго одговара."));
       }, preostaloMs);
       req.on("error", (e) => gotovo(reject, e));
       req.end();
@@ -236,7 +236,7 @@ export async function preuzmi(ulaz, opcije = {}) {
 
   for (let skok = 0; skok <= OGRANICENJA.najvisePreusmeravanja; skok++) {
     const preostalo = OGRANICENJA.rokMs - (Date.now() - pocetak);
-    if (preostalo <= 0) throw new ApiGreska(504, "predugo", "Sajt predugo odgovara.");
+    if (preostalo <= 0) throw new ApiGreska(504, "predugo", "Сајт предуго одговара.");
 
     let odgovor;
     try {
@@ -260,5 +260,5 @@ export async function preuzmi(ulaz, opcije = {}) {
     }
     return { url: u, tip: odgovor.tip, telo: sirovo ? odgovor.telo : dekodujTelo(odgovor.telo, odgovor.tip) };
   }
-  throw new ApiGreska(422, "previse_preusmeravanja", "Previše preusmeravanja.");
+  throw new ApiGreska(422, "previse_preusmeravanja", "Превише преусмеравања.");
 }

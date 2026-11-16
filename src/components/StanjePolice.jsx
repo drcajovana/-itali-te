@@ -59,10 +59,13 @@ export function Rezervacija({ knjiga }) {
         <div className="mt-3 space-y-2">
           {rezervacija ? (
             <>
-              <p className="text-sm font-medium">{R.rezervisano}</p>
-              <button type="button" disabled={zauzet} onClick={otkaziRez} className={stil.okvirno}>
-                {R.otkazi}
-              </button>
+              <p className="text-sm font-medium">{rezervacija.status === "spremna" ? R.spremna : R.rezervisano}</p>
+              {/* spremnu rezervaciju član više ne otkazuje sam (baza to ne dozvoljava): menja je bibliotekar */}
+              {rezervacija.status === "nova" && (
+                <button type="button" disabled={zauzet} onClick={otkaziRez} className={stil.okvirno}>
+                  {R.otkazi}
+                </button>
+              )}
             </>
           ) : (
             <>

@@ -426,7 +426,7 @@ export async function izvuciIzLinka(ulaz, { preuzmiFn = preuzmi } = {}) {
   const { url, telo } = await preuzmiFn(u.href);
   const sirovo = izvuciIzHtmla(telo, url.href, { dijagnostika: true });
   if (!urediTekst(sirovo.naslov)) {
-    throw new ApiGreska(422, "nema_podataka", "Na stranici nema podataka o knjizi.");
+    throw new ApiGreska(422, "nema_podataka", "На страници нема података о књизи.");
   }
   return urediRezultat(sirovo, url.href);
 }

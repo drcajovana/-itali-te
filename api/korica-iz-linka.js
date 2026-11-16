@@ -29,25 +29,25 @@ export default function handler(req, res) {
     ogranicenje: granicaKorice,
     proveri(telo) {
       const url = typeof telo.url === "string" ? telo.url.trim() : "";
-      if (!url || url.length > 500) throw new ApiGreska(400, "neispravan_link", "Adresa slike nije ispravna.");
+      if (!url || url.length > 500) throw new ApiGreska(400, "neispravan_link", "Адреса слике није исправна.");
       const knjigaId = typeof telo.knjigaId === "string" ? telo.knjigaId.trim() : "";
-      if (!UUID.test(knjigaId)) throw new ApiGreska(400, "neispravan_zahtev", "Knjiga nije ispravna.");
+      if (!UUID.test(knjigaId)) throw new ApiGreska(400, "neispravan_zahtev", "Књига није исправна.");
       // https, bez korisnika, porta, IP adrese i localhost-a; bez ograničenja domenom (lista = null)
       return { url: proveriUrl(url, null).href, knjigaId };
     },
     async radi({ url, knjigaId }, clan) {
       // obradi() čita ulogu samo kad se ograničenje računa (ne i uz ZAHTEVI_BEZ_BAZE)
       if (lokalnoBezBaze() && !jeBibliotekarskaUloga(await ulogaClana(clan.id))) {
-        throw new ApiGreska(403, "nije_bibliotekar", "Samo bibliotekar može da preuzme koricu.");
+        throw new ApiGreska(403, "nije_bibliotekar", "Само библиотекар може да преузме корицу.");
       }
       const servis = servisniKlijent();
 
       const { data: knjiga, error: greskaCitanja } = await servis.from("knjige").select("id, korice_url").eq("id", knjigaId).maybeSingle();
       if (greskaCitanja) {
         console.error("čitanje knjige:", greskaCitanja.message);
-        throw new ApiGreska(500, "greska_servera", "Čitanje knjige nije uspelo.");
+        throw new ApiGreska(500, "greska_servera", "Читање књиге није успело.");
       }
-      if (!knjiga) throw new ApiGreska(404, "knjiga_ne_postoji", "Knjiga ne postoji.");
+      if (!knjiga) throw new ApiGreska(404, "knjiga_ne_postoji", "Књига не постоји.");
 
       let slika;
       try {
@@ -60,13 +60,13 @@ export default function handler(req, res) {
           najviseBajtova: NAJVISE_BAJTOVA,
         });
       } catch (e) {
-        if (e instanceof ApiGreska && e.kod === "nije_stranica") throw new ApiGreska(422, "nije_slika", "Adresa ne vodi do slike.");
-        if (e instanceof ApiGreska && e.kod === "prevelika_stranica") throw new ApiGreska(422, "prevelika_slika", "Slika je prevelika.");
+        if (e instanceof ApiGreska && e.kod === "nije_stranica") throw new ApiGreska(422, "nije_slika", "Адреса не води до слике.");
+        if (e instanceof ApiGreska && e.kod === "prevelika_stranica") throw new ApiGreska(422, "prevelika_slika", "Слика је превелика.");
         throw e;
       }
 
       const tip = tipSlike(slika.telo);
-      if (!tip) throw new ApiGreska(422, "slika_nije_podrzana", "Dozvoljene su samo jpeg, png i webp slike.");
+      if (!tip) throw new ApiGreska(422, "slika_nije_podrzana", "Дозвољене су само jpeg, png и webp слике.");
 
       const skladiste = servis.storage.from(BUCKET_KORICE);
       const putanja = putanjaKorice(knjigaId, Date.now(), tip.mime);
@@ -77,7 +77,7 @@ export default function handler(req, res) {
       });
       if (greskaSlanja) {
         console.error("upis u Storage:", greskaSlanja.message);
-        throw new ApiGreska(String(greskaSlanja.statusCode) === "413" ? 422 : 502, String(greskaSlanja.statusCode) === "413" ? "prevelika_slika" : "cuvanje_slike_nije_uspelo", "Čuvanje slike nije uspelo.");
+        throw new ApiGreska(String(greskaSlanja.statusCode) === "413" ? 422 : 502, String(greskaSlanja.statusCode) === "413" ? "prevelika_slika" : "cuvanje_slike_nije_uspelo", "Чување слике није успело.");
       }
 
       const koricaUrl = skladiste.getPublicUrl(putanja).data.publicUrl;
@@ -90,7 +90,7 @@ export default function handler(req, res) {
       if (greskaUpisa || !upisano) {
         if (greskaUpisa) console.error("upis korice u knjigu:", greskaUpisa.message);
         await skladiste.remove([putanja]).catch((e) => console.error("uklanjanje nove slike:", e?.message));
-        throw new ApiGreska(502, "cuvanje_slike_nije_uspelo", "Čuvanje slike nije uspelo.");
+        throw new ApiGreska(502, "cuvanje_slike_nije_uspelo", "Чување слике није успело.");
       }
 
       // Stara naša slika te knjige više nije potrebna. Briše se samo ako je adresa sa NAŠEG

@@ -10,17 +10,17 @@
   --color-mastilo-2: #6b564b;
   --color-mastilo-3: #a08d7f;
   --color-linija: #e8dcca;
-  --color-bordo: #9b1b23;
-  --color-bordo-svetla: #f2dfdb;
+  --color-bordo: #4d0000;
+  --color-bordo-svetla: #efdfdc;
   --color-zlato: #a87a28;
   --color-zlato-svetlo: #f6e9d0;
   /* ostale boje koje prototip koristi: pritisnuta puna pilula i avatari */
-  --color-bordo-tamna: #7c121a;
+  --color-bordo-tamna: #330000;
   --color-avatar-smeda: #563628;
   --color-avatar-ljubicasta: #7a3548;
 
   --font-sans: "Inter", system-ui, sans-serif;
-  --font-naslov: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+  --font-naslov: "Onest", "Inter", system-ui, sans-serif;
 
   --radius-velik: 20px;
   --radius-srednji: 14px;
@@ -31,8 +31,8 @@
 
 /* Gradijenti korica-pločica (kad nema slike): osam parova iz prototipa (const boje). */
 :root {
-  --korica-0-a: #8c1720;
-  --korica-0-b: #b8323c;
+  --korica-0-a: #4d0000;
+  --korica-0-b: #7d2424;
   --korica-1-a: #563628;
   --korica-1-b: #8a5c46;
   --korica-2-a: #8a6a1e;
@@ -63,7 +63,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Naslovi: Bricolage Grotesque, kao u prototipu. */
+/* Naslovi: Onest (Bricolage Grotesque iz prototipa nema ćirilicu). */
 h1,
 h2,
 h3,
@@ -152,5 +152,29 @@ textarea {
   * {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* Štampa kartice člana (PinPrikaz.jsx): kartica je jedino što se štampa. Na ekranu je skrivena;
+   pri štampi se sakriva sve što je direktno u <body> osim nje (ostatak aplikacije, i prazne
+   stranice od sakrivenog sadržaja). Boje pozadine pregledači po podrazumevanju ne štampaju, pa
+   kartica koristi okvir i boju teksta. */
+.stampa-kartica {
+  display: none;
+}
+@media print {
+  @page {
+    margin: 8mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  body > *:not(.stampa-kartica) {
+    display: none !important;
+  }
+  .stampa-kartica {
+    display: block;
+    break-inside: avoid;
   }
 }

@@ -35,7 +35,7 @@ export function napraviUpit({ naslov, autor, isbn, q } = {}) {
 
   if (polja.isbn) {
     const isbn13 = uIsbn13(polja.isbn);
-    if (!isbn13) throw new ApiGreska(400, "neispravan_isbn", "ISBN nije ispravan.");
+    if (!isbn13) throw new ApiGreska(400, "neispravan_isbn", "ISBN није исправан.");
     return `isbn:${isbn13}`;
   }
   // Slobodan upit koji je zapravo ISBN („978-86-521-2603-3") ide kao ISBN.
@@ -48,7 +48,7 @@ export function napraviUpit({ naslov, autor, isbn, q } = {}) {
   if (polja.naslov) delovi.push(`intitle:"${polja.naslov}"`);
   if (polja.autor) delovi.push(`inauthor:"${polja.autor}"`);
   if (polja.q) delovi.push(polja.q);
-  if (!delovi.length) throw new ApiGreska(400, "prazan_upit", "Upišite naslov, autora ili ISBN.");
+  if (!delovi.length) throw new ApiGreska(400, "prazan_upit", "Упишите наслов, аутора или ISBN.");
   return delovi.join(" ");
 }
 
@@ -112,7 +112,7 @@ async function procitajOgranicen(odgovor, najviseBajtova) {
     ukupno += value.length;
     if (ukupno > najviseBajtova) {
       await citac.cancel();
-      throw new ApiGreska(502, "google_greska", "Odgovor je prevelik.");
+      throw new ApiGreska(502, "google_greska", "Одговор је превелик.");
     }
     delovi.push(value);
   }
@@ -138,12 +138,12 @@ export async function pretraziGoogle(parametri, { fetchFn = fetch } = {}) {
     if (!odgovor.ok) {
       // Bez ključa je kvota nula: to nije „zauzeto", nego nepodešeno.
       if ((odgovor.status === 429 || odgovor.status === 403) && !kljuc) {
-        throw new ApiGreska(503, "google_nije_podeseno", "Google Books zahteva API ključ (GOOGLE_BOOKS_API_KEY).");
+        throw new ApiGreska(503, "google_nije_podeseno", "Google Books захтева API кључ (GOOGLE_BOOKS_API_KEY).");
       }
       if (odgovor.status === 429 || odgovor.status === 403) {
-        throw new ApiGreska(503, "google_zauzet", "Google Books je trenutno zauzet.");
+        throw new ApiGreska(503, "google_zauzet", "Google Books је тренутно заузет.");
       }
-      if (odgovor.status === 400) throw new ApiGreska(400, "neispravan_upit", "Google nije prihvatio upit.");
+      if (odgovor.status === 400) throw new ApiGreska(400, "neispravan_upit", "Google није прихватио упит.");
       throw new ApiGreska(502, "google_greska", `Google Books je odgovorio sa HTTP ${odgovor.status}.`);
     }
 
@@ -151,7 +151,7 @@ export async function pretraziGoogle(parametri, { fetchFn = fetch } = {}) {
     try {
       podaci = JSON.parse(telo);
     } catch {
-      throw new ApiGreska(502, "google_greska", "Odgovor nije ispravan JSON.");
+      throw new ApiGreska(502, "google_greska", "Одговор није исправан JSON.");
     }
     const videno = new Set();
     const rezultati = [];
@@ -166,7 +166,7 @@ export async function pretraziGoogle(parametri, { fetchFn = fetch } = {}) {
     return rezultati;
   } catch (e) {
     if (e instanceof ApiGreska) throw e;
-    if (e?.name === "AbortError") throw new ApiGreska(504, "predugo", "Google Books predugo odgovara.");
+    if (e?.name === "AbortError") throw new ApiGreska(504, "predugo", "Google Books предуго одговара.");
     throw new ApiGreska(502, "google_greska", `Veza sa Google Books nije uspela: ${e?.message ?? e}`);
   } finally {
     clearTimeout(sat);

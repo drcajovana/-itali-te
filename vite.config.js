@@ -24,7 +24,7 @@ export default defineConfig({
         start_url: "/",
         display: "standalone",
         background_color: "#f4efe5",
-        theme_color: "#9b1b23",
+        theme_color: "#4d0000",
         icons: [],
       },
       workbox: {

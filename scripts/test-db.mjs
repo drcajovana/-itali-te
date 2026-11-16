@@ -96,7 +96,8 @@ try {
   const ISPRAVKA = fajlovi.filter((f) => /^0015_/.test(f));
   const PUTANJA = fajlovi.filter((f) => /^0016_/.test(f));
   const POLICA = fajlovi.filter((f) => /^0017_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x))) await pusti(f);
+  const REZERVACIJE = fajlovi.filter((f) => /^0018_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -807,6 +808,80 @@ try {
   const politikeRez = (await db.query("select count(*)::int as n from pg_policy where polrelid = 'public.rezervacije'::regclass and polname = 'rezervacije_insert'")).rows[0].n;
   r = await kao("authenticated", UC, "select count(*)::int as n from public.utisci_sa_autorom where knjiga_id = $1", [K1]);
   ok(politikeRez === 1 && r.redovi?.[0]?.n === 3, "0017 je idempotentna: drugo puštanje ne duplira politiku i pogled i dalje radi", { politike: politikeRez, pogled: r.redovi });
+
+  // ───────── 0018: statusi rezervacije ─────────
+  faza("0018: statusi rezervacije (nova, spremna, preuzeta, otkazana), jedna otvorena rezervacija, RLS nepromenjen");
+  const otisakPolitika = async () =>
+    JSON.stringify((await db.query(`select polname, polcmd::text as cmd, pg_get_expr(polqual, polrelid) as q, pg_get_expr(polwithcheck, polrelid) as w
+                                      from pg_policy where polrelid = 'public.rezervacije'::regclass order by polname`)).rows);
+  const definicije = async () =>
+    JSON.stringify([
+      (await db.query("select pg_get_constraintdef(oid) as d from pg_constraint where conrelid = 'public.rezervacije'::regclass and conname = 'rezervacije_status_check'")).rows,
+      (await db.query("select indexname, indexdef from pg_indexes where schemaname = 'public' and tablename = 'rezervacije' order by indexname")).rows,
+    ]);
+  // stanje „pre": stari status 'obradjena' i jedna otvorena rezervacija
+  await db.query("insert into public.rezervacije (clan_id, knjiga_id, status) values ($1, $2, 'obradjena'), ($3, $2, 'nova')", [UC, K1, UB]);
+  const politikePre = await otisakPolitika();
+  const redovaPre = (await db.query("select count(*)::int as n from public.rezervacije")).rows[0].n;
+  ok((await definicije()).includes("obradjena") && !(await definicije()).includes("spremna"), "pre 0018: ograničenje poznaje 'obradjena', a ne 'spremna'");
+  for (const f of REZERVACIJE) await pusti(f);
+
+  const redovaPosle = (await db.query("select count(*)::int as n from public.rezervacije")).rows[0].n;
+  const preuzeta = (await db.query("select status from public.rezervacije where clan_id = $1 and knjiga_id = $2", [UC, K1])).rows[0]?.status;
+  ok(preuzeta === "preuzeta" && redovaPosle === redovaPre, "0018: postojeća 'obradjena' postaje 'preuzeta', nijedan red se ne gubi", { preuzeta, redovaPre, redovaPosle });
+  ok((await db.query("select count(*)::int as n from public.rezervacije where status = 'obradjena'")).rows[0].n === 0, "0018: nijedna rezervacija nema stari status 'obradjena'");
+  const posle18 = await definicije();
+  ok(posle18.includes("spremna") && posle18.includes("preuzeta") && !posle18.includes("obradjena"), "0018: ograničenje statusa je nova, spremna, preuzeta, otkazana", posle18);
+  ok((await otisakPolitika()) === politikePre, "0018: politike (RLS) na rezervacije su iste kao pre migracije (nijedna dodata, izbrisana ni izmenjena)");
+  ok(JSON.parse(politikePre).length === 4, "rezervacije imaju četiri politike (svoje_select, insert, svoje_update, bibliotekar_all)", JSON.parse(politikePre).map((p) => p.polname));
+
+  const PROMENI = "update public.rezervacije set status = $3 where clan_id = $1 and knjiga_id = $2 returning status";
+  for (const sledeci of ["spremna", "preuzeta", "nova", "otkazana", "spremna"]) {
+    r = await kao("authenticated", BIB, PROMENI, [UB, K1, sledeci]);
+    ok(!r.greska && r.redovi[0]?.status === sledeci, `bibliotekar menja status rezervacije u '${sledeci}'`, r.greska?.message ?? r.redovi);
+  }
+  for (const losa of ["obradjena", "gotova", ""]) {
+    r = await kao("authenticated", BIB, PROMENI, [UB, K1, losa]);
+    ok(r.greska?.message?.includes("rezervacije_status_check"), `baza odbija nepoznat status '${losa}' čak i bibliotekaru`, r.greska?.message ?? r.redovi);
+  }
+  r = await kao("authenticated", ADM, PROMENI, [UB, K1, "preuzeta"]);
+  ok(!r.greska && r.redovi[0]?.status === "preuzeta", "administrator takođe menja status (bibliotekar_all važi i za njega)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, PROMENI, [UB, K1, "spremna"]);
+  ok(!r.greska && r.redovi[0]?.status === "spremna", "rezervacija je opet 'spremna' (nastavak provera)", r.greska?.message ?? r.redovi);
+
+  // član: ne postavlja sebi statuse bibliotekara, ne otkazuje spremnu, ne rezerviše dvaput
+  r = await kao("authenticated", UB, PROMENI, [UB, K1, "preuzeta"]);
+  ok(r.redovi?.length === 0 || Boolean(r.greska), "član ne može sam da označi svoju rezervaciju kao 'preuzeta'", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, PROMENI, [UB, K1, "otkazana"]);
+  ok(!r.greska && r.redovi.length === 0, "član ne može da otkaže rezervaciju koja je već 'spremna' (menja je samo bibliotekar)", r.greska?.message ?? r.redovi);
+  ok((await db.query("select status from public.rezervacije where clan_id = $1 and knjiga_id = $2", [UB, K1])).rows[0].status === "spremna", "rezervacija je i dalje 'spremna' posle pokušaja člana");
+  r = await kao("authenticated", UB, "insert into public.rezervacije (clan_id, knjiga_id, status) values ($1, $2, 'spremna') returning id", [UB, K2]);
+  ok(r.greska?.message?.includes("row-level security"), "član ne može da upiše rezervaciju sa statusom 'spremna' (insert samo 'nova')", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, REZ, [UB, K1]);
+  ok(r.greska?.code === "23505", "dok je rezervacija 'spremna', ista knjiga se ne rezerviše ponovo (indeks važi za nova i spremna)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, PROMENI, [UB, K1, "otkazana"]);
+  ok(!r.greska && r.redovi.length === 0, "tuđu rezervaciju ne menja ni povezani član", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, "select count(*)::int as n from public.rezervacije where clan_id = $1", [UB]);
+  ok(r.redovi?.[0]?.n === 0, "tuđe rezervacije čitalac i dalje ne vidi", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select count(*)::int as n from public.rezervacije");
+  ok(r.redovi?.[0]?.n >= 3, "bibliotekar vidi sve rezervacije", r.greska?.message ?? r.redovi);
+
+  // posle 'preuzeta' član može ponovo da rezerviše istu knjigu
+  r = await kao("authenticated", BIB, PROMENI, [UB, K1, "preuzeta"]);
+  ok(!r.greska, "bibliotekar zatvara rezervaciju ('preuzeta')", r.greska?.message);
+  r = await kao("authenticated", UB, REZ, [UB, K1]);
+  ok(!r.greska && r.redovi.length === 1, "posle 'preuzeta' ista knjiga može ponovo da se rezerviše", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, "update public.rezervacije set status = 'otkazana' where clan_id = $1 and knjiga_id = $2 and status = 'nova' returning status", [UB, K1]);
+  ok(!r.greska && r.redovi[0]?.status === "otkazana", "član i dalje otkazuje svoju 'novu' rezervaciju (postojeće pravo)", r.greska?.message ?? r.redovi);
+  // izveštaj o nabavci broji samo 'nova' (0006): spremna ne traži dodatni primerak
+  ok(/status = 'nova'/.test(fs.readFileSync(path.join(MIGRACIJE, "0006_izvestaj_nabavka.sql"), "utf8")), "izveštaj o dodatnim primercima (0006) i dalje broji samo 'nova' rezervacije");
+
+  // idempotentnost
+  const definicijePre = await definicije();
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, REZERVACIJE[0]), "utf8"));
+  ok((await definicije()) === definicijePre, "0018 je idempotentna: drugo puštanje ne menja ograničenje ni indekse", await definicije());
+  ok((await otisakPolitika()) === politikePre, "0018: posle drugog puštanja politike su iste");
+  ok((await db.query("select count(*)::int as n from public.rezervacije where status = 'preuzeta'")).rows[0].n >= 1, "0018: drugo puštanje ne dira podatke");
 
   // ───────── opšte ─────────
   faza("Opšta pravila");

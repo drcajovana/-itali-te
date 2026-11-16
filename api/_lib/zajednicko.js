@@ -36,8 +36,18 @@ export function granicaIzLinka(uloga) {
 // Granica za korica-iz-linka: samo bibliotekar i administrator. Ostali dobijaju 403 pre
 // ograničenja i pre ikakvog mrežnog poziva.
 export function granicaKorice(uloga) {
-  if (!jeBibliotekarskaUloga(uloga)) throw new ApiGreska(403, "nije_bibliotekar", "Samo bibliotekar može da preuzme koricu.");
+  if (!jeBibliotekarskaUloga(uloga)) throw new ApiGreska(403, "nije_bibliotekar", "Само библиотекар може да преузме корицу.");
   return { kanta: KANTA_KORICA, najvise: NAJVISE_KORICA };
+}
+
+// Članovi: pravljenje naloga i novi PIN (samo osoblje). Jedna kanta za obe funkcije, 60 na sat po
+// korisniku; kad se potroši, ni jedna ne radi. Ostali dobijaju 403 pre ograničenja.
+export const KANTA_CLANOVI = "clanovi:bibliotekar";
+export const NAJVISE_CLANOVA = 60;
+
+export function granicaClanova(uloga) {
+  if (!jeBibliotekarskaUloga(uloga)) throw new ApiGreska(403, "nije_bibliotekar", "Само библиотекар може да управља члановима.");
+  return { kanta: KANTA_CLANOVI, najvise: NAJVISE_CLANOVA };
 }
 
 const OPCIJE = { auth: { persistSession: false, autoRefreshToken: false } };
@@ -46,7 +56,7 @@ let servisni = null;
 export function servisniKlijent() {
   const url = supabaseUrl();
   const kljuc = servisniKljuc();
-  if (!url || !kljuc) throw new ApiGreska(500, "greska_servera", "Nedostaje servisni ključ.");
+  if (!url || !kljuc) throw new ApiGreska(500, "greska_servera", "Недостаје сервисни кључ.");
   servisni ??= createClient(url, kljuc, OPCIJE);
   return servisni;
 }
@@ -55,26 +65,26 @@ export function servisniKlijent() {
 // opozvan i svaki token koji nije sesija člana (npr. sam anon ključ).
 export async function proveriClana(req) {
   const m = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/.exec(String(req.headers?.authorization ?? ""));
-  if (!m) throw new ApiGreska(401, "nije_prijavljen", "Prijavite se.");
+  if (!m) throw new ApiGreska(401, "nije_prijavljen", "Пријавите се.");
   const token = m[1];
 
   const url = supabaseUrl();
   const anon = anonKljuc();
-  if (!url || !anon) throw new ApiGreska(500, "greska_servera", "Nedostaje podešavanje Supabase-a.");
+  if (!url || !anon) throw new ApiGreska(500, "greska_servera", "Недостаје подешавање Supabase-а.");
 
   const klijent = createClient(url, anon, { ...OPCIJE, global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data, error } = await klijent.auth.getUser(token);
   if (error || !data?.user) {
     if (error?.name === "AuthRetryableFetchError" || error?.status >= 500) {
-      throw new ApiGreska(503, "auth_nedostupan", "Provera prijave trenutno nije moguća.");
+      throw new ApiGreska(503, "auth_nedostupan", "Провера пријаве тренутно није могућа.");
     }
-    throw new ApiGreska(401, "nije_prijavljen", "Sesija nije ispravna.");
+    throw new ApiGreska(401, "nije_prijavljen", "Сесија није исправна.");
   }
 
   // Red člana čita se sa njegovim tokenom: RLS dozvoljava svoj red i bez servisnog ključa.
   const { data: clan, error: e2 } = await klijent.from("clanovi").select("id, aktivan").eq("id", data.user.id).maybeSingle();
-  if (e2) throw new ApiGreska(500, "greska_servera", "Čitanje člana nije uspelo.");
-  if (!clan || !clan.aktivan) throw new ApiGreska(403, "clanstvo_nije_aktivno", "Članstvo nije aktivno.");
+  if (e2) throw new ApiGreska(500, "greska_servera", "Читање члана није успело.");
+  if (!clan || !clan.aktivan) throw new ApiGreska(403, "clanstvo_nije_aktivno", "Чланство није активно.");
   return clan;
 }
 
@@ -92,9 +102,17 @@ export async function ulogaClana(clanId) {
     .maybeSingle();
   if (error) {
     console.error("čitanje uloge nije uspelo:", error.message);
-    throw new ApiGreska(503, "ogranicenje_nedostupno", "Ograničenje zahteva trenutno nije dostupno.");
+    throw new ApiGreska(503, "ogranicenje_nedostupno", "Ограничење захтева тренутно није доступно.");
   }
   return data?.uloga ?? "citalac";
+}
+
+// Uloga pozivaoca za funkcije samo za osoblje. obradi() je pročita kad računa ograničenje; uz
+// ZAHTEVI_BEZ_BAZE (samo lokalno) nije pročitana, pa se čita ovde. Nikad iz zahteva.
+export async function ulogaOsoblja(clan, ulogaIzObrade) {
+  const uloga = ulogaIzObrade ?? (await ulogaClana(clan.id));
+  if (!jeBibliotekarskaUloga(uloga)) throw new ApiGreska(403, "nije_bibliotekar", "Само библиотекар може да управља члановима.");
+  return uloga;
 }
 
 export async function ogranici(clanId, kanta = KANTA_OPSTA, najvise = NAJVISE_ZAHTEVA) {
@@ -108,10 +126,10 @@ export async function ogranici(clanId, kanta = KANTA_OPSTA, najvise = NAJVISE_ZA
   });
   if (error) {
     console.error("uzmi_zahtev nije uspeo:", error.message);
-    throw new ApiGreska(503, "ogranicenje_nedostupno", "Ograničenje zahteva trenutno nije dostupno.");
+    throw new ApiGreska(503, "ogranicenje_nedostupno", "Ограничење захтева тренутно није доступно.");
   }
   if (!data?.dozvoljeno) {
-    const g = new ApiGreska(429, "previse_zahteva", "Previše zahteva.");
+    const g = new ApiGreska(429, "previse_zahteva", "Превише захтева.");
     g.ponovoZaSekundi = data?.ponovo_za_sekundi ?? PROZOR_SEKUNDI;
     throw g;
   }
@@ -124,11 +142,11 @@ export function procitajTelo(req) {
     try {
       telo = JSON.parse(telo);
     } catch {
-      throw new ApiGreska(400, "neispravan_zahtev", "Telo zahteva nije ispravan JSON.");
+      throw new ApiGreska(400, "neispravan_zahtev", "Тело захтева није исправан JSON.");
     }
   }
   if (!telo || typeof telo !== "object" || Array.isArray(telo)) {
-    throw new ApiGreska(400, "neispravan_zahtev", "Očekuje se JSON objekat.");
+    throw new ApiGreska(400, "neispravan_zahtev", "Очекује се JSON објекат.");
   }
   return telo;
 }
@@ -141,7 +159,7 @@ export async function obradi(req, res, { proveri, radi, ogranicenje: granicaZa }
   try {
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
-      throw new ApiGreska(405, "metod_nije_dozvoljen", "Dozvoljen je samo POST.");
+      throw new ApiGreska(405, "metod_nije_dozvoljen", "Дозвољен је само ПОСТ.");
     }
     const clan = await proveriClana(req);
     const parametri = proveri(procitajTelo(req));

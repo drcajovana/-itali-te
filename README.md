@@ -18,7 +18,8 @@ Aplikacija još nema ekrane.
 | 3a. Unos linkom | ✅ `api/iz-linka.js`, parser prenet iz `docs/nabavka-extract.js` |
 | 3b. Korice | ✅ lanac: naša slika iz Storage-a (fotografija bibliotekara, ili slika preuzeta sa linka na njegov zahtev) → Open Library po ISBN-u → pločica sa naslovom i autorom. Slika se nikad ne učitava sa tuđeg servera. Google sličica se samo prikazuje u rezultatima pretrage, ne čuva se. **Trebaju migracije 0013 i 0014** |
 | 4–5. Polica, stranica knjige, utisci | ✅ početna „Moja polica”, `/knjiga/:id` sa stanjem police, napretkom, rezervacijom i utiscima (vidi „Polica, stranica knjige i utisci”). **Treba migracija 0017** |
-| 6–11. | ⬜ |
+| 6. Bibliotekarski panel | ✅ `/bibliotekar/clanovi` (upis člana, štampa kartice, novi PIN, aktivacija) i `/bibliotekar/rezervacije` (nova, spremna, preuzeta, otkazana); `api/napravi-clana.js` i `api/resetuj-pin.js`. Vidi „Uputstvo za bibliotekare”. **Treba migracija 0018** |
+| 7–11. | ⬜ |
 
 ## Pokretanje
 
@@ -51,6 +52,7 @@ Migracije se puštaju redom, brojevima:
 | `0015_domeni_korica_ispravka.sql` | ispravka liste domena za korice u bazi: briše `books.google.com` i `books.googleusercontent.com`, dodaje naš Supabase domen; idempotentna (može i na već ispravljenoj bazi) |
 | `0016_search_path_pomocne_funkcije.sql` | `search_path = pg_catalog` za `privatno.norm_tekst`, `norm_sifra`, `dodirni_izmenjeno` i `isbn13` (`alter function`, idempotentno) |
 | `0017_polica_napredak_utisci_autor.sql` | `polica.napredak` (0–100), pogled `utisci_sa_autorom` (nadimak autora uz utisak, RLS važi), rezervacija samo za knjigu u fondu |
+| `0018_rezervacije_statusi.sql` | stanja rezervacije `nova`, `spremna`, `preuzeta`, `otkazana` (stara `obradjena` postaje `preuzeta`); jedinstveni indeks „jedna otvorena rezervacija po članu i knjizi” važi za `nova` i `spremna`. Politike se ne menjaju; idempotentna |
 
 Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na
 `privatno.su_povezani()` iz `0002`, a politika na `preporuke` gleda u `prijave`,
@@ -75,6 +77,8 @@ samo za prikaz uživo. `iz-linka` dodaje `korica`: samo **predlog adrese** slike
 | `api/pretraga-google.js` | Google Books po naslovu, autoru ili ISBN-u (`izvor: 'google_books'`) |
 | `api/iz-linka.js` | čita Open Graph i JSON-LD jedne stranice knjige: bibliotekarska polja (naslov, autor, izdavač, godina, ISBN; `izvor: 'link'`) i predlog adrese korice; kad parser ne nađe ništa, vraća bar naslov iz `<title>` |
 | `api/korica-iz-linka.js` | **samo bibliotekar i administrator** (uloga se čita na serveru): preuzima predloženu sliku jednom i čuva je u Storage (vidi „Korice”) |
+| `api/napravi-clana.js` | **samo bibliotekar i administrator**: pravi Auth nalog `{karta}@citaliste.local` i red u `clanovi` (uloga uvek `citalac`), vraća PIN jednom (vidi „Uputstvo za bibliotekare”) |
+| `api/resetuj-pin.js` | **samo bibliotekar i administrator**: postavlja novi 6-cifreni PIN i vraća ga jednom; bibliotekar samo čitaocima |
 
 Kandidati za koricu se traže na ovim mestima, redom: JSON-LD `image` (tekst, niz ili objekat sa
 `url`), `og:image:secure_url`, `og:image`, `og:image:url`, `twitter:image`, `link rel="image_src"`,
@@ -213,6 +217,68 @@ može da lažira izvor `'preuzeto'`. Preuzimanje sa linka proverava samo `test:a
 - Pravila (prelaz stanja, napredak, ocena, utisak) su u `src/lib/polica-logika.js`, upiti u `src/lib/polica.js`.
   `test:db` proverava pogled, napredak i rezervaciju; `test:rls` (faza 12) isto na pravoj bazi.
 
+### Uputstvo za bibliotekare
+
+Ovo je kratko uputstvo za rad u aplikaciji. Tekst u aplikaciji je na ćirilici, pa su natpisi dugmadi i menija ovde navedeni onako kako ih vidite na ekranu. Prijavite se svojom kartom i PIN-om. Dole u meniju
+postoji stavka **Библиотека** (vide je samo bibliotekari i administratori). U njoj su tri alata:
+**Унос књига**, **Чланови** i **Резервације**.
+
+**Kako se upisuje novi član**
+
+1. Otvorite **Библиотека → Чланови** i dodirnite **Нови члан**.
+2. Upišite **broj karte** (tačno 7 cifara, i vodeću nulu: `0101228`, a ne `101228`) i **ime i prezime**.
+3. Dodirnite **Направи члана**. Ako karta već postoji, aplikacija to kaže i ništa se ne pravi.
+4. Na ekranu se pojavi **PIN od 6 cifara**. **Vidi se samo sada.** Odštampajte karticu ili ga zapišite
+   pre nego što zatvorite prozor. Ako se izgubi, napravite novi PIN (vidi niže).
+5. Novi član je **čitalac**. Uloge bibliotekara i administratora ne dodeljuju se ovde.
+
+**Kako se štampa kartica**
+
+1. Posle upisa člana (ili posle novog PIN-a) dodirnite **Штампај картицу**.
+2. Otvara se štampanje pregledača. Štampa se **samo kartica**: ime biblioteke, grb 1846, ime člana,
+   broj karte, PIN i kratko uputstvo za prijavu. Ništa drugo sa stranice ne ide na papir.
+3. Karticu predajte članu. PIN se posle toga ne može ponovo videti.
+
+**Kako se menja PIN (kad ga član zaboravi ili izgubi)**
+
+1. **Библиотека → Чланови**, pronađite člana (upišite deo imena ili broj karte).
+2. Dodirnite **Нови ПИН** i potvrdite. Stari PIN prestaje da važi.
+3. Prikazuje se novi PIN, jednom, sa dugmetom **Штампај картицу**.
+4. Bibliotekar menja PIN samo čitaocima. PIN drugog bibliotekara ili administratora menja administrator.
+
+**Kako se član deaktivira ili aktivira**
+
+Na istom ekranu dodirnite **Деактивирај** (uz potvrdu) ili **Активирај**. Neaktivan član se ne može
+prijaviti i ne vidi ništa, ali njegovi podaci ostaju. Sebe ne možete da deaktivirate.
+
+**Kako se obrađuje rezervacija**
+
+1. **Библиотека → Резервације**. Podrazumevano se vide **otvorene** rezervacije (nova i spremna);
+   **Све** pokazuje i završene.
+2. Svaka rezervacija pokazuje knjigu (dodir otvara njenu stranicu), člana sa brojem karte i datum.
+3. Dodirnite stanje:
+   - **Нова**: član je rezervisao, vi još niste ništa uradili.
+   - **Спремна**: izdvojili ste knjigu i ona čeka člana. Član to vidi na stranici knjige.
+   - **Преузета**: član je uzeo knjigu. Rezervacija je zatvorena.
+   - **Отказана**: odustalo se (član ili vi).
+4. Aplikacija **ne vodi zaduženja**: ona se i dalje vode u COBISS-u. Rezervacija je samo poruka vama.
+
+**Za one koji održavaju aplikaciju**
+
+- PIN pravi server (`crypto.randomInt`, 6 cifara, može da počne nulom) i vraća ga **jednom** u odgovoru
+  funkcije. Ne čuva se nigde (Auth čuva samo hash), ne ispisuje se u logove ni u poruke grešaka, a
+  pregledač ga drži samo dok je prozor sa PIN-om otvoren.
+- Obe funkcije proveravaju prijavu, pa ulogu čitaju **iz baze** (`service_role`), nikad iz zahteva.
+  Ograničenje je **60 zahteva na sat po korisniku**, zajedno za obe (kanta `clanovi:bibliotekar` u
+  `uzmi_zahtev`); kad baza ne odgovara, zahtev se odbija (503).
+- Greška pri upisu reda poništava i Auth nalog. Postojeće sesije člana posle novog PIN-a ostaju dok ne
+  isteknu: promena lozinke ih ne prekida.
+- Deaktivacija ide običnim klijentom (RLS: `clanovi_bibliotekar_update`), ne kroz funkciju. Baza
+  dozvoljava bibliotekaru da promeni `aktivan` i administratoru; zato ekran nudi dugme samo za čitaoce
+  (administrator vidi sve), ali to nije zaštita u bazi.
+- `npm run test:api` proverava uloge, ograničenje, vodeću nulu i da PIN nije u logu ni u poruci greške;
+  `test:db` migraciju 0018; `test:rls` (faza 13) isto na pravoj bazi.
+
 ### Prvi administrator
 
 ```bash
@@ -267,12 +333,12 @@ nule ako ijedna provera padne.
 ### Migracije su puštene ručno
 
 Port 5432 je blokiran sa razvojne mreže, pa `supabase db push` ne radi. Migracije
-se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0017 treba zalepiti, tim redom). Zato je tabela
+se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0018 treba zalepiti, tim redom). Zato je tabela
 `supabase_migrations.schema_migrations` u bazi **prazna** i CLI misli da ništa
 nije primenjeno. Kad se ostvari veza, uskladiti:
 
 ```bash
-npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017
+npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018
 ```
 
 Do tada: izmena postojeće migracije u repozitorijumu **nije** u bazi dok se
@@ -313,8 +379,8 @@ React 19 + Vite 8, Tailwind 4, Supabase (Postgres, Auth, Storage), Vercel.
 PWA preko `vite-plugin-pwa` — Service Worker nikad ne presreće POST zahteve
 (plan, tačka 4).
 
-Sav tekst interfejsa je u [`src/lib/tekst.js`](src/lib/tekst.js) (latinica; ćirilični
-prevod se dodaje kao drugi objekat, bez diranja komponenti).
+Sav tekst interfejsa je u [`src/lib/tekst.js`](src/lib/tekst.js) (ćirilica, ekavica;
+ključevi i nazivi u kodu ostaju latinični). Dokumentacija (ovaj fajl i CLAUDE.md) ostaje na latinici.
 
 Supabase klijent je **singleton** u [`src/lib/supabase.js`](src/lib/supabase.js).
 Ako se negde napravi drugi, Auth sesija počinje da se duplira.

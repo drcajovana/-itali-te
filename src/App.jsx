@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AuthProvider from "./components/AuthProvider.jsx";
 import RutaZaBibliotekare from "./components/RutaZaBibliotekare.jsx";
 import ZasticenaRuta from "./components/ZasticenaRuta.jsx";
+import BibliotekarClanovi from "./pages/BibliotekarClanovi.jsx";
+import BibliotekarPocetna from "./pages/BibliotekarPocetna.jsx";
+import BibliotekarRezervacije from "./pages/BibliotekarRezervacije.jsx";
 import BibliotekarUnos from "./pages/BibliotekarUnos.jsx";
 import Knjiga from "./pages/Knjiga.jsx";
 import Citaoci from "./pages/Citaoci.jsx";
@@ -22,7 +25,10 @@ export default function App() {
           <Route path="/citaoci" element={<Citaoci />} />
           <Route path="/profil" element={<Profil />} />
           <Route element={<RutaZaBibliotekare />}>
+            <Route path="/bibliotekar" element={<BibliotekarPocetna />} />
             <Route path="/bibliotekar/unos" element={<BibliotekarUnos />} />
+            <Route path="/bibliotekar/clanovi" element={<BibliotekarClanovi />} />
+            <Route path="/bibliotekar/rezervacije" element={<BibliotekarRezervacije />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

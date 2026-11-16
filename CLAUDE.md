@@ -23,13 +23,31 @@ održavaće ga neko ko zna bibliotečki posao a ne englesku terminologiju.
 
 Sav tekst koji korisnik vidi živi u `src/lib/tekst.js`, kao jedan objekat.
 Komponente ga čitaju odatle (`tekst.pocetna.naslov`) i nikad ne pišu natpise
-direktno u JSX. Tako se ćirilični prevod kasnije dodaje kao drugi objekat
-pored `lat`, bez diranja komponenti. Fajl mora ostati običan JS bez uvoza,
-jer ga čita i `vite.config.js` (manifest, naslov stranice).
+direktno u JSX. Fajl mora ostati običan JS bez uvoza, jer ga čita i
+`vite.config.js` (manifest, naslov stranice).
 
-Jedina ćirilica u repozitorijumu je u funkciji `norm_tekst()` u migraciji
-`0001`: tamo je to podatak (mapa slova za pretragu), ne tekst. Ne
-transliterovati je.
+**Tekst aplikacije je na ćirilici, u src/lib/tekst.js.** Ekavica, obraćanje sa „vi".
+Ključevi, nazivi promenljivih, rute, tabele, kolone i vrednosti koje se čuvaju u bazi
+(`nova`, `spremna`, `citalac`...) ostaju latinični; ćirilica je samo u vrednostima.
+Latinicom ostaju i nazivi koji se ne prevode: {placeholderi}, https://, Google Books,
+COBISS, ISBN, jpeg, png, webp, MB. „PIN” se piše „ПИН”. Poruke grešaka iz `api/`
+(`poruka` u `ApiGreska`) su takođe na ćirilici, a kodovi (`kod`) latinični; korisnik
+vidi tekst iz `tekst.js` po kodu. Komentari u kodu, README i ovaj fajl ostaju na latinici.
+Novi natpis se piše odmah na ćirilici u `tekst.js`; ne ugrađivati tekst (ni latinicom ni
+ćirilicom) u komponente ili `src/lib` (reči u množini, kao „примерак/примерка/примерака”, takođe idu u `tekst.js`).
+`npm run test:api` proverava da u `tekst.js` nema latinice izvan zaštićenih izraza i da ostali
+fajlovi nemaju ni ćirilicu ni latinične rečenice.
+
+**Fontovi:** naslovi `Onest`, tekst `Inter`, oba sa podskupovima cyrillic i cyrillic-ext
+(Google Fonts ih šalje sam). Bricolage Grotesque iz prototipa nema ćirilicu i ne koristi se.
+
+**Pretraga i ime pismom-neutralni:** knjige se traže u bazi (`trazi_knjige` → `privatno.norm_tekst`),
+koja izjednačava ćirilicu i latinicu, pa klijent ne poredi tekst sam. Gde baza ne normalizuje
+(pretraga članova po imenu) upit se šalje u oba pisma (`src/lib/pismo.js`). Nadimak „Ime P." radi i za
+ćirilicu („Ана Петровић” daje „Ана П.”).
+
+Ćirilica u funkciji `norm_tekst()` u migraciji `0001` je podatak (mapa slova za pretragu), ne
+tekst aplikacije. Ne transliterovati je i ne dirati migracije radi pisma.
 
 ## Šta se ne radi
 
@@ -166,6 +184,25 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 - **Duplikati** se proveravaju neposredno pre upisa preko `trazi_knjige` (ISBN-13, pa naslov i
   autor; normalizaciju radi baza). Povećanje primeraka je izmena sa uslovom na staro stanje, pa
   istovremena izmena ne daje pogrešan broj.
+
+## Članovi i rezervacije (/bibliotekar/clanovi, /bibliotekar/rezervacije)
+
+- **Nalog pravi samo server** (`api/napravi-clana.js`, `api/resetuj-pin.js`): Auth nalog i PIN traže
+  `service_role`, koji nikad ne dolazi u pregledač. Klijent (`src/lib/clanovi.js`) ih zove preko
+  `pozoviApi`. Aktivacija i deaktivacija i liste idu običnim klijentom (RLS).
+- **PIN**: 6 cifara iz `crypto.randomInt` (`api/_lib/pin.js`), tekst, sme da počne nulom. Vraća se
+  **jednom** u odgovoru; ne čuva se, ne loguje, ne ide u poruku greške (log preko `bezPina`), a u
+  pregledaču živi samo u stanju ekrana (nikad localStorage). Ne praviti „prikaži PIN opet".
+- **Uloga novog člana je uvek `citalac`** i ne čita se iz zahteva. Uloga pozivaoca se čita iz baze.
+  Bibliotekar resetuje PIN samo čitaocima; administrator svima. Isto pravilo ponavlja
+  `mozeDaUpravlja` u interfejsu, ali bezbednost je u funkciji.
+- **Broj karte člana je 7 cifara kao tekst** (`proveriBrojKarte`, `src/lib/clan-unos.js`); broj koji
+  stigne kao JSON broj se odbija jer je vodeća nula već izgubljena. Ostalo o kartama: „Klijent".
+- **Ograničenje**: kanta `clanovi:bibliotekar`, 60 na sat po korisniku, zajednička za obe funkcije.
+- **Rezervacija** ima stanja `nova`, `spremna`, `preuzeta`, `otkazana` (migracija 0018). Otvorena je
+  nova ili spremna (jedinstveni indeks). Član otkazuje samo novu; ostalo menja bibliotekar.
+- **Kartica za štampu** (`PinPrikaz.jsx`) je portal u `<body>`; `@media print` u `index.css` sakriva
+  sve ostalo. Ne vraćati štampu na `visibility: hidden` (ostavlja prazne stranice).
 
 ## API funkcije (api/)
 

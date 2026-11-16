@@ -103,9 +103,9 @@ export async function obrisiUtisak(id) {
   if (!data?.length) throw Object.assign(new Error("utisak nije obrisan"), { kod: "utisak_nije_obrisan" });
 }
 
-// Otvorena rezervacija ove knjige (status 'nova') ili null.
+// Otvorena rezervacija ove knjige (status 'nova' ili 'spremna', migracija 0018) ili null.
 export async function ucitajRezervaciju(clanId, knjigaId) {
-  const { data, error } = await supabase.from("rezervacije").select("id, status, kreirana").eq("clan_id", clanId).eq("knjiga_id", knjigaId).eq("status", "nova").maybeSingle();
+  const { data, error } = await supabase.from("rezervacije").select("id, status, kreirana").eq("clan_id", clanId).eq("knjiga_id", knjigaId).in("status", ["nova", "spremna"]).maybeSingle();
   if (error) throw error;
   return data;
 }

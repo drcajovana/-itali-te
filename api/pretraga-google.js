@@ -7,7 +7,7 @@ import { obradi } from "./_lib/zajednicko.js";
 
 const tekst = (v) => {
   if (v === undefined || v === null) return "";
-  if (typeof v !== "string") throw new ApiGreska(400, "neispravan_zahtev", "Polja moraju biti tekst.");
+  if (typeof v !== "string") throw new ApiGreska(400, "neispravan_zahtev", "Поља морају бити текст.");
   return v;
 };
 
@@ -16,7 +16,7 @@ export default function handler(req, res) {
     proveri(telo) {
       const p = { naslov: tekst(telo.naslov), autor: tekst(telo.autor), isbn: tekst(telo.isbn), q: tekst(telo.q) };
       if (!Object.values(p).some((v) => v.trim())) {
-        throw new ApiGreska(400, "prazan_upit", "Upišite naslov, autora ili ISBN.");
+        throw new ApiGreska(400, "prazan_upit", "Упишите наслов, аутора или ISBN.");
       }
       return p;
     },

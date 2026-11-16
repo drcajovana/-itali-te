@@ -14,6 +14,7 @@
 
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 
 // ───────────────────────── lažni Supabase ─────────────────────────
 
@@ -29,6 +30,10 @@ const CLANOVI = {
   "tok-bib": { id: randomUUID(), aktivan: true, uloga: "bibliotekar" },
   "tok-admin": { id: randomUUID(), aktivan: true, uloga: "administrator" },
   "tok-neaktivan": { id: randomUUID(), aktivan: false, uloga: "citalac" },
+  // članovi nad kojima radi resetuj-pin (nemaju token; čitaju se po id)
+  "cilj-citalac": { id: randomUUID(), aktivan: true, uloga: "citalac", broj_kartice: "0101228", ime: "Ana Petrović" },
+  "cilj-bib": { id: randomUUID(), aktivan: true, uloga: "bibliotekar", broj_kartice: "0200001", ime: "Biljana Bibić" },
+  "cilj-admin": { id: randomUUID(), aktivan: true, uloga: "administrator", broj_kartice: "0200002", ime: "Adam Adminović" },
 };
 // brojac je po (član, kanta), kao public.uzmi_zahtev posle migracije 0012
 const stanje = {
@@ -36,6 +41,10 @@ const stanje = {
   pozivi: [], citanjaUloge: 0, ulogaGreska: false,
   // knjige i Storage za api/korica-iz-linka.js
   knjige: new Map(), patchevi: [], patchGreska: false, otpremljeno: [], obrisano: [], storageGreska: false,
+  // članovi (api/napravi-clana.js, api/resetuj-pin.js): Auth nalozi, upisani redovi, promene PIN-a
+  nalozi: [], upisaniClanovi: [], obrisaniNalozi: [], promenePina: [], zauzeteKartice: new Set(), zauzetiEmail: new Set(),
+  upisGreska: null, // null | "dupli" | "opsta"
+  authGreska: false, promenaGreska: false, brisanjeGreska: false,
 };
 const kljucB = (clanId, kanta = "api") => `${clanId}|${kanta}`;
 
@@ -62,8 +71,47 @@ const lazniSupabase = http.createServer((req, res) => {
         ? odgovori(200, { id: clan.id, aud: "authenticated", role: "authenticated", app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() })
         : odgovori(401, { code: 401, error_code: "bad_jwt", msg: "invalid JWT" });
     }
+    // Auth admin (samo servisni ključ): pravljenje naloga, promena lozinke, brisanje naloga
+    if (url.pathname.startsWith("/auth/v1/admin/users")) {
+      if (!(req.headers.authorization ?? "").includes(KLJUC_SERVIS)) return odgovori(401, { code: 401, error_code: "not_admin", msg: "User not allowed" });
+      const korisnik = (id, email) => ({ id, aud: "authenticated", role: "authenticated", email, app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() });
+      if (req.method === "POST") {
+        const b = JSON.parse(telo);
+        if (stanje.authGreska) return odgovori(500, { code: 500, error_code: "unexpected_failure", msg: `Auth ne radi za lozinku ${b.password}` });
+        if (stanje.zauzetiEmail.has(b.email)) return odgovori(422, { code: 422, error_code: "email_exists", msg: "A user with this email address has already been registered" });
+        const id = randomUUID();
+        stanje.nalozi.push({ id, email: b.email, password: b.password, potvrdjen: b.email_confirm });
+        return odgovori(200, korisnik(id, b.email));
+      }
+      const id = url.pathname.split("/").pop();
+      if (req.method === "PUT") {
+        const b = JSON.parse(telo);
+        if (stanje.promenaGreska) return odgovori(500, { code: 500, error_code: "unexpected_failure", msg: `Promena nije uspela za ${b.password}` });
+        stanje.promenePina.push({ id, password: b.password });
+        return odgovori(200, korisnik(id, "x@citaliste.local"));
+      }
+      if (req.method === "DELETE") {
+        if (stanje.brisanjeGreska) return odgovori(500, { code: 500, error_code: "unexpected_failure", msg: "brisanje ne radi" });
+        stanje.obrisaniNalozi.push(id);
+        return odgovori(200, {});
+      }
+    }
+    if (url.pathname === "/rest/v1/clanovi" && (req.headers.authorization ?? "").includes(KLJUC_SERVIS) && (req.method === "POST" || url.searchParams.has("broj_kartice"))) {
+      if (req.method === "POST") {
+        const b = JSON.parse(telo);
+        stanje.upisaniClanovi.push(b);
+        const pin = stanje.nalozi.at(-1)?.password ?? "";
+        if (stanje.upisGreska === "dupli") return odgovori(409, { code: "23505", message: "duplicate key value violates unique constraint" });
+        if (stanje.upisGreska === "opsta") return odgovori(500, { code: "XX000", message: `baza ne radi (lozinka ${pin})` });
+        stanje.zauzeteKartice.add(b.broj_kartice);
+        return objekat ? odgovori(201, b) : odgovori(201, [b]);
+      }
+      const trazena = (url.searchParams.get("broj_kartice") ?? "").replace("eq.", "");
+      const red = stanje.zauzeteKartice.has(trazena) ? { id: randomUUID() } : null;
+      return objekat ? (red ? odgovori(200, red) : odgovori(406, { code: "PGRST116" })) : odgovori(200, red ? [red] : []);
+    }
     if (url.pathname === "/rest/v1/clanovi") {
-      const id = (url.searchParams.get("id") ?? "").replace("eq.", "");
+      const id =(url.searchParams.get("id") ?? "").replace("eq.", "");
       const red = Object.values(CLANOVI).find((c) => c.id === id);
       const trazeno = (url.searchParams.get("select") ?? "").split(",");
       const samoAktivan = url.searchParams.get("aktivan") === "eq.true";
@@ -151,6 +199,10 @@ const unos = await import("../src/lib/unos-knjiga.js");
 const googleHandler = (await import("../api/pretraga-google.js")).default;
 const linkHandler = (await import("../api/iz-linka.js")).default;
 const koricaHandler = (await import("../api/korica-iz-linka.js")).default;
+const napraviClanaHandler = (await import("../api/napravi-clana.js")).default;
+const resetujPinHandler = (await import("../api/resetuj-pin.js")).default;
+const { noviPin } = await import("../api/_lib/pin.js");
+const clanUnos = await import("../src/lib/clan-unos.js");
 const { tipSlike } = await import("../api/_lib/slika.js");
 
 // ───────────────────────── ispis ─────────────────────────
@@ -809,7 +861,7 @@ faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-s
     provera("upis pa korica: knjiga se prvo upiše, korica se preuzima sa dobijenim ID-jem i nalepljenom adresom", r.upis === "sacuvano" && s.baza.length === 1 && s.preuzmi.length === 1 && s.preuzmi[0][0] === "k1" && s.preuzmi[0][1] === KOR && r.korica.ishod === "preuzeta" && r.korica.korica === "https://nas/k1.jpg" && s.stanja.join() === "radi", { r, preuzmi: s.preuzmi });
 
     // greška pri preuzimanju NE poništava upis
-    for (const [kod, ocekivano] of [["ne_mogu_da_procitam", "Sajt ne daje sliku"], ["prevelika_slika", "prevelika"], ["slika_nije_podrzana", "Pogrešan tip"], ["nije_bibliotekar", "dozvolu"], ["nije_slika", "ne vodi do slike"], ["preusmerenje_van_liste", "preusmerava"], ["mreza", "povežem"]]) {
+    for (const [kod, ocekivano] of [["ne_mogu_da_procitam", "Сајт не даје слику"], ["prevelika_slika", "превелика"], ["slika_nije_podrzana", "Погрешан тип"], ["nije_bibliotekar", "дозволу"], ["nije_slika", "не води до слике"], ["preusmerenje_van_liste", "преусмерава"], ["mreza", "повежем"]]) {
       s = nova();
       r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "preuzmi", predlog: KOR, preuzmi: async () => { throw greskaSaKodom(kod); }, otpremi: async () => "x" });
       provera(`neuspelo preuzimanje (${kod}) ne poništava upis: knjiga ostaje sačuvana, razlog je čitljiv`, r.upis === "sacuvano" && s.baza.length === 1 && r.korica.ishod === "greska" && r.korica.razlog.toLowerCase().includes(ocekivano.toLowerCase()) && r.korica.kod === kod, r);
@@ -819,7 +871,7 @@ faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-s
     provera("i neočekivana greška (nije ApiGreska) ne poništava upis i ne ruši tok", r.upis === "sacuvano" && s.baza.length === 1 && r.korica.ishod === "greska" && typeof r.korica.razlog === "string" && r.korica.razlog.length > 5, r);
     s = nova();
     r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "preuzmi", predlog: KOR, preuzmi: async () => { throw greskaSaKodom("previse_zahteva", { ponovoZaSekundi: 1234 }); }, otpremi: async () => "x" });
-    provera("ograničenje (previse_zahteva): upis ostaje, ishod 'limit', razlog sadrži minute (1234 s → 21 min)", r.upis === "sacuvano" && r.korica.ishod === "limit" && r.korica.razlog.includes("21 min"), r);
+    provera("ograničenje (previse_zahteva): upis ostaje, ishod 'limit', razlog sadrži minute (1234 s → 21 min)", r.upis === "sacuvano" && r.korica.ishod === "limit" && r.korica.razlog.includes("21 мин"), r);
 
     // isključena kvačica ne šalje zahtev
     s = nova();
@@ -843,7 +895,7 @@ faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-s
     provera("izabrana druga slika: otprema se ta slika (običan klijent), a preuzimanje sa sajta se NE šalje", r.korica.ishod === "slika" && s.otpremi.length === 1 && s.otpremi[0][1] === BLOB && s.preuzmi.length === 0, r);
     s = nova();
     r = await tok.sacuvajPaKoricu({ upisi: s.upisi(), izbor: "slika", slika: { blob: BLOB }, preuzmi: async () => ({}), otpremi: async () => { throw greskaSaKodom("nema_dozvole"); } });
-    provera("neuspelo slanje izabrane slike (nema dozvole) ne poništava upis i daje razlog", r.upis === "sacuvano" && s.baza.length === 1 && r.korica.ishod === "greska" && r.korica.razlog.includes("dozvolu"), r);
+    provera("neuspelo slanje izabrane slike (nema dozvole) ne poništava upis i daje razlog", r.upis === "sacuvano" && s.baza.length === 1 && r.korica.ishod === "greska" && r.korica.razlog.includes("дозволу"), r);
 
     // „Sačuvaj sve”: redom, pauza između preuzimanja, ograničenje, sažetak
     {
@@ -889,10 +941,10 @@ faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-s
       provera("sačuvaj sve: zahtev ka serveru samo za a, b i e (c je bez kvačice, d je duplikat, f posle ograničenja se ne šalje)", JSON.stringify(zahtevi) === JSON.stringify(["a", "b", "e"]), zahtevi);
       provera("sačuvaj sve: pauza (zadata) pre svakog preuzimanja osim prvog; ne i pre ostalih knjiga", JSON.stringify(pauze) === JSON.stringify([77, 77]), { pauze, dogadjaji });
       provera("sačuvaj sve: zbir — jedna preuzeta, jedna neuspela (sa razlogom), jedna bez kvačice/predloga, dve zbog ograničenja",
-        zbir.preuzeta === 1 && zbir.nijeUspelo.length === 1 && zbir.nijeUspelo[0].id === "b" && zbir.nijeUspelo[0].razlog.includes("Sajt ne daje sliku") && zbir.limit === 2 && zbir.bez === 2, zbir);
+        zbir.preuzeta === 1 && zbir.nijeUspelo.length === 1 && zbir.nijeUspelo[0].id === "b" && zbir.nijeUspelo[0].razlog.includes("Сајт не даје слику") && zbir.limit === 2 && zbir.bez === 2, zbir);
       const sazetak = tok.tekstSazetka(zbir, { a: "Knjiga A", b: "Knjiga B" });
       provera("sažetak kaže: koliko je sačuvano, koliko korica je preuzeto, koje nije i zašto, ograničenje i ono što čeka odluku",
-        sazetak.includes("Sačuvano knjiga: 6.") && sazetak.includes("Korica preuzeta: 1.") && sazetak.includes("Knjiga B: Sajt ne daje sliku") && sazetak.includes("Ograničenje od 100 preuzimanja na sat je potrošeno. Bez korice je sačuvano knjiga: 2") && sazetak.includes("Čeka vašu odluku (već postoji ili ima grešku): 1."), sazetak);
+        sazetak.includes("Сачувано књига: 6.") && sazetak.includes("Корица преузета: 1.") && sazetak.includes("Knjiga B: Сајт не даје слику") && sazetak.includes("Ограничење од 100 преузимања на сат је потрошено. Без корице је сачувано књига: 2") && sazetak.includes("Чека вашу одлуку (већ постоји или има грешку): 1."), sazetak);
       provera("ograničenje je 100 preuzimanja na sat (server: korica-iz-linka, kanta po bibliotekaru)", (await import("../api/_lib/zajednicko.js")).NAJVISE_KORICA === 100 && (await import("../src/lib/tekst.js")).tekst.unos.sazetak.limit.includes("100"));
     }
     {
@@ -913,7 +965,7 @@ faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-s
     provera("KoricaPrePregled: kvačica „Preuzmi i koricu”, „Bez korice” i „Izaberi drugu sliku”; ništa se ne šalje (nema poziva ka api ni Storage-u)",
       pregled.includes("T.preuzmiKvacica") && pregled.includes("T.bez") && pregled.includes("T.drugaSlika") && !/koricaIzLinka|postaviKoricu|pozoviApi|supabase/.test(pregled.replace(/\/\/.*$/gm, "")));
     const T15 = (await import("../src/lib/tekst.js")).tekst.korice;
-    provera("natpisi: „Preuzmi i koricu”, „Izaberi drugu sliku”, „Pokušaj ponovo”", T15.preuzmiKvacica === "Preuzmi i koricu" && T15.drugaSlika === "Izaberi drugu sliku" && T15.ponovo === "Pokušaj ponovo");
+    provera("natpisi: „Preuzmi i koricu”, „Izaberi drugu sliku”, „Pokušaj ponovo”", T15.preuzmiKvacica === "Преузми и корицу" && T15.drugaSlika === "Изабери другу слику" && T15.ponovo === "Покушај поново");
   }
 
   // ── izvorni kod: sve što je tražilo uputstvo ──
@@ -929,7 +981,7 @@ faza("7d. Korica: samo naša fotografija → Open Library → pločica (korica-s
       izbor.includes("koricaIzLinka(knjigaId, predlog)") && izbor.includes("onBez && !korica") && izbor.includes("setPotvrda(true)") && izbor.split("onClick={ukloni}").length === 2 && /potvrda && \(\s*<div role="group"[\s\S]*onClick=\{ukloni\}/.test(izbor) && izbor.includes("disabled={onemoguceno}"));
     provera("KoricaIzbor.jsx: dva izbora slike: kamera i obična selekcija; predlog se prikazuje lenjo, sa opisnim alt tekstom i rezervom", /kamera\s*\n/.test(izbor) && izbor.includes("kamera={false}") && izbor.includes('loading="lazy"') && izbor.includes("T.predlogAlt") && izbor.includes("onError"));
     const T14 = (await import("../src/lib/tekst.js")).tekst.korice;
-    provera("natpisi dugmadi su tačno kako je traženo", T14.koristi === "Koristi ovu koricu" && T14.izaberi === "Izaberi sliku sa računara ili telefona" && T14.bez === "Bez korice" && T14.ukloni === "Ukloni koricu" && T14.zameni === "Zameni koricu" && T14.slikaj === "Slikaj koricu", T14);
+    provera("natpisi dugmadi su tačno kako je traženo", T14.koristi === "Користи ову корицу" && T14.izaberi === "Изабери слику са рачунара или телефона" && T14.bez === "Без корице" && T14.ukloni === "Уклони корицу" && T14.zameni === "Замени корицу" && T14.slikaj === "Сликај корицу", T14);
     provera("poruke grešaka: prevelika slika, pogrešan tip i nema dozvole postoje", ["slika_velika", "slika_tip", "nema_dozvole", "slika_neispravna", "korica_upload", "korica_upis"].every((k) => typeof T14.greske[k] === "string" && T14.greske[k].length > 10), Object.keys(T14.greske));
     const knj = izvor("src/lib/knjige.js");
     const pocetakUkloni = knj.indexOf("export async function ukloniKoricu");
@@ -1299,7 +1351,7 @@ faza("13. Unos bibliotekara linkovima: adrese, sekvencijalna obrada, kartica");
   u = unos.urediUnos(pocetna, { uneoId: BIBLIOTEKAR_ID });
   provera("a ni u redu za upis nema opisa ni korice sa sajta (opis je null dok ga bibliotekar ne napiše)", u.ok && u.red.opis === null && !JSON.stringify(u.red).includes("TUĐEG") && !JSON.stringify(u.red).includes("k.jpg"), u.red);
   provera("podrazumevano stanje kartice je „U fondu” sa 1 primerkom", pocetna.stanje === "fond" && pocetna.primerci === "1");
-  for (const [n, ocekivano] of [[1, "1 primerak"], [2, "2 primerka"], [4, "4 primerka"], [5, "5 primeraka"], [11, "11 primeraka"], [12, "12 primeraka"], [14, "14 primeraka"], [21, "21 primerak"], [22, "22 primerka"], [25, "25 primeraka"], [101, "101 primerak"], [111, "111 primeraka"], [112, "112 primeraka"], [999, "999 primeraka"]]) {
+  for (const [n, ocekivano] of [[1, "1 примерак"], [2, "2 примерка"], [4, "4 примерка"], [5, "5 примерака"], [11, "11 примерака"], [12, "12 примерака"], [14, "14 примерака"], [21, "21 примерак"], [22, "22 примерка"], [25, "25 примерака"], [101, "101 примерак"], [111, "111 примерака"], [112, "112 примерака"], [999, "999 примерака"]]) {
     provera(`množina: ${n} → ${ocekivano}`, unos.primeraka(n) === ocekivano, unos.primeraka(n));
   }
   provera("adresa za „Otvori” vodi na pretragu po ISBN-u, a bez ISBN-a po naslovu", unos.adresaZaOtvaranje({ isbn: "9788652126033", naslov: "X" }) === "/pretraga?upit=9788652126033" && unos.adresaZaOtvaranje({ naslov: "Na Drini ćuprija" }) === "/pretraga?upit=Na%20Drini%20%C4%87uprija");
@@ -1659,9 +1711,9 @@ faza("16. Polica, stranica knjige i utisci (polica-logika.js, izgled i tekst)");
 
   // tekst: natpisi i opisi ocena
   provera("ocene 1 do 10 imaju opis vrednosti", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((n) => typeof TK.utisak.ocene[n] === "string" && TK.utisak.ocene[n].length > 2) && new Set(Object.values(TK.utisak.ocene)).size === 10, TK.utisak.ocene);
-  provera("natpisi: stanja police, Rezerviši, Označi kao pročitano, vidljivost, spojler", TK.knjigaEkran.polica.stanja.zelim === "Želim" && TK.knjigaEkran.polica.stanja.citam === "Čitam" && TK.knjigaEkran.polica.stanja.procitano === "Pročitano" && TK.knjigaEkran.rezervacija.dugme === "Rezerviši" && TK.knjigaEkran.polica.oznaciProcitano === "Označi kao pročitano" && TK.utisak.vidljivosti.javno === "Svi članovi" && TK.utisak.vidljivosti.prijatelji === "Samo povezani" && TK.utisak.vidljivosti.samo_ja === "Samo ja" && TK.utisak.spojler === "Sadrži spojler");
-  provera("dostupnost: „U fondu, N primeraka” i „Nema u fondu, na listi za nabavku”", TK.knjigaEkran.uFondu === "U fondu, {primeraka}" && TK.knjigaEkran.nijeUFondu === "Nema u fondu, na listi za nabavku");
-  provera("početna: tri kartice Čitam / Pročitano / Želim i prazna stanja za svaku", TK.pocetna.kartice.citam === "Čitam" && TK.pocetna.kartice.procitano === "Pročitano" && TK.pocetna.kartice.zelim === "Želim" && ["citam", "procitano", "zelim"].every((s) => TK.pocetna.prazneKartice[s].length > 5) && TK.pocetna.prazno.length > 10 && TK.utisak.tudji.nema.length > 10);
+  provera("natpisi: stanja police, Rezerviši, Označi kao pročitano, vidljivost, spojler", TK.knjigaEkran.polica.stanja.zelim === "Желим" && TK.knjigaEkran.polica.stanja.citam === "Читам" && TK.knjigaEkran.polica.stanja.procitano === "Прочитано" && TK.knjigaEkran.rezervacija.dugme === "Резервиши" && TK.knjigaEkran.polica.oznaciProcitano === "Означи као прочитано" && TK.utisak.vidljivosti.javno === "Сви чланови" && TK.utisak.vidljivosti.prijatelji === "Само повезани" && TK.utisak.vidljivosti.samo_ja === "Само ја" && TK.utisak.spojler === "Садржи спојлер");
+  provera("dostupnost: „U fondu, N primeraka” i „Nema u fondu, na listi za nabavku”", TK.knjigaEkran.uFondu === "У фонду, {primeraka}" && TK.knjigaEkran.nijeUFondu === "Нема у фонду, на листи за набавку");
+  provera("početna: tri kartice Čitam / Pročitano / Želim i prazna stanja za svaku", TK.pocetna.kartice.citam === "Читам" && TK.pocetna.kartice.procitano === "Прочитано" && TK.pocetna.kartice.zelim === "Желим" && ["citam", "procitano", "zelim"].every((s) => TK.pocetna.prazneKartice[s].length > 5) && TK.pocetna.prazno.length > 10 && TK.utisak.tudji.nema.length > 10);
 
   // izvorni kod: RLS se ne filtrira u React kodu; palete; tekst samo iz tekst.js
   const polica = izvor("src/lib/polica.js");
@@ -1681,6 +1733,371 @@ faza("16. Polica, stranica knjige i utisci (polica-logika.js, izgled i tekst)");
   provera("spojler: tuđi tekst je zamagljen (blur) i sakriven od čitača ekrana dok se ne dodirne", izvor("src/components/Utisci.jsx").includes("blur-md") && izvor("src/components/Utisci.jsx").includes("aria-hidden={zamagljen}"));
   provera("rezervacija se nudi samo za knjigu u fondu (interfejs) — a baza to proverava (0017)", izvor("src/components/StanjePolice.jsx").includes("knjiga.u_fondu && rezervacija !== undefined") && /k\.u_fondu/.test(izvor("supabase/migrations/0017_polica_napredak_utisci_autor.sql")));
   provera("stranica knjige: ručno upisana knjiga (izvor 'clan', u_fondu=false) ima oznaku „Nema u fondu, na listi za nabavku”", izvor("src/pages/Knjiga.jsx").includes("knjiga.u_fondu ? T.uFondu") && izvor("src/pages/Knjiga.jsx").includes(": T.nijeUFondu") && izvor("src/components/PlocicaKnjige.jsx").includes("!knjiga.u_fondu"));
+}
+
+faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ograničenje");
+{
+  const citaj = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  const BIB = CLANOVI["tok-bib"];
+  const CILJ = CLANOVI["cilj-citalac"];
+  const KANTA = "clanovi:bibliotekar";
+
+  // Sve što funkcije ispišu kroz console.error/warn/info ide u niz; PIN tu nikad ne sme da se pojavi.
+  const dnevnik = [];
+  const izvornik = { error: console.error, warn: console.warn, info: console.info };
+  for (const k of Object.keys(izvornik)) console[k] = (...a) => dnevnik.push(a.map((x) => (typeof x === "string" ? x : JSON.stringify(x?.message ?? x))).join(" "));
+
+  const cisto = () => {
+    stanje.brojac.clear();
+    stanje.pozivi.length = 0;
+    stanje.nalozi.length = 0;
+    stanje.upisaniClanovi.length = 0;
+    stanje.obrisaniNalozi.length = 0;
+    stanje.promenePina.length = 0;
+    stanje.zauzeteKartice.clear();
+    stanje.zauzetiEmail.clear();
+    stanje.upisGreska = null;
+    stanje.authGreska = false;
+    stanje.promenaGreska = false;
+    stanje.brisanjeGreska = false;
+    stanje.rpcGreska = false;
+    stanje.ulogaGreska = false;
+    dnevnik.length = 0;
+  };
+  const nistaNijePromenjeno = (naziv) => provera(naziv, stanje.nalozi.length === 0 && stanje.upisaniClanovi.length === 0 && stanje.promenePina.length === 0 && stanje.obrisaniNalozi.length === 0, { nalozi: stanje.nalozi.length, redovi: stanje.upisaniClanovi.length, pin: stanje.promenePina.length });
+  const TELO = { kartica: "0101228", ime: "Ana Petrović" };
+  const pinuLogu = (pin) => dnevnik.some((r) => r.includes(pin));
+
+  try {
+    cisto();
+
+    // ── pomoćne funkcije (čisti moduli) ──
+    provera("broj karte: 7 cifara kao tekst, vodeća nula ostaje", clanUnos.proveriBrojKarte("0101228") === "0101228" && clanUnos.proveriBrojKarte(" 010 1228 ") === "0101228" && clanUnos.proveriBrojKarte("1234567") === "1234567");
+    provera("broj karte: odbija broj (nula je već izgubljena), 6 i 8 cifara, slova, prazno, null", [101228, 1234567, "101228", "01012280", "BIB1234", "01-01228", "", null, undefined, ["0101228"], { x: 1 }].every((x) => clanUnos.proveriBrojKarte(x) === null));
+    provera("ime: čisti razmake, traži bar dve reči, slova sa kvačicama, bez cifara i znakova", clanUnos.ocistiIme("  Jovana   Đorđević ") === "Jovana Đorđević" && clanUnos.ocistiIme("Ana-Marija O'Brien") === "Ana-Marija O'Brien" && ["Ana", "", "   ", "Ana 123", "Ana <b>", "A", "x".repeat(81) + " y", null, 5].every((x) => clanUnos.ocistiIme(x) === null));
+    provera("podrazumevani nadimak je „Ime P.” (prvo ime i prvo slovo prezimena)", clanUnos.podrazumevaniNadimak("Jovana Đorđević") === "Jovana Đ." && clanUnos.podrazumevaniNadimak("Ana Marija Petrović") === "Ana P." && clanUnos.podrazumevaniNadimak("Marko Šaponja") === "Marko Š." && clanUnos.podrazumevaniNadimak("ana petrović") === "ana P.");
+    {
+      const pinovi = Array.from({ length: 20000 }, () => noviPin());
+      provera("noviPin: uvek tačno 6 cifara kao tekst", pinovi.every((p) => /^[0-9]{6}$/.test(p)));
+      provera("noviPin: može da počne nulom (vodeća nula se ne gubi)", pinovi.some((p) => p.startsWith("0")));
+      provera("noviPin: raznovrstan (nije ponovljena vrednost)", new Set(pinovi).size > 19000, new Set(pinovi).size);
+      provera("pin.js koristi crypto.randomInt, ne Math.random", citaj("api/_lib/pin.js").includes("randomInt") && !/Math\.random/.test(citaj("api/_lib/pin.js")));
+    }
+
+    // ── protokol i uloge ──
+    for (const [naziv, h] of [["napravi-clana", napraviClanaHandler], ["resetuj-pin", resetujPinHandler]]) {
+      cisto();
+      let r = await z(h, { metod: "GET", token: "tok-bib" });
+      provera(`${naziv}: GET daje 405 sa Allow: POST`, r.status === 405 && r.zaglavlja.allow === "POST", r.status);
+      r = await z(h, { telo: TELO });
+      provera(`${naziv}: bez tokena 401, ništa se ne radi`, r.status === 401, r.status);
+      r = await z(h, { token: "lazan.token", telo: TELO });
+      provera(`${naziv}: nevažeći token 401`, r.status === 401, r.status);
+      r = await z(h, { token: KLJUC_ANON, telo: TELO });
+      provera(`${naziv}: sam anon ključ nije prijava (401)`, r.status === 401, r.status);
+      r = await z(h, { token: "tok-neaktivan", telo: { ...TELO, clanId: CILJ.id } });
+      provera(`${naziv}: neaktivan član dobija 403`, r.status === 403, r.status);
+      r = await z(h, { token: "tok-a", telo: { ...TELO, clanId: CILJ.id } });
+      provera(`${naziv}: ČITALAC dobija 403 nije_bibliotekar`, r.status === 403 && r.telo.greska.kod === "nije_bibliotekar", r.telo);
+      r = await z(h, { token: "tok-a", telo: { ...TELO, clanId: CILJ.id, uloga: "bibliotekar" } });
+      provera(`${naziv}: čitalac koji u telu napiše „uloga: bibliotekar” i dalje dobija 403 (uloga se čita iz baze)`, r.status === 403, r.status);
+      nistaNijePromenjeno(`${naziv}: čitalac ne pravi nalog, ne menja PIN i ne briše ništa`);
+      provera(`${naziv}: čitalac ne troši ograničenje`, stanje.pozivi.length === 0, stanje.pozivi);
+      r = await z(h, { token: "tok-a", telo: {} });
+      provera(`${naziv}: i prazan zahtev čitaoca daje 400 ili 403, nikad 200`, [400, 403].includes(r.status), r.status);
+    }
+
+    // ── napravi-clana: uspeh ──
+    cisto();
+    let o = await z(napraviClanaHandler, { token: "tok-bib", telo: { kartica: "0101228", ime: "  Ana   Petrović " } });
+    const rez = o.telo?.rezultati?.[0];
+    provera("napravi-clana: bibliotekar pravi člana (200)", o.status === 200 && rez?.clan && rez?.pin, o);
+    provera("napravi-clana: broj karte ostaje tekst sa vodećom nulom (0101228, ne 101228)", rez?.clan.broj_kartice === "0101228" && stanje.upisaniClanovi[0]?.broj_kartice === "0101228" && typeof stanje.upisaniClanovi[0]?.broj_kartice === "string", stanje.upisaniClanovi[0]);
+    provera("napravi-clana: Auth nalog je {karta}@citaliste.local, potvrđen, lozinka je PIN", stanje.nalozi.length === 1 && stanje.nalozi[0].email === "0101228@citaliste.local" && stanje.nalozi[0].potvrdjen === true && stanje.nalozi[0].password === rez?.pin, stanje.nalozi.map((n) => [n.email, n.potvrdjen]));
+    provera("napravi-clana: PIN su 6 cifara i vraća se u odgovoru", /^[0-9]{6}$/.test(rez?.pin), rez?.pin?.length);
+    provera("napravi-clana: red u clanovi ima isti id kao Auth nalog, ime bez viška razmaka i uloga 'citalac'", stanje.upisaniClanovi[0]?.id === stanje.nalozi[0]?.id && stanje.upisaniClanovi[0]?.ime === "Ana Petrović" && stanje.upisaniClanovi[0]?.uloga === "citalac", stanje.upisaniClanovi[0]);
+    provera("napravi-clana: podrazumevani nadimak je „Ana P.”", stanje.upisaniClanovi[0]?.nadimak === "Ana P." && rez?.clan.nadimak === "Ana P.");
+    provera("napravi-clana: odgovor ima no-store i PIN je u njemu tačno jednom", o.zaglavlja["cache-control"] === "no-store" && o.sirovo.split(rez.pin).length === 2, o.zaglavlja);
+    provera("napravi-clana: PIN nije ni u jednom ispisu (log) funkcije", !pinuLogu(rez.pin) && dnevnik.length === 0, dnevnik);
+    provera("napravi-clana: ograničenje se troši u kanti „clanovi:bibliotekar” sa granicom 60", stanje.pozivi.length === 1 && stanje.pozivi[0].kanta === KANTA && stanje.pozivi[0].najvise === 60 && stanje.pozivi[0].clan === BIB.id, stanje.pozivi);
+
+    cisto();
+    o = await z(napraviClanaHandler, { token: "tok-admin", telo: { kartica: "0000001", ime: "Mika Mikić" } });
+    provera("napravi-clana: administrator takođe sme (200), karta 0000001 ostaje sa nulama", o.status === 200 && o.telo.rezultati[0].clan.broj_kartice === "0000001", o);
+
+    cisto();
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: { kartica: "0101228", ime: "Ana Petrović", uloga: "administrator", nadimak: "Hakerka", aktivan: false, id: randomUUID() } });
+    provera("napravi-clana: uloga iz tela se ne čita: novi član je UVEK 'citalac' (nema ni tuđeg id-a, nadimka ni aktivan=false)", o.status === 200 && stanje.upisaniClanovi[0].uloga === "citalac" && stanje.upisaniClanovi[0].nadimak === "Ana P." && stanje.upisaniClanovi[0].id === stanje.nalozi[0].id && !("aktivan" in stanje.upisaniClanovi[0]), stanje.upisaniClanovi[0]);
+
+    cisto();
+    {
+      const pinovi = new Set();
+      for (let i = 0; i < 12; i++) {
+        stanje.zauzeteKartice.clear();
+        const r = await z(napraviClanaHandler, { token: "tok-bib", telo: { kartica: String(1000000 + i), ime: "Ana Petrović" } });
+        pinovi.add(r.telo?.rezultati?.[0]?.pin);
+      }
+      provera("napravi-clana: svaki poziv daje svoj PIN (nije ugrađen ni ponovljen)", pinovi.size >= 10, pinovi.size);
+    }
+
+    // ── napravi-clana: neispravan zahtev ──
+    for (const [naziv, telo] of [
+      ["karta kao BROJ (vodeća nula je izgubljena)", { kartica: 101228, ime: "Ana Petrović" }],
+      ["karta sa 6 cifara", { kartica: "101228", ime: "Ana Petrović" }],
+      ["karta sa 8 cifara", { kartica: "01012280", ime: "Ana Petrović" }],
+      ["karta sa slovima", { kartica: "BIB1234", ime: "Ana Petrović" }],
+      ["bez karte", { ime: "Ana Petrović" }],
+      ["ime bez prezimena", { kartica: "0101228", ime: "Ana" }],
+      ["ime sa ciframa", { kartica: "0101228", ime: "Ana 123" }],
+      ["bez imena", { kartica: "0101228" }],
+    ]) {
+      cisto();
+      o = await z(napraviClanaHandler, { token: "tok-bib", telo });
+      provera(`napravi-clana odbija (400): ${naziv}`, o.status === 400 && ["neispravna_kartica", "neispravno_ime"].includes(o.telo.greska.kod), o);
+      provera(`napravi-clana: ${naziv} ne troši ograničenje i ništa ne pravi`, stanje.pozivi.length === 0 && stanje.nalozi.length === 0 && stanje.upisaniClanovi.length === 0, stanje.pozivi);
+    }
+    cisto();
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: [] });
+    provera("napravi-clana: telo koje nije objekat daje 400", o.status === 400, o.status);
+
+    // ── napravi-clana: karta već postoji ──
+    cisto();
+    stanje.zauzeteKartice.add("0101228");
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    provera("napravi-clana: postojeća karta daje 409 kartica_postoji, bez novog naloga i bez PIN-a u odgovoru", o.status === 409 && o.telo.greska.kod === "kartica_postoji" && stanje.nalozi.length === 0 && !/"pin"/.test(o.sirovo), o);
+    cisto();
+    stanje.zauzetiEmail.add("0101228@citaliste.local");
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    provera("napravi-clana: Auth nalog sa tom adresom već postoji → 409 kartica_postoji, red u clanovi se ne piše", o.status === 409 && o.telo.greska.kod === "kartica_postoji" && stanje.upisaniClanovi.length === 0, o);
+
+    // ── napravi-clana: kvar usred posla (nalog se poništava, PIN ne curi) ──
+    cisto();
+    stanje.upisGreska = "dupli";
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    provera("napravi-clana: istovremeni upis iste karte (23505) → 409, a Auth nalog se briše", o.status === 409 && o.telo.greska.kod === "kartica_postoji" && stanje.obrisaniNalozi.length === 1 && stanje.obrisaniNalozi[0] === stanje.nalozi[0].id, { o: o.telo, obrisano: stanje.obrisaniNalozi });
+    cisto();
+    stanje.upisGreska = "opsta";
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    {
+      const pinKvara = stanje.nalozi[0]?.password ?? "";
+      provera("napravi-clana: kvar baze pri upisu → 500, Auth nalog se poništava", o.status === 500 && o.telo.greska.kod === "greska_servera" && stanje.obrisaniNalozi.length === 1, o);
+      provera("napravi-clana: PIN nije u odgovoru greške ni u logu, čak ni kad ga poruka baze sadrži", pinKvara.length === 6 && !o.sirovo.includes(pinKvara) && !pinuLogu(pinKvara) && dnevnik.length > 0, { dnevnik });
+    }
+    cisto();
+    stanje.upisGreska = "opsta";
+    stanje.brisanjeGreska = true;
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    provera("napravi-clana: ako ni poništavanje ne uspe, upozorenje ide u log (bez PIN-a), odgovor je 500", o.status === 500 && dnevnik.some((r) => r.includes("UPOZORENJE")) && !pinuLogu(stanje.nalozi[0].password), dnevnik);
+    cisto();
+    stanje.authGreska = true;
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    provera("napravi-clana: kvar Auth-a (poruka sadrži lozinku) → 500; PIN nije ni u odgovoru ni u logu", o.status === 500 && !/[0-9]{6}/.test(o.sirovo.replace(/"ponovoZaSekundi":null/, "")) && !dnevnik.some((r) => /lozinku [0-9]{6}/.test(r)) && stanje.upisaniClanovi.length === 0, { sirovo: o.sirovo, dnevnik });
+
+    // ── ograničenje: 60 na sat po korisniku, zajednička kanta, zatvoreno ──
+    cisto();
+    stanje.brojac.set(kljucB(BIB.id, KANTA), 59);
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    provera("ograničenje: 60. zahtev prolazi", o.status === 200, o.status);
+    stanje.zauzeteKartice.clear();
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: { kartica: "0101229", ime: "Ana Petrović" } });
+    provera("ograničenje: 61. zahtev daje 429 previse_zahteva sa Retry-After, bez novog naloga", o.status === 429 && o.telo.greska.kod === "previse_zahteva" && o.zaglavlja["retry-after"] === "1234" && stanje.nalozi.length === 1, o);
+    o = await z(resetujPinHandler, { token: "tok-bib", telo: { clanId: CILJ.id } });
+    provera("ograničenje: kanta je zajednička, pa i resetuj-pin dobija 429", o.status === 429 && stanje.promenePina.length === 0, o.status);
+    o = await z(napraviClanaHandler, { token: "tok-admin", telo: { kartica: "0101230", ime: "Mika Mikić" } });
+    provera("ograničenje je po korisniku: administrator ima svoju kantu", o.status === 200, o.status);
+    cisto();
+    stanje.rpcGreska = true;
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    provera("ograničenje je zatvoreno: kad baza ne radi, napravi-clana daje 503 i ništa ne pravi", o.status === 503 && o.telo.greska.kod === "ogranicenje_nedostupno" && stanje.nalozi.length === 0, o);
+    o = await z(resetujPinHandler, { token: "tok-bib", telo: { clanId: CILJ.id } });
+    provera("ograničenje je zatvoreno: kad baza ne radi, resetuj-pin daje 503 i ne menja PIN", o.status === 503 && stanje.promenePina.length === 0, o);
+    cisto();
+    stanje.ulogaGreska = true;
+    o = await z(napraviClanaHandler, { token: "tok-bib", telo: TELO });
+    provera("kad se uloga ne može pročitati, zahtev se odbija (503), ne propušta", o.status === 503 && stanje.nalozi.length === 0, o);
+
+    // ── resetuj-pin ──
+    cisto();
+    o = await z(resetujPinHandler, { token: "tok-bib", telo: { clanId: CILJ.id } });
+    {
+      const r1 = o.telo?.rezultati?.[0];
+      provera("resetuj-pin: bibliotekar menja PIN čitaocu (200), nov PIN je 6 cifara", o.status === 200 && /^[0-9]{6}$/.test(r1?.pin) && r1.clan.id === CILJ.id && r1.clan.broj_kartice === "0101228", o);
+      provera("resetuj-pin: lozinka Auth naloga je upravo taj PIN", stanje.promenePina.length === 1 && stanje.promenePina[0].id === CILJ.id && stanje.promenePina[0].password === r1.pin, stanje.promenePina.map((p) => p.id));
+      provera("resetuj-pin: no-store, PIN je u odgovoru jednom i nije u logu", o.zaglavlja["cache-control"] === "no-store" && o.sirovo.split(r1.pin).length === 2 && !pinuLogu(r1.pin) && dnevnik.length === 0, dnevnik);
+      provera("resetuj-pin: ograničenje u kanti „clanovi:bibliotekar” (60)", stanje.pozivi.length === 1 && stanje.pozivi[0].kanta === KANTA && stanje.pozivi[0].najvise === 60, stanje.pozivi);
+    }
+    cisto();
+    o = await z(resetujPinHandler, { token: "tok-bib", telo: { clanId: CLANOVI["cilj-admin"].id } });
+    provera("resetuj-pin: BIBLIOTEKAR ne sme administratoru (403 nema_dozvole), PIN se ne menja", o.status === 403 && o.telo.greska.kod === "nema_dozvole" && stanje.promenePina.length === 0 && !/"pin"/.test(o.sirovo), o);
+    cisto();
+    o = await z(resetujPinHandler, { token: "tok-bib", telo: { clanId: CLANOVI["cilj-admin"].id, uloga: "administrator" } });
+    provera("resetuj-pin: bibliotekar koji u telu napiše „uloga: administrator” i dalje dobija 403", o.status === 403 && stanje.promenePina.length === 0, o.status);
+    cisto();
+    o = await z(resetujPinHandler, { token: "tok-bib", telo: { clanId: CLANOVI["cilj-bib"].id } });
+    provera("resetuj-pin: bibliotekar ne menja PIN ni drugom bibliotekaru (403)", o.status === 403 && stanje.promenePina.length === 0, o.status);
+    cisto();
+    o = await z(resetujPinHandler, { token: "tok-bib", telo: { clanId: BIB.id } });
+    provera("resetuj-pin: bibliotekar ne menja PIN ni sebi preko ove funkcije (403)", o.status === 403 && stanje.promenePina.length === 0, o.status);
+    cisto();
+    for (const cilj of ["cilj-admin", "cilj-bib", "cilj-citalac"]) {
+      stanje.promenePina.length = 0;
+      o = await z(resetujPinHandler, { token: "tok-admin", telo: { clanId: CLANOVI[cilj].id } });
+      provera(`resetuj-pin: administrator sme (${cilj})`, o.status === 200 && stanje.promenePina.length === 1, o.status);
+    }
+    cisto();
+    o = await z(resetujPinHandler, { token: "tok-admin", telo: { clanId: randomUUID() } });
+    provera("resetuj-pin: nepoznat član daje 404", o.status === 404 && o.telo.greska.kod === "clan_ne_postoji" && stanje.promenePina.length === 0, o);
+    for (const losa of [undefined, "", "nije-uuid", 123, ["x"], "../../etc"]) {
+      cisto();
+      o = await z(resetujPinHandler, { token: "tok-admin", telo: { clanId: losa } });
+      provera(`resetuj-pin odbija (400) neispravan id: ${JSON.stringify(losa)}`, o.status === 400 && stanje.promenePina.length === 0 && stanje.pozivi.length === 0, o.status);
+    }
+    cisto();
+    stanje.promenaGreska = true;
+    o = await z(resetujPinHandler, { token: "tok-admin", telo: { clanId: CILJ.id } });
+    provera("resetuj-pin: kvar Auth-a → 500; PIN nije u odgovoru ni u logu", o.status === 500 && o.telo.greska.kod === "greska_servera" && !/[0-9]{6}/.test(o.sirovo.replace(/"ponovoZaSekundi":null/, "")) && !dnevnik.some((r) => /za [0-9]{6}/.test(r)) && dnevnik.length > 0, { sirovo: o.sirovo, dnevnik });
+
+    // ── izvorni kod ──
+    for (const p of ["api/napravi-clana.js", "api/resetuj-pin.js", "api/_lib/pin.js"]) {
+      const kod = citaj(p).replace(/\/\/.*$/gm, "");
+      provera(`${p}: nijedan console poziv ne ispisuje promenljivu pin (samo kroz bezPina/dnevnik)`, !/console\.\w+\([^;]*\bpin\b(?!\w)/.test(kod.replace(/dnevnik\([^)]*\)/g, "")), kod.match(/console\.\w+\([^;]*pin[^;]*/g));
+    }
+    provera("funkcije ne čitaju ulogu iz tela zahteva (samo iz baze, preko obradi i ulogaOsoblja)", !/telo\.uloga|req\.body\.uloga|body\.uloga/.test(citaj("api/napravi-clana.js") + citaj("api/resetuj-pin.js")));
+    provera("napravi-clana upisuje ulogu 'citalac' kao literal", /uloga:\s*"citalac"/.test(citaj("api/napravi-clana.js")));
+    provera("servisni ključ je samo na serveru: nijedan fajl u src/ ne čita SUPABASE_SERVICE_ROLE_KEY (komentari se ne računaju)", ["src/lib", "src/pages", "src/components"].every((d) => readdirSync(new URL(`../${d}/`, import.meta.url)).every((f) => !/SERVICE_ROLE_KEY|VITE_SERVICE/.test(citaj(`${d}/${f}`).replace(/\/\/.*$/gm, "")))));
+
+    // ── ekrani za bibliotekare (izvorni kod i čista logika) ──
+    {
+      const ol = await import("../src/lib/osoblje-logika.js");
+      const TK = (await import("../src/lib/tekst.js")).tekst;
+      const bezKom = (s) => s.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      const ekrani = ["src/pages/BibliotekarClanovi.jsx", "src/pages/BibliotekarRezervacije.jsx", "src/pages/BibliotekarPocetna.jsx", "src/components/PinPrikaz.jsx"];
+
+      provera("upit za pretragu članova: znaci filtera (zarez, zagrade, navodnici, %, *, \\) postaju razmaci", clanUnos.upitZaPretragu("Ana,(Petrović)%*\"x\"\\") === "Ana Petrović x" && clanUnos.upitZaPretragu("  0101228 ") === "0101228" && clanUnos.upitZaPretragu(null) === "" && clanUnos.upitZaPretragu("x".repeat(200)).length === 60);
+      provera("stanja rezervacije: nova, spremna, preuzeta, otkazana (isto kao ograničenje u bazi, 0018)", JSON.stringify(ol.STATUSI_REZERVACIJE) === JSON.stringify(["nova", "spremna", "preuzeta", "otkazana"]) && ol.STATUSI_REZERVACIJE.every((s) => new RegExp(`check \\(status in \\([^)]*'${s}'`).test(citaj("supabase/migrations/0018_rezervacije_statusi.sql").replace(/\s+/g, " "))));
+      provera("otvorena rezervacija je nova ili spremna; filter „Otvorene” ih pokazuje, „Sve” sve", ol.jeOtvorena("nova") && ol.jeOtvorena("spremna") && !ol.jeOtvorena("preuzeta") && !ol.jeOtvorena("otkazana") && ol.filtrirajRezervacije(ol.STATUSI_REZERVACIJE.map((status) => ({ status })), "otvorene").length === 2 && ol.filtrirajRezervacije(ol.STATUSI_REZERVACIJE.map((status) => ({ status })), "sve").length === 4);
+      provera("ko kim upravlja u prikazu: administrator svima; bibliotekar samo čitaocima; čitalac nikome", ol.mozeDaUpravlja("administrator", "administrator") && ol.mozeDaUpravlja("administrator", "citalac") && ol.mozeDaUpravlja("bibliotekar", "citalac") && !ol.mozeDaUpravlja("bibliotekar", "administrator") && !ol.mozeDaUpravlja("bibliotekar", "bibliotekar") && !ol.mozeDaUpravlja("citalac", "citalac") && !ol.mozeDaUpravlja(undefined, "citalac"));
+      provera("datum rezervacije: vreme iz baze postaje „D. M. GGGG.” (lokalno), neispravan ulaz se vraća", (await import("../src/lib/polica-logika.js")).formatDatum(ol.datumIzVremena(new Date(2026, 10, 9, 12, 0, 0).toISOString())) === "9. 11. 2026." && ol.datumIzVremena("nije datum") === "nije datum" && ol.datumIzVremena(null) === "");
+      provera("tekst.js: statusi rezervacije imaju natpis za svako stanje", ol.STATUSI_REZERVACIJE.every((s) => typeof TK.rezervacijeOsoblje.statusi[s] === "string") && ["citalac", "bibliotekar", "administrator"].every((u) => typeof TK.clanovi.uloge[u] === "string"));
+      provera("tekst.js: svaki kod greške koji funkcije vraćaju ima poruku za bibliotekara", ["nije_prijavljen", "nije_bibliotekar", "nema_dozvole", "kartica_postoji", "neispravna_kartica", "neispravno_ime", "clan_ne_postoji", "previse_zahteva", "ogranicenje_nedostupno", "mreza", "greska_servera"].every((k) => typeof TK.clanovi.greske[k] === "string" && TK.clanovi.greske[k].length > 5) && TK.clanovi.greske.previse_zahteva.includes("{minuta}"));
+
+      // rute i navigacija: samo bibliotekari
+      const aplikacija = citaj("src/App.jsx");
+      const unutarRute = /<RutaZaBibliotekare>|<Route element=\{<RutaZaBibliotekare \/>\}>([\s\S]*?)<\/Route>/.exec(aplikacija)?.[1] ?? "";
+      provera("rute /bibliotekar, /bibliotekar/clanovi i /bibliotekar/rezervacije su unutar RutaZaBibliotekare", ["/bibliotekar\"", "/bibliotekar/unos", "/bibliotekar/clanovi", "/bibliotekar/rezervacije"].every((p) => unutarRute.includes(`path="${p.replace(/"$/, "")}"`)), unutarRute);
+      const okvir = citaj("src/components/Okvir.jsx");
+      provera("navigacija: ulaz u alate za bibliotekare se dodaje samo kad je jeBibliotekar(clan?.uloga)", /jeBibliotekar\(clan\?\.uloga\) \? \[\.\.\.STAVKE, STAVKA_OSOBLJA\] : STAVKE/.test(okvir) && !/STAVKE = \[[\s\S]*?bibliotekar[\s\S]*?\];/.test(okvir.replace(/STAVKA_OSOBLJA[\s\S]*$/m, "")));
+
+      // PIN: samo u stanju ekrana
+      for (const p of ekrani) {
+        const kod = bezKom(citaj(p));
+        provera(`${p}: bez localStorage, sessionStorage, IndexedDB i kolačića (PIN ostaje samo u stanju ekrana)`, !/localStorage|sessionStorage|indexedDB|document\.cookie/.test(kod));
+        provera(`${p}: bez hex boja i tuđih paleta (samo boje iz teme)`, !/#[0-9a-fA-F]{3,8}\b/.test(kod) && !/\b(?:bg|text|border|ring|accent|fill|stroke|from|to|via|outline|divide)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone|black)(?:-\d{2,3})?\b/.test(kod) && !/\[#/.test(kod));
+        provera(`${p}: ne piše natpise u JSX-u (nema dugih srpskih rečenica ni ćirilice izvan tekst.js)`, !/>\s*[A-ZČĆŠŽĐ][a-zčćšžđ]+(?:\s+[a-zčćšžđ]+){2,}[.!?]?\s*</.test(kod) && !/[Ѐ-ӿ]/.test(kod));
+        provera(`${p}: svako dugme ima min-h-11 ili zajednički stil iz stil.js (najmanje 44 px)`, kod.split("<button").slice(1).every((deo) => /className=\{(?:`\$\{)?(?:stil\.|c\.aktivan \? stil)/.test(deo.split("</button>")[0]) || /min-h-1[1-9]/.test(deo.split("</button>")[0])));
+      }
+      const clanoviKod = bezKom(citaj("src/pages/BibliotekarClanovi.jsx"));
+      provera("broj karte u formi je tekst: bez type=\"number\", Number(), parseInt() i valueAsNumber", !/type="number"|\bNumber\(|parseInt|valueAsNumber/.test(clanoviKod + bezKom(citaj("src/lib/clanovi.js")) + bezKom(citaj("src/lib/clan-unos.js"))));
+      provera("PIN se ne ispisuje u konzolu ni u klijentskom kodu", !/console\.\w+\([^;]*\bpin\b(?!\w)/.test(bezKom(citaj("src/pages/BibliotekarClanovi.jsx") + citaj("src/lib/clanovi.js") + citaj("src/components/PinPrikaz.jsx"))));
+      provera("klijent ne zove Auth admin API i ne piše u clanovi nalog (pravi ih samo server): nema createUser/updateUserById i insert u clanovi", !/createUser|updateUserById|auth\.admin/.test(bezKom(citaj("src/lib/clanovi.js"))) && !/from\("clanovi"\)\s*\.insert/.test(bezKom(citaj("src/lib/clanovi.js"))));
+      provera("klijent pravi člana i menja PIN samo preko /api/napravi-clana i /api/resetuj-pin", citaj("src/lib/clanovi.js").includes('"/api/napravi-clana"') && citaj("src/lib/clanovi.js").includes('"/api/resetuj-pin"'));
+      provera("kartica za štampu: portal u <body>, na ekranu skrivena, pri štampi sakriva sve ostalo (@media print)", /createPortal\([\s\S]*document\.body/.test(citaj("src/components/PinPrikaz.jsx")) && /\.stampa-kartica\s*\{\s*display:\s*none/.test(citaj("src/index.css")) && /@media print[\s\S]*body > \*:not\(\.stampa-kartica\)[\s\S]*display:\s*none !important/.test(citaj("src/index.css")));
+      provera("kartica za štampu sadrži ustanovu, grb 1846, ime, broj karte, PIN i uputstvo za prijavu", ["aplikacija.ustanova", "aplikacija.godina", "clan.ime", "clan.broj_kartice", "{pin}", "kartica.uputstvo"].every((s) => citaj("src/components/PinPrikaz.jsx").includes(s)));
+      provera("rezervacije (interfejs) ne diraju politike: samo select i update kroz običan klijent", !/service_role|\.rpc\(/.test(bezKom(citaj("src/lib/clanovi.js"))) && /from\("rezervacije"\)[\s\S]*?\.update\(\{ status \}\)/.test(citaj("src/lib/clanovi.js")));
+      provera("član vidi i spremnu rezervaciju, a otkazuje samo novu (0018)", citaj("src/lib/polica.js").includes('.in("status", ["nova", "spremna"])') && /rezervacija\.status === "nova" && \(/.test(citaj("src/components/StanjePolice.jsx")) && typeof TK.knjigaEkran.rezervacija.spremna === "string");
+    }
+
+    // ── ćirilica (tekst aplikacije, pismo, ime, API poruke) ──
+    {
+      const TK = (await import("../src/lib/tekst.js")).tekst;
+      const pismo = await import("../src/lib/pismo.js");
+      const vrednosti = [];
+      (function hod(o, put) {
+        for (const [k, v] of Object.entries(o)) {
+          if (typeof v === "string") vrednosti.push([`${put}.${k}`, k, v]);
+          else hod(v, `${put}.${k}`);
+        }
+      })(TK, "");
+      const kljucevi = [];
+      (function hodKljuceve(o) {
+        for (const [k, v] of Object.entries(o)) {
+          kljucevi.push(k);
+          if (v && typeof v === "object") hodKljuceve(v);
+        }
+      })(TK);
+      // Latinica je dozvoljena samo u zaštićenim izrazima: {placeholderi}, https://, Google Books, COBISS, ISBN, jpeg, png, webp, MB
+      const bezZasticenog = (s) => s.replace(/\{[^}]*\}|https|Google Books|COBISS|ISBN|jpeg|png|webp|MB/g, "");
+      const latinicni = vrednosti.filter(([put, , v]) => put !== ".aplikacija.jezik" && /[A-Za-zČĆŠŽĐčćšžđ]/.test(bezZasticenog(v)));
+      provera("tekst.js: svaka vrednost je na ćirilici (latinica samo u zaštićenim izrazima)", latinicni.length === 0, latinicni.slice(0, 5));
+      provera("tekst.js: ključevi su ostali latinični (nijedan ključ nema ćirilicu)", kljucevi.every((k) => !/[Ѐ-ӿ]/.test(k)) && kljucevi.length > 300);
+      provera("tekst.js: ime aplikacije, ustanova i grb (1846 ostaje); jezik je sr-Cyrl-RS", TK.aplikacija.naziv === "Читалиште" && TK.aplikacija.ustanova.includes("Доситеј Новаковић") && TK.aplikacija.godina === "1846" && TK.aplikacija.jezik === "sr-Cyrl-RS");
+      provera("tekst.js: ekavica i slova srpske ćirilice (љ њ џ ђ ћ) rade u natpisima", TK.pocetna.kartice.zelim === "Желим" && TK.knjigaEkran.polica.stanja.procitano === "Прочитано" && /Књига/.test(TK.rezervacijeOsoblje.statusi.nova + TK.rezervacijeOsoblje.nepoznataKnjiga) && vrednosti.some(([, , v]) => /џ/.test(v) === false) && vrednosti.some(([, , v]) => /ђ|ћ/.test(v)) && vrednosti.some(([, , v]) => /љ/.test(v)) && vrednosti.some(([, , v]) => /њ/.test(v)));
+      provera("tekst.js: {placeholderi} su neprevedeni (kod ih zamenjuje po imenu)", ["{n}", "{ime}", "{karta}", "{naziv}", "{minuta}", "{primeraka}", "{datum}", "{ocena}", "{opis}", "{naslov}", "{autor}", "{stanje}"].every((h) => vrednosti.some(([, , v]) => v.includes(h))) && vrednosti.every(([, , v]) => [...v.matchAll(/\{([^}]*)\}/g)].every((m) => /^[a-z_]+$/.test(m[1]))));
+      provera("tekst.js: PIN je „ПИН”, a ostali nazivi (Google Books, COBISS, ISBN, https://) ostaju kakvi su", vrednosti.some(([, , v]) => v.includes("ПИН")) && !vrednosti.some(([, , v]) => /\bPIN\b/.test(v)) && TK.pretraga.google.naslov.includes("Google Books") && TK.rezervacijeOsoblje.uvod.includes("COBISS-у") && TK.pretraga.link.polje.includes("https://"));
+      provera("tekst.js: oblici reči „примерак” (1, 2 do 4, ostalo) su u tekst.js, ne u kodu", TK.opste.primerak.jedan === "примерак" && TK.opste.primerak.paukal === "примерка" && TK.opste.primerak.mnogo === "примерака" && !/"primerak"|"primerka"|"primeraka"/.test(citaj("src/lib/unos-knjiga.js")));
+
+      // nijedan korisnički tekst van tekst.js: JSX i src/lib bez latiničnih rečenica i bez ćirilice (ćirilica je samo u tekst.js i pismo.js)
+      const izvanTeksta = [];
+      for (const d of ["src/pages", "src/components", "src/lib"]) {
+        for (const f of readdirSync(new URL(`../${d}/`, import.meta.url))) {
+          if (!/\.(jsx?|mjs)$/.test(f) || `${d}/${f}` === "src/lib/tekst.js" || `${d}/${f}` === "src/lib/pismo.js") continue;
+          const kod = citaj(`${d}/${f}`).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\/.*$/gm, "");
+          if (/[Ѐ-ӿ]/.test(kod)) izvanTeksta.push(`${d}/${f}: ćirilica`);
+          if (/"[A-ZČĆŠŽĐ][a-zčćšžđ]+(?: [a-zčćšžđ,]+){2,}[.!?:…]?"/.test(kod.replace(/className=\{?"[^"]*"/g, ""))) izvanTeksta.push(`${d}/${f}: latinična rečenica`);
+        }
+      }
+      provera("nema korisničkog teksta van tekst.js (ni ćirilice ni latiničnih rečenica u src/pages, src/components, src/lib)", izvanTeksta.length === 0, izvanTeksta);
+
+      // pismo: pretraga članova u oba pisma
+      provera("pismo.js: latinica → ćirilica (digrafi lj, nj, dž; velika slova)", pismo.uCirilicu("Ana Petrović") === "Ана Петровић" && pismo.uCirilicu("Ljubica Njegovan") === "Љубица Његован" && pismo.uCirilicu("Džon džep") === "Џон џеп" && pismo.uCirilicu("Đorđe Šaponja") === "Ђорђе Шапоња" && pismo.uCirilicu("0101228") === "0101228");
+      provera("pismo.js: ćirilica → latinica (љ, њ, џ, ђ, ћ, ј)", pismo.uLatinicu("Ана Петровић") === "Ana Petrović" && pismo.uLatinicu("Љубица Његован") === "Ljubica Njegovan" && pismo.uLatinicu("џеп Ђорђе") === "džep Đorđe" && pismo.uLatinicu("Јован Ћирић") === "Jovan Ćirić");
+      provera("pismo.js: oblikeUpita daje upit kako je upisan, ćirilicom i latinicom, bez ponavljanja", JSON.stringify(pismo.oblikeUpita("ana")) === JSON.stringify(["ana", "ана"]) && JSON.stringify(pismo.oblikeUpita("Ана")) === JSON.stringify(["Ана", "Ana"]) && JSON.stringify(pismo.oblikeUpita("0101")) === JSON.stringify(["0101"]) && pismo.oblikeUpita("").length === 0);
+      provera("pretraga članova koristi oba pisma za ime, a broj karte kako je upisan", /oblikeUpita\(cist\)\.map\(\(o\) => `ime\.ilike/.test(citaj("src/lib/clanovi.js")) && citaj("src/lib/clanovi.js").includes("broj_kartice.ilike.%${cist}%"));
+      provera("klijent nigde ne poredi tekst bez normalizacije: pretraga knjiga i duplikati idu kroz trazi_knjige (privatno.norm_tekst u bazi)", /rpc\("trazi_knjige"/.test(citaj("src/lib/knjige.js")) && !/\.(toLowerCase|toUpperCase)\(\)\s*(===|\.includes)/.test(citaj("src/lib/knjige.js") + citaj("src/lib/unos-knjiga.js") + citaj("src/pages/Pretraga.jsx") + citaj("src/components/RezultatKnjige.jsx")));
+
+      // ime i nadimak u ćirilici
+      provera("ime: ćirilica prolazi proveru (dve reči, slova), a nadimak je „Ана П.”", clanUnos.ocistiIme("  Ана   Петровић ") === "Ана Петровић" && clanUnos.podrazumevaniNadimak("Ана Петровић") === "Ана П." && clanUnos.podrazumevaniNadimak("Јована Ђорђевић") === "Јована Ђ." && clanUnos.podrazumevaniNadimak("Марија Љубичић") === "Марија Љ." && clanUnos.podrazumevaniNadimak("Ана Марија Петровић") === "Ана П." && clanUnos.podrazumevaniNadimak("ана петровић") === "ана П." && clanUnos.ocistiIme("Ана Петровић 2") === null);
+      cisto();
+      let oc = await z(napraviClanaHandler, { token: "tok-bib", telo: { kartica: "0101228", ime: "Ана Петровић" } });
+      provera("napravi-clana: ime upisano ćirilicom se čuva kako je upisano, nadimak je „Ана П.”, karta i PIN su cifre", oc.status === 200 && stanje.upisaniClanovi[0]?.ime === "Ана Петровић" && stanje.upisaniClanovi[0]?.nadimak === "Ана П." && stanje.upisaniClanovi[0]?.broj_kartice === "0101228" && /^[0-9]{6}$/.test(oc.telo.rezultati[0].pin), stanje.upisaniClanovi[0]);
+      cisto();
+      oc = await z(napraviClanaHandler, { token: "tok-bib", telo: { kartica: "0101228", ime: "Ana Petrović" } });
+      provera("napravi-clana: ime upisano latinicom i dalje radi („Ana P.”)", oc.status === 200 && stanje.upisaniClanovi[0]?.nadimak === "Ana P.", stanje.upisaniClanovi[0]);
+      cisto();
+
+      // poruke grešaka iz api/ funkcija: ćirilica (latinica samo u zaštićenim izrazima), kodovi nepromenjeni
+      const porukeApi = [];
+      const hodApi = (d) => {
+        for (const f of readdirSync(new URL(`../${d}/`, import.meta.url), { withFileTypes: true })) {
+          if (f.isDirectory()) hodApi(`${d}/${f.name}`);
+          else if (f.name.endsWith(".js")) {
+            const kod = citaj(`${d}/${f.name}`);
+            for (const m of kod.matchAll(/new ApiGreska\([^"\n]*?(?:"[a-z_]+"|[^,\n]*?"[a-z_]+" : "[a-z_]+"),\s*"([^"]*)"\)/g)) porukeApi.push([`${d}/${f.name}`, m[1]]);
+          }
+        }
+      };
+      hodApi("api");
+      const latinicneApi = porukeApi.filter(([, m]) => /[A-Za-zČĆŠŽĐčćšžđ]/.test(m.replace(/https|Google Books|Google|GOOGLE_BOOKS_API_KEY|API|JSON|Supabase|ISBN|jpeg|png|webp/g, "")));
+      provera("poruke grešaka u api/ funkcijama su na ćirilici (kodovi greške ostaju latinični)", porukeApi.length > 40 && latinicneApi.length === 0, latinicneApi.slice(0, 5));
+      oc = await z(napraviClanaHandler, { token: "tok-a", telo: TELO });
+      provera("odgovor funkcije sa greškom nosi poruku na ćirilici, a kod nepromenjen (nije_bibliotekar)", oc.status === 403 && oc.telo.greska.kod === "nije_bibliotekar" && /Само библиотекар/.test(oc.telo.greska.poruka), oc.telo);
+      cisto();
+      oc = await z(napraviClanaHandler, { token: "tok-bib", telo: { kartica: "12", ime: "Ана Петровић" } });
+      provera("neispravan broj karte: kod neispravna_kartica, poruka na ćirilici; korisnik vidi tekst iz tekst.js (ćirilica)", oc.status === 400 && oc.telo.greska.kod === "neispravna_kartica" && /[Ѐ-ӿ]/.test(oc.telo.greska.poruka) && /[Ѐ-ӿ]/.test(TK.clanovi.greske.neispravna_kartica), oc.telo);
+      cisto();
+
+      // tehnički detalji
+      const html = citaj("index.html").replace(/<!--[\s\S]*?-->/g, "");
+      provera("index.html: lang=\"sr\", Onest za naslove i Inter za tekst (bez Bricolage Grotesque, koji nema ćirilicu)", /<html lang="sr">/.test(html) && /family=Onest:wght@[0-9;]*500[0-9;]*700[0-9;]*800/.test(html) && /family=Inter:wght@/.test(html) && !/Bricolage/.test(html));
+      provera("index.css: font naslova je Onest, font teksta Inter", /--font-naslov:\s*"Onest"/.test(citaj("src/index.css")) && /--font-sans:\s*"Inter"/.test(citaj("src/index.css")) && !/Bricolage/.test(citaj("src/index.css").replace(/\/\*[\s\S]*?\*\//g, "")));
+      const vite = citaj("vite.config.js");
+      provera("vite.config.js: ime, kratko ime i opis PWA, kao i naslov stranice, dolaze iz tekst.js (ćirilica), jezik manifesta iz tekst.js", /name:\s*tekst\.aplikacija\.naziv/.test(vite) && /short_name:\s*tekst\.aplikacija\.naziv/.test(vite) && /description:\s*tekst\.aplikacija\.opis/.test(vite) && /lang:\s*tekst\.aplikacija\.jezik/.test(vite) && /replaceAll\("%NAZIV%", tekst\.aplikacija\.naziv\)/.test(vite) && /[Ѐ-ӿ]/.test(TK.aplikacija.naziv + TK.aplikacija.opis) && !/[Ѐ-ӿ]/.test(vite));
+      provera("kartica za štampu: ustanova, naslov kartice i uputstvo su iz tekst.js na ćirilici, grb 1846 ostaje", /[Ѐ-ӿ]/.test(TK.aplikacija.ustanova + TK.clanovi.kartica.naslov + TK.clanovi.kartica.uputstvo) && TK.clanovi.kartica.uputstvo.includes("{naziv}") && citaj("src/components/PinPrikaz.jsx").includes("aplikacija.godina"));
+    }
+  } finally {
+    Object.assign(console, izvornik);
+    cisto();
+  }
 }
 
 faza("11. Tajne");

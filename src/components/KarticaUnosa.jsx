@@ -57,7 +57,7 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
                   onClick={() => onDodajPrimerke(k)}
                   className={`${stil.pilulaPuna} flex-none disabled:opacity-50`}
                 >
-                  {T.duplikat.dodajPrimerke.replace("{primeraka}", primerci ? primeraka(primerci) : "primerke")}
+                  {T.duplikat.dodajPrimerke.replace("{primeraka}", primerci ? primeraka(primerci) : T.duplikat.primerkeBezBroja)}
                 </button>
               )}
             </div>

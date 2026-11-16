@@ -5,6 +5,7 @@
 // kratkom pauzom; nikad paralelni zahtevi; samo adrese koje je korisnik nalepio, jedna
 // stranica po adresi (nikakvo „pretraživanje" kataloga izdavača).
 import { redZaUpis, urediPotvrdu } from "./red-knjige.js";
+import { tekst } from "./tekst.js";
 
 export const NAJVISE_LINKOVA = 20;
 export const PAUZA_MS = 1200;
@@ -153,15 +154,15 @@ export const pocetnaForma = (rezultat) => ({
   signatura: "",
 });
 
-// „1 primerak", „2 primerka", „5 primeraka", „11 primeraka", „21 primerak", „22 primerka".
+// „1 примерак", „2 примерка", „5 примерака", „11 примерака", „21 примерак", „22 примерка" (облици су у tekst.js).
 export function primeraka(n) {
   const poslednja = n % 10;
   const poslednje2 = n % 100;
   const rec =
     poslednja === 1 && poslednje2 !== 11
-      ? "primerak"
+      ? tekst.opste.primerak.jedan
       : poslednja >= 2 && poslednja <= 4 && !(poslednje2 >= 12 && poslednje2 <= 14)
-        ? "primerka"
-        : "primeraka";
+        ? tekst.opste.primerak.paukal
+        : tekst.opste.primerak.mnogo;
   return `${n} ${rec}`;
 }
