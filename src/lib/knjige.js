@@ -24,6 +24,15 @@ export const pretraziGoogle = (upit) => pozoviApi("/api/pretraga-google", { q: u
 // 3. Link sa sajta izdavača (preko api/iz-linka.js).
 export const izLinka = (url) => pozoviApi("/api/iz-linka", { url });
 
+// 3b. Stranica SA SPISKOM knjiga jednog izdavača (preko api/iz-liste.js, samo bibliotekar): jedan zahtev,
+// najviše 50 linkova ka knjigama. Vraća { stranica, linkovi: [{ url, naslov }], ukupno, skraceno,
+// izbacenoRobots, pauzaSekundi, sledeca } ili baca GreskaApija (kod prevodi porukaGreske).
+export async function izListe(url) {
+  const rezultati = await pozoviApi("/api/iz-liste", { url });
+  if (!rezultati[0]) throw new GreskaApija("greska_servera");
+  return rezultati[0];
+}
+
 // Preuzimanje slike korice sa predloga iz izLinka u naš Storage (samo bibliotekar). Server
 // čuva sliku, upisuje korice_url, korice_izvor='preuzeto' i korice_poreklo. Vraća
 // { korica_url, korica_poreklo }; baca GreskaApija (kod prevodi porukaGreske).

@@ -2172,15 +2172,302 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
       // migracija 0019
       const m19 = citaj("supabase/migrations/0019_citaoci_nadimci_preporuke.sql");
       const m19kod = m19.replace(/^--.*$/gm, "");
-      provera("0019 je sledeća migracija posle 0018 i ne dira starije", readdirSync(new URL("../supabase/migrations/", import.meta.url)).filter((f) => /^\d{4}_/.test(f)).sort().slice(-2).join() === "0018_rezervacije_statusi.sql,0019_citaoci_nadimci_preporuke.sql");
+      provera("0019 dolazi odmah posle 0018 (migracije idu redom, bez rupa)", (() => { const f = readdirSync(new URL("../supabase/migrations/", import.meta.url)).filter((x) => /^\d{4}_/.test(x)).sort(); return f.indexOf("0019_citaoci_nadimci_preporuke.sql") === f.indexOf("0018_rezervacije_statusi.sql") + 1 && f.every((x, i) => Number(x.slice(0, 4)) === i + 1); })());
       provera("0019 ne dodaje, ne briše ni ne menja nijednu politiku (RLS) i ne pravi tabele; pogledi su security_invoker", !/\b(create|drop|alter)\s+policy\b/i.test(m19kod) && !/create\s+table/i.test(m19kod) && (m19kod.match(/security_invoker = true/g) ?? []).length === 2);
       provera("0019: funkcija u šemi privatno sa search_path, prava eksplicitna (revoke od anon, grant authenticated), notify pgrst", /create or replace function privatno\.ima_blokade[\s\S]*?set search_path = pg_catalog, public/.test(m19kod) && /revoke all on public\.moje_veze from public, anon, authenticated/.test(m19kod) && /grant select on public\.moje_preporuke to authenticated/.test(m19kod) && /notify pgrst, 'reload schema'/.test(m19kod));
       provera("0019: pogled moje_veze izbacuje blokirane i ograničava na svoje; moje_preporuke samo primljene, ne skrivene, ne od blokiranih", /not privatno\.ima_blokade\(v\.pozivalac_id, v\.pozvani_id\)/.test(m19kod) && /v\.pozivalac_id = auth\.uid\(\) or v\.pozvani_id = auth\.uid\(\)/.test(m19kod) && /p\.primalac_id = auth\.uid\(\)/.test(m19kod) && /not p\.skrivena/.test(m19kod) && /not privatno\.ima_blokade\(p\.posiljalac_id, p\.primalac_id\)/.test(m19kod));
+    }
+
+    // ── izveštaj za nabavku (čista logika, izvorni kod, migracija 0020) ──
+    {
+      const N = await import("../src/lib/nabavka-logika.js");
+      const TK = (await import("../src/lib/tekst.js")).tekst;
+      const bezKom = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      const redovi = [
+        { id: "1", naslov: "Prokleta avlija", autor: "Ivo Andrić", izdavac: "Laguna", isbn: "9788652126033", zele: 5, citaju_ili_procitali: 2, odluka: null },
+        { id: "2", naslov: "Derviš i smrt", autor: "Meša Selimović", izdavac: "Vulkan", isbn: "", zele: 3, citaju_ili_procitali: 0, odluka: "nabavljamo" },
+        { id: "3", naslov: "Ђорђе и змај", autor: "Н. Н.", izdavac: null, isbn: "=HYPERLINK(1)", zele: 1, citaju_ili_procitali: 4, odluka: "imamo" },
+        { id: "4", naslov: "Hazarski rečnik", autor: "Milorad Pavić", izdavac: "Dereta", isbn: null, zele: 3, citaju_ili_procitali: 1, odluka: "ne_nabavljamo" },
+      ];
+      provera("izveštaj: filteri Нове (bez odluke), Набављамо, Имамо i Све; „ne nabavljamo” se vidi samo u „Све”", N.filtrirajNabavku(redovi, "nove").map((r) => r.id).join() === "1" && N.filtrirajNabavku(redovi, "nabavljamo").map((r) => r.id).join() === "2" && N.filtrirajNabavku(redovi, "imamo").map((r) => r.id).join() === "3" && N.filtrirajNabavku(redovi, "sve").length === 4 && JSON.stringify(N.FILTERI) === JSON.stringify(["nove", "nabavljamo", "imamo", "sve"]));
+      provera("izveštaj: pretraga po naslovu ili autoru ne zavisi od pisma ni kvačica (djordje, Ђорђе, Đorđe; derviš/dervis; milorad)", N.filtrirajNabavku(redovi, "sve", "djordje").map((r) => r.id).join() === "3" && N.filtrirajNabavku(redovi, "sve", "Ђорђе").length === 1 && N.filtrirajNabavku(redovi, "sve", "Đorđe").length === 1 && N.filtrirajNabavku(redovi, "sve", "dervis").map((r) => r.id).join() === "2" && N.filtrirajNabavku(redovi, "sve", "Дервиш").length === 1 && N.filtrirajNabavku(redovi, "sve", "PAVIC").map((r) => r.id).join() === "4" && N.filtrirajNabavku(redovi, "sve", "ništa takvo").length === 0 && N.filtrirajNabavku(redovi, "nove", "pavic").length === 0);
+      provera("izveštaj: brojevi uz dugmad filtera", JSON.stringify(N.brojeviPoFilteru(redovi)) === JSON.stringify({ nove: 1, nabavljamo: 1, imamo: 1, sve: 4 }));
+      provera("izveštaj: podrazumevani redosled je po broju onih koji žele, opadajuće (ista brojka po naslovu)", N.poredjajNabavku(redovi).map((r) => r.id).join() === "1,2,4,3");
+      provera("odluka: dozvoljene su imamo, nabavljamo, ne_nabavljamo (isto kao ograničenje u bazi); posle izmene red dobija efektivnu odluku", N.ODLUKE.join() === "imamo,nabavljamo,ne_nabavljamo" && N.ODLUKE.every((o) => citaj("supabase/migrations/0020_nabavka_i_zastita_administratora.sql").includes(`'${o}'`)) && !N.jeOdluka("mozda") && (() => { const a = N.saNovomOdlukom(redovi[0], { odluka_nabavke: "nabavljamo", odluka_datum: "2026-11-17T10:00:00Z", u_fondu: false }); const b = N.saNovomOdlukom(redovi[0], { odluka_nabavke: null, odluka_datum: null, u_fondu: true }); return a.odluka === "nabavljamo" && a.odluka_postavljena === true && b.odluka === "imamo" && b.odluka_postavljena === false; })());
+
+      // CSV
+      const csv = N.izvestajUCsv(redovi, TK.nabavka.csv, TK.nabavka.odluke);
+      const linije = csv.split("\r\n");
+      provera("CSV: počinje UTF-8 BOM-om, pa sep=;, pa zaglavlje na ćirilici (naslov, autor, izdavač, ISBN, broj čitalaca, odluka)", csv.charCodeAt(0) === 0xfeff && linije[0].slice(1) === "sep=;" && linije[1] === ["Наслов", "Аутор", "Издавач", "ISBN", "Број читалаца који желе", "Одлука"].map((x) => `"${x}"`).join(";") && linije.length === 7 && linije[6] === "", linije.slice(0, 3));
+      provera("CSV: ćirilica, navodnici i novi redovi u poljima ne kvare tabelu; broj čitalaca i odluka su u redu", linije[3] === '"Derviš i smrt";"Meša Selimović";"Vulkan";"";"3";"Набављамо"' && linije[2] === '"Prokleta avlija";"Ivo Andrić";"Laguna";"=""9788652126033""";"5";""' && linije[4].startsWith('"Ђорђе и змај"') && N.csvPolje('Ona rekla "da"\nsutra') === '"Ona rekla ""da"" sutra"');
+      provera("CSV: tekst koji liči na formulu (=, +, -, @) dobija apostrof; ISBN se piše tako da ga Excel ne pretvori u broj", N.csvPolje("=HYPERLINK(1)") === `"'=HYPERLINK(1)"` && N.csvPolje("+1") === `"'+1"` && N.csvPolje("@x") === `"'@x"` && N.csvPolje("9788652126033", { isbn: true }) === '"=""9788652126033"""' && N.csvPolje("=HYPERLINK(1)", { isbn: true }) === `"'=HYPERLINK(1)"` && N.csvPolje(null) === '""' && linije[4].includes(`"'=HYPERLINK(1)"`));
+      provera("CSV: sadrži samo naslov, autora, izdavača, ISBN, broj i odluku (nijedno polje o članu)", linije[1].split(";").length === 6 && !/clan|ime|kartic|sifra/i.test(JSON.stringify(Object.keys(redovi[0]))) && N.imeFajlaNabavke(new Date(2026, 10, 9)) === "nabavka-2026-11-09.csv");
+
+      // privatnost i granice
+      provera("klijent čita izveštaj samo iz pogleda izvestaj_za_nabavku; ne čita polica ni clanovi", (() => { const kod = bezKom(citaj("src/lib/nabavka.js")); return kod.includes('from("izvestaj_za_nabavku")') && !/from\("(polica|clanovi|utisci|veze|blokade)"\)/.test(kod) && /from\("knjige"\)\.update\(\{ odluka_nabavke: odluka \}\)/.test(kod); })());
+      for (const p of ["src/lib/nabavka.js", "src/lib/nabavka-logika.js", "src/pages/BibliotekarNabavka.jsx"]) {
+        const kod = bezKom(citaj(p));
+        provera(`${p}: nikakvo polje o članu (clan_id, ime, broj_kartice, sifra_poziva, nadimak, vreme na polici)`, !/\b(clan_id|clan\b|ime\b|broj_kartice|sifra_poziva|nadimak|izmenjeno|prvi_put|poslednji_put)\b/.test(kod.replace(/imeFajlaNabavke/g, "")), kod.match(/\b(clan_id|broj_kartice|sifra_poziva|nadimak)\b/g));
+      }
+      provera("ekran Набавка: tekst iz tekst.js, svako dugme sa stilom ili min-h-11, bez hex boja i localStorage", (() => { const kod = bezKom(citaj("src/pages/BibliotekarNabavka.jsx")); return kod.split("<button").slice(1).every((d) => /className=\{(?:stil\.|`\$\{stil\.)/.test(d.split("</button>")[0]) || /min-h-1[1-9]/.test(d.split("</button>")[0])) && !/#[0-9a-fA-F]{3,8}\b/.test(kod) && !/localStorage|sessionStorage/.test(kod) && !/>\s*[A-ZČĆŠŽĐ][a-zčćšžđ]+(?:\s+[a-zčćšžđ]+){2,}[.!?]?\s*</.test(kod) && !/[Ѐ-ӿ]/.test(kod); })());
+      provera("ruta /bibliotekar/nabavka je unutar RutaZaBibliotekare, a na stranici /bibliotekar je treći alat pored Unos knjiga i Članovi", (() => { const a = citaj("src/App.jsx"); return a.indexOf('path="/bibliotekar/nabavka"') > -1 && a.indexOf('path="/bibliotekar/nabavka"') > a.indexOf("<RutaZaBibliotekare />"); })() && /kljuc: "nabavka"/.test(citaj("src/pages/BibliotekarPocetna.jsx")) && ["unos", "clanovi", "nabavka"].every((k) => typeof TK.osoblje[k].naslov === "string"));
+      const nedostajeNabavka = [];
+      for (const m of bezKom(citaj("src/pages/BibliotekarNabavka.jsx")).matchAll(/\bT\.([A-Za-z]+(?:\.[A-Za-z]+)*)/g)) {
+        const kljuc = m[1].replace(/\.(replace|length)$/, "");
+        const v = `nabavka.${kljuc}`.split(".").reduce((o, k) => o?.[k], TK);
+        if (typeof v !== "string" && !(typeof v === "object" && v !== null)) nedostajeNabavka.push(kljuc);
+      }
+      provera("svi natpisi ekrana Набавка postoje u tekst.js", nedostajeNabavka.length === 0 && ["nove", "nabavljamo", "imamo", "sve"].every((f) => typeof TK.nabavka.filteri[f] === "string") && ["imamo", "nabavljamo", "ne_nabavljamo"].every((o) => typeof TK.nabavka.odluke[o] === "string") && TK.nabavka.filteri.nove === "Нове" && TK.nabavka.odluke.imamo === "Имамо" && TK.nabavka.odluke.nabavljamo === "Набављамо" && TK.nabavka.odluke.ne_nabavljamo === "Не набављамо" && TK.nabavka.preuzmi === "Преузми као табелу", nedostajeNabavka);
+
+      // migracija 0020
+      const m20 = citaj("supabase/migrations/0020_nabavka_i_zastita_administratora.sql");
+      const k20 = m20.replace(/^--.*$/gm, "");
+      provera("0020 ne dodaje, ne briše ni ne menja nijednu politiku i ne pravi tabele (sve zaštite idu kroz okidače); pogled je security_invoker", !/\b(create|drop|alter)\s+policy\b/i.test(k20) && !/create\s+table/i.test(k20) && (k20.match(/security_invoker = true/g) ?? []).length === 1);
+      provera("0020: funkcija izveštaja je SECURITY DEFINER sa search_path, proverava je_bibliotekar() i ne vraća ni jedno polje o članu; prava eksplicitna; notify pgrst", /function privatno\.izvestaj_nabavke\(\)[\s\S]*?security definer\s+set search_path = pg_catalog, public/.test(k20) && /where privatno\.je_bibliotekar\(\)/.test(k20) && !/\b(clan_id|nadimak|broj_kartice|sifra_poziva|izmenjeno)\b/.test(k20.slice(k20.indexOf("function privatno.izvestaj_nabavke"), k20.indexOf("create or replace view public.izvestaj_za_nabavku")).replace(/join public\.clanovi c on c\.id = p\.clan_id and c\.aktivan/, "")) && /revoke all on public\.izvestaj_za_nabavku from public, anon, authenticated/.test(k20) && /notify pgrst, 'reload schema'/.test(k20));
+      provera("0020 deo B: bibliotekar ne menja administratora (42501), ne dodeljuje ulogu pri upisu; administrator i servisna uloga su izuzeti", /old\.uloga = 'administrator'[\s\S]*?errcode = '42501'/.test(k20) && /if privatno\.servisna_uloga\(\) then\s+return new;/.test(k20) && /if privatno\.je_administrator\(\) then\s+return new;/.test(k20) && /clanovi_insert_zastita_bi/.test(k20) && /new\.uloga is distinct from 'citalac'/.test(k20));
+      provera("ekran Članovi više ne krije dugme kao jedinu zaštitu: README ne tvrdi da je zaštita administratora samo u interfejsu", !/nije zaštita u bazi/.test(citaj("README.md")) && !/zaštita je samo u interfejsu/i.test(citaj("README.md")));
     }
   } finally {
     Object.assign(console, izvornik);
     cisto();
   }
+}
+
+faza("16. Uvoz sa stranice izdavača (api/iz-liste.js): samo bibliotekar, SSRF, robots.txt, najviše 50 linkova");
+{
+  const listaHandler = (await import("../api/iz-liste.js")).default;
+  const R = await import("../api/_lib/robots.js");
+  const SP = await import("../api/_lib/spisak-knjiga.js");
+  const { granicaSpiska, KANTA_BIBLIOTEKAR, NAJVISE_ZAHTEVA_BIBLIOTEKAR } = await import("../api/_lib/zajednicko.js");
+  const citajIzvor = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  const BIBL = CLANOVI["tok-bib"];
+
+  // ───── uzorci stranica (po obrascima sajtova sa bele liste; izmišljeni, ne pravi) ─────
+  const LAGUNA = `<!doctype html><html><head><title>Novo</title><link rel="next" href="/novo?strana=2"></head><body>
+    <nav><a href="/">Početna</a> <a href="/korpa">Korpa</a> <a href="/prijava">Prijava</a> <a href="/kategorija/romani">Romani</a> <a href="/uslovi-koriscenja">Uslovi</a> <a href="/blog/vesti">Blog</a> <a href="/autor/ivo-andric">Ivo Andrić</a></nav>
+    <ul>
+      <li><a href="/n6061_prokleta-avlija.html"><img src="a.jpg" alt="Korica"></a><a href="/n6061_prokleta-avlija.html?utm_source=mejl&fbclid=x#opis">Prokleta avlija</a><a href="/n6061_prokleta-avlija.html">Detaljnije</a></li>
+      <li><a href="https://www.laguna.rs/n6062_na-drini-cuprija.html">Na Drini ćuprija</a></li>
+      <li><a href="/n6063_derviš-i-smrt.html"><img alt="Derviš i smrt"></a></li>
+      <li><a href="/n6064_hazarski-recnik.html" title="Hazarski rečnik"></a></li>
+      <li><a href="/n6065_seobe.html">Pročitaj više</a></li>
+      <li><a href="https://shop.laguna.rs/n7000_tudj-poddomen.html">Drugi poddomen</a></li>
+      <li><a href="https://evil.com/n9999_tudje.html">Tuđi sajt</a></li>
+      <li><a href="http://www.laguna.rs/n6066_bez-https.html">Bez https</a></li>
+      <li><a href="mailto:a@b.rs">Mejl</a> <a href="#vrh">Vrh</a> <a href="javascript:void(0)">JS</a> <a href="/slika/korica.jpg">Slika</a></li>
+      <li><a href="/novo?strana=2">2</a> <a href="/novo?page=3">3</a> <a href="/novo">Ova stranica</a></li>
+    </ul></body></html>`;
+  const DELFI = `<html><body>
+    <a href="/knjige">Knjige</a> <a href="/knjige/kategorija/romani">Romani</a> <a href="/knjige/321-prokleta-avlija">Prokleta avlija</a>
+    <a href="/knjige/322-na-drini-cuprija"><h3>Na Drini ćuprija</h3></a> <a href="/knjige/321-prokleta-avlija">Kupi</a>
+    <a href="/korpa">Korpa</a> <a href="/knjige/autori/ivo-andric">Autor</a> <a href="/o-nama">O nama</a> <a href="/knjige/nabavka-123">Stranica koja nije knjiga? (ima broj)</a>
+  </body></html>`;
+  const OPSTI = `<html><body>
+    <a href="/knjiga/hazarski-recnik">Hazarski rečnik</a> <a href="/proizvod/seobe-miloš-crnjanski">Seobe</a>
+    <a href="/izdanje/gospodjica">Gospođica</a> <a href="/knjige">Sve knjige</a> <a href="/pretraga?q=roman">Pretraga</a>
+    <a href="/dereta-nove-knjige-2026.html">Nove knjige</a> <a href="/o-izdavacu">O izdavaču</a>
+  </body></html>`;
+  const baza = (host, putanja) => new URL(`https://${host}${putanja}`);
+
+  // ───── izvlačenje linkova ─────
+  let r = SP.izvuciLinkoveKnjiga(LAGUNA, baza("www.laguna.rs", "/novo"));
+  const urlovi = r.linkovi.map((l) => l.url);
+  provera("spisak (laguna): samo stranice knjiga, istim domenom, https, bez # i praćenja, bez duplikata, redom pojavljivanja", JSON.stringify(urlovi) === JSON.stringify([
+    "https://www.laguna.rs/n6061_prokleta-avlija.html", "https://www.laguna.rs/n6062_na-drini-cuprija.html", "https://www.laguna.rs/n6063_dervi%C5%A1-i-smrt.html", "https://www.laguna.rs/n6064_hazarski-recnik.html", "https://www.laguna.rs/n6065_seobe.html",
+  ]) && r.ukupno === 5 && r.skraceno === false, urlovi);
+  provera("spisak: naslov je tekst linka; „Detaljnije/Kupi” se preskaču u korist pravog teksta; zatim alt slike, title i na kraju slug iz putanje", r.linkovi[0].naslov === "Prokleta avlija" && r.linkovi[1].naslov === "Na Drini ćuprija" && r.linkovi[2].naslov === "Derviš i smrt" && r.linkovi[3].naslov === "Hazarski rečnik" && r.linkovi[4].naslov === "seobe", r.linkovi.map((l) => l.naslov));
+  provera("spisak: kategorije, korpa, prijava, uslovi, blog, autori, drugi poddomen, tuđi sajt, http, mailto, #, javascript, slike i sama stranica se ne uzimaju", !urlovi.some((u) => /korpa|prijava|kategorija|uslovi|blog|autor|shop\.|evil|bez-https|jpg|\/novo/.test(u)));
+  provera("spisak: paginacija se ne prati (strana=2, page=3 nisu knjige); javlja se samo adresa sledeće stranice (rel=next)", !urlovi.some((u) => /strana|page/.test(u)) && r.sledeca === "https://www.laguna.rs/novo?strana=2", r.sledeca);
+  r = SP.izvuciLinkoveKnjiga(DELFI, baza("delfi.rs", "/knjige/novo"));
+  provera("spisak (delfi): /knjige/<broj>-<slug> jesu knjige, a /knjige, kategorija, autori, korpa i o-nama nisu; www i bez www je isti domen", r.linkovi.map((l) => l.url).join() === "https://delfi.rs/knjige/321-prokleta-avlija,https://delfi.rs/knjige/322-na-drini-cuprija,https://delfi.rs/knjige/nabavka-123" && r.linkovi[0].naslov === "Prokleta avlija" && r.linkovi[1].naslov === "Na Drini ćuprija", r.linkovi);
+  r = SP.izvuciLinkoveKnjiga(DELFI.replaceAll("href=\"/", "href=\"https://www.delfi.rs/"), baza("delfi.rs", "/knjige/novo"));
+  provera("www.delfi.rs i delfi.rs su isti domen (apsolutni linkovi sa www prolaze)", r.linkovi.length === 3, r.linkovi.length);
+  r = SP.izvuciLinkoveKnjiga(OPSTI, baza("www.vulkani.rs", "/novo"));
+  provera("spisak (opšti obrasci): /knjiga/, /proizvod/, /izdanje/ i slug sa .html jesu, /knjige, pretraga i o-izdavacu nisu", r.linkovi.map((l) => l.url).join() === "https://www.vulkani.rs/knjiga/hazarski-recnik,https://www.vulkani.rs/proizvod/seobe-milo%C5%A1-crnjanski,https://www.vulkani.rs/izdanje/gospodjica,https://www.vulkani.rs/dereta-nove-knjige-2026.html", r.linkovi.map((l) => l.url));
+  {
+    const mnogo = `<html><body>${Array.from({ length: 80 }, (_, i) => `<a href="/knjiga/naslov-broj-${i}">Naslov ${i}</a>`).join("")}</body></html>`;
+    const sve = SP.izvuciLinkoveKnjiga(mnogo, baza("www.laguna.rs", "/novo"));
+    provera("najviše 50 linkova: od 80 vraća prvih 50 (po redu), ukupno 80, skraceno = true", sve.linkovi.length === 50 && sve.ukupno === 80 && sve.skraceno === true && sve.linkovi[0].naslov === "Naslov 0" && sve.linkovi[49].naslov === "Naslov 49" && SP.NAJVISE_LINKOVA === 50);
+    provera("bez linkova ka knjigama (prazna ili nepoznata stranica) → prazan niz, bez greške", SP.izvuciLinkoveKnjiga("<html><body><a href='/o-nama'>O nama</a></body></html>", baza("www.laguna.rs", "/novo")).linkovi.length === 0 && SP.izvuciLinkoveKnjiga("", baza("www.laguna.rs", "/novo")).linkovi.length === 0);
+  }
+  provera("robots filtrira linkove: zabranjeni se ne vraćaju, a broje se u izbacenoRobots", (() => { const x = SP.izvuciLinkoveKnjiga(LAGUNA, baza("www.laguna.rs", "/novo"), { jeDozvoljenoFn: (p) => !p.startsWith("/n6063") && !p.startsWith("/n6065") }); return x.linkovi.length === 3 && x.izbacenoRobots === 2 && x.ukupno === 3; })());
+
+  // ───── robots.txt ─────
+  const pravila = (tekst) => R.pravilaZaNas(R.parsirajRobots(tekst));
+  provera("robots: Disallow za * zabranjuje putanju i sve ispod nje, ostalo je dozvoljeno", (() => { const p = pravila("User-agent: *\nDisallow: /novo\n"); return !R.jeDozvoljeno(p.pravila, "/novo") && !R.jeDozvoljeno(p.pravila, "/novo/knjige?x=1") && R.jeDozvoljeno(p.pravila, "/knjige") && R.jeDozvoljeno(p.pravila, "/"); })());
+  provera("robots: grupa za „Citaliste” pobeđuje grupu „*” (i velika slova u nazivu se izjednačavaju)", (() => { const t = "User-agent: *\nDisallow: /\n\nUser-agent: CITALISTE\nDisallow: /privatno\n"; const p = pravila(t); return R.jeDozvoljeno(p.pravila, "/novo") && !R.jeDozvoljeno(p.pravila, "/privatno/x"); })());
+  provera("robots: samo „Disallow: /” za * zabranjuje sve; prazan Disallow ne zabranjuje ništa", !R.jeDozvoljeno(pravila("User-agent: *\nDisallow: /\n").pravila, "/novo") && R.jeDozvoljeno(pravila("User-agent: *\nDisallow:\n").pravila, "/novo"));
+  provera("robots: najduži uzorak pobeđuje, Allow pri izjednačenju (Disallow: /novo, Allow: /novo/knjige)", (() => { const p = pravila("User-agent: *\nDisallow: /novo\nAllow: /novo/knjige\n"); return R.jeDozvoljeno(p.pravila, "/novo/knjige/1") && !R.jeDozvoljeno(p.pravila, "/novo/drugo") && R.jeDozvoljeno(pravila("User-agent: *\nDisallow: /a\nAllow: /a\n").pravila, "/a"); })());
+  provera("robots: džoker * i kraj $ (Disallow: /*?sort=, Disallow: /*.pdf$)", (() => { const p = pravila("User-agent: *\nDisallow: /*?sort=\nDisallow: /*.pdf$\n"); return !R.jeDozvoljeno(p.pravila, "/novo?sort=cena") && !R.jeDozvoljeno(p.pravila, "/f/a.pdf") && R.jeDozvoljeno(p.pravila, "/f/a.pdf?x=1") && R.jeDozvoljeno(p.pravila, "/novo"); })());
+  provera("robots: više User-agent redova pre pravila čine jednu grupu; komentari i nepoznata polja se preskaču; CRLF", (() => { const p = pravila("# opis\r\nUser-agent: bing\r\nUser-agent: citaliste # mi\r\nSitemap: https://x/s.xml\r\nDisallow: /tajno # ne\r\nCrawl-delay: 4\r\n"); return !R.jeDozvoljeno(p.pravila, "/tajno") && R.jeDozvoljeno(p.pravila, "/ostalo") && p.pauza === 4; })());
+  provera("robots: bez grupe za nas i bez „*” sve je dozvoljeno; prazan i nesvrsishodan tekst ne bacaju grešku", R.jeDozvoljeno(pravila("User-agent: googlebot\nDisallow: /\n").pravila, "/novo") && R.jeDozvoljeno(pravila("").pravila, "/novo") && R.jeDozvoljeno(pravila("<html>nije robots</html>").pravila, "/novo") && pravila("User-agent: *\nCrawl-delay: abc\n").pauza === null);
+  {
+    const obrada = async (tekstRobots, greska = null) => R.ucitajRobots(new URL("https://www.laguna.rs/novo"), { preuzmiFn: async () => { if (greska) throw greska; return { telo: tekstRobots }; } });
+    const a = await obrada("User-agent: *\nCrawl-delay: 5\n");
+    const b = await obrada("User-agent: *\nCrawl-delay: 120\n");
+    const c = await obrada("", new ApiGreska(502, "ne_mogu_da_procitam"));
+    provera("robots: Crawl-delay se čita (5 s), a veliki se skraćuje na najviše 30 s", a.procitan && a.pauzaSekundi === 5 && b.pauzaSekundi === 30 && R.NAJDUZA_PAUZA_SEKUNDI === 30, [a, b]);
+    provera("robots: kad se ne može pročitati, ne zabranjuje se ništa i nema pauze (nastavlja se)", c.procitan === false && c.pravila.length === 0 && c.pauzaSekundi === null && R.jeDozvoljeno(c.pravila, "/bilo-sta"));
+  }
+
+  // ───── handler, bez mreže ─────
+  const mreza = [];
+  let sajt = {};
+  const odgovor = (u) => {
+    mreza.push(`${u.hostname}${u.pathname}${u.search}`);
+    const o = sajt[u.pathname];
+    if (o instanceof Error) throw o;
+    return o ?? { status: 404 };
+  };
+  bf.unutrasnje.jedanZahtev = async (u) => odgovor(u);
+  const html = (tekst) => ({ status: 200, tip: "text/html; charset=utf-8", telo: Buffer.from(tekst, "utf8") });
+  const robotsOdg = (tekstR) => ({ status: 200, tip: "text/plain; charset=utf-8", telo: Buffer.from(tekstR, "utf8") });
+  const cisto = () => {
+    stanje.brojac.clear();
+    stanje.pozivi.length = 0;
+    stanje.rpcGreska = false;
+    stanje.ulogaGreska = false;
+    mreza.length = 0;
+  };
+  const kesPre = stanje.kes.size;
+  const TELO = { url: "https://www.laguna.rs/novo" };
+  sajt = { "/robots.txt": robotsOdg("User-agent: *\nDisallow: /korpa\n"), "/novo": html(LAGUNA) };
+  cisto();
+
+  let o = await z(listaHandler, { metod: "GET", token: "tok-bib" });
+  provera("iz-liste: GET se odbija (405)", o.status === 405 && o.zaglavlja.allow === "POST", o.status);
+  o = await z(listaHandler, { telo: TELO });
+  provera("iz-liste: bez tokena 401, mreža se ne dira", o.status === 401 && mreza.length === 0, o.status);
+  o = await z(listaHandler, { token: "tok-neaktivan", telo: TELO });
+  provera("iz-liste: neaktivan član dobija 403", o.status === 403, o.status);
+  o = await z(listaHandler, { token: "tok-a", telo: TELO });
+  provera("iz-liste: ČITALAC dobija 403 nije_bibliotekar; mreža se ne dira, ograničenje se ne troši", o.status === 403 && o.telo.greska.kod === "nije_bibliotekar" && mreza.length === 0 && stanje.pozivi.length === 0, { status: o.status, mreza: mreza.length, pozivi: stanje.pozivi });
+  o = await z(listaHandler, { token: "tok-a", telo: { ...TELO, uloga: "bibliotekar" } });
+  provera("iz-liste: uloga iz tela zahteva se ne čita (čitalac koji napiše „bibliotekar” i dalje dobija 403; uloga je pročitana u bazi)", o.status === 403 && mreza.length === 0, o.status);
+  stanje.citanjaUloge = 0;
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("iz-liste: bibliotekar dobija spisak (200); uloga se čita na serveru, u bazi", o.status === 200 && stanje.citanjaUloge >= 1 && o.telo.rezultati[0].linkovi.length === 5, { status: o.status, uloga: stanje.citanjaUloge });
+  provera("iz-liste: jedan zahtev ka stranici sa spiskom (posle robots.txt), nijedna stranica knjige se ne čita, paginacija se ne prati", JSON.stringify(mreza) === JSON.stringify(["www.laguna.rs/robots.txt", "www.laguna.rs/novo"]), mreza);
+  provera("iz-liste: ograničenje je u kanti „iz-linka:bibliotekar” (200 na sat) i spisak troši TAČNO jedan zahtev", stanje.pozivi.length === 1 && stanje.pozivi[0].kanta === KANTA_BIBLIOTEKAR && stanje.pozivi[0].najvise === 200 && NAJVISE_ZAHTEVA_BIBLIOTEKAR === 200 && stanje.pozivi[0].clan === BIBL.id && KANTA_BIBLIOTEKAR === "iz-linka:bibliotekar", stanje.pozivi);
+  provera("iz-liste: odgovor ima stranicu, linkove (url i naslov), ukupno, skraceno, izbacenoRobots, robotsProcitan, pauzaSekundi i sledeću stranicu; nema HTML-a ni ključeva", (() => { const x = o.telo.rezultati[0]; return x.stranica === "https://www.laguna.rs/novo" && x.linkovi[0].naslov === "Prokleta avlija" && x.ukupno === 5 && x.skraceno === false && x.izbacenoRobots === 0 && x.robotsProcitan === true && x.pauzaSekundi === null && x.sledeca === "https://www.laguna.rs/novo?strana=2" && !o.sirovo.includes("<html") && !o.sirovo.includes("<a href") && !TAJNE.some((k) => o.sirovo.includes(k)); })());
+  provera("iz-liste: server ništa ne čuva (keš linkova ostaje isti), nema tabele za spisak", stanje.kes.size === kesPre && !/uKes|izKesa|kes_linkova|from\(/.test(citajIzvor("api/iz-liste.js").replace(/\/\/.*$/gm, "")));
+  provera("iz-liste: odgovor se ne stavlja u keš, pa ponovljen klik ponovo čita stranicu (nova dva zahteva)", await (async () => { mreza.length = 0; const p = await z(listaHandler, { token: "tok-bib", telo: TELO }); return p.status === 200 && mreza.length === 2; })());
+
+  // SSRF i bela lista (pre mreže i pre ograničenja)
+  for (const [naziv, adresa, kod] of [
+    ["http", "http://www.laguna.rs/novo", "nije_https"],
+    ["domen van liste", "https://evil.com/novo", "domen_nije_dozvoljen"],
+    ["domen koji samo liči (laguna.rs.evil.com)", "https://laguna.rs.evil.com/novo", "domen_nije_dozvoljen"],
+    ["IP adresa", "https://127.0.0.1/novo", "domen_nije_dozvoljen"],
+    ["IPv6", "https://[::1]/novo", "domen_nije_dozvoljen"],
+    ["localhost", "https://localhost/novo", "domen_nije_dozvoljen"],
+    ["korisnik u adresi (laguna.rs@evil.com)", "https://laguna.rs@evil.com/novo", "neispravan_link"],
+    ["korisnik i lozinka", "https://a:b@www.laguna.rs/novo", "neispravan_link"],
+    ["port", "https://www.laguna.rs:8443/novo", "neispravan_link"],
+    ["domen sa tačkom na kraju", "https://www.laguna.rs./novo", "domen_nije_dozvoljen"],
+    ["nije adresa", "ovo nije adresa", "neispravan_link"],
+  ]) {
+    cisto();
+    o = await z(listaHandler, { token: "tok-bib", telo: { url: naziv === "nije adresa" ? "ovo nije adresa" : adresa } });
+    provera(`iz-liste odbija pre mreže i pre ograničenja: ${naziv}`, o.status >= 400 && o.status < 500 && o.telo.greska.kod === kod && mreza.length === 0 && stanje.pozivi.length === 0, { status: o.status, kod: o.telo?.greska?.kod, mreza: mreza.length });
+  }
+  cisto();
+  o = await z(listaHandler, { token: "tok-bib", telo: { url: 5 } });
+  provera("iz-liste: adresa koja nije tekst, prazna ili preduga → 400", o.status === 400 && (await z(listaHandler, { token: "tok-bib", telo: { url: "" } })).status === 400 && (await z(listaHandler, { token: "tok-bib", telo: { url: `https://www.laguna.rs/${"a".repeat(2100)}` } })).status === 400 && mreza.length === 0);
+  provera("iz-liste koristi isti zaštićeni preuzimač i istu belu listu kao iz-linka", citajIzvor("api/iz-liste.js").includes('from "./_lib/bezbedan-fetch.js"') && /proveriUrl\(url\)/.test(citajIzvor("api/iz-liste.js")) && !/https\.request|fetch\(/.test(citajIzvor("api/iz-liste.js") + citajIzvor("api/_lib/robots.js") + citajIzvor("api/_lib/spisak-knjiga.js")) && citajIzvor("api/_lib/robots.js").includes('from "./bezbedan-fetch.js"'));
+  provera("preusmeravanje sa stranice spiska van bele liste se odbija (preusmerenje_van_liste), i robots.txt se ne preusmerava van liste", await (async () => { cisto(); sajt = { "/robots.txt": robotsOdg(""), "/novo": { status: 302, preusmerenje: "https://evil.com/knjige" } }; const p = await z(listaHandler, { token: "tok-bib", telo: TELO }); return p.status === 422 && p.telo.greska.kod === "preusmerenje_van_liste"; })());
+
+  // robots.txt u handleru
+  cisto();
+  sajt = { "/robots.txt": robotsOdg("User-agent: *\nDisallow: /novo\n"), "/novo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("robots.txt zabranjuje putanju (za *): 422 robots_zabranjuje, jasna poruka; stranica spiska se NE čita", o.status === 422 && o.telo.greska.kod === "robots_zabranjuje" && /Сајт не дозвољава аутоматско читање ове странице/.test(o.telo.greska.poruka) && JSON.stringify(mreza) === JSON.stringify(["www.laguna.rs/robots.txt"]), { status: o.status, mreza });
+  provera("poruka za korisnika u tekst.js: „Сајт не дозвољава аутоматско читање ове странице”", (await import("../src/lib/tekst.js")).tekst.pretraga.greske.robots_zabranjuje === "Сајт не дозвољава аутоматско читање ове странице.");
+  cisto();
+  sajt = { "/robots.txt": robotsOdg("User-agent: Citaliste\nDisallow: /\n\nUser-agent: *\nAllow: /\n"), "/novo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("robots.txt zabranjuje samo „Citaliste” (a „*” dozvoljava): odustaje se", o.status === 422 && o.telo.greska.kod === "robots_zabranjuje" && mreza.length === 1, o.status);
+  cisto();
+  sajt = { "/robots.txt": robotsOdg("User-agent: *\nDisallow: /novo\nAllow: /novo$\n"), "/novo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("robots.txt dozvoljava tačnu putanju (Allow je duži uzorak): čita se", o.status === 200 && o.telo.rezultati[0].linkovi.length === 5, o.status);
+  cisto();
+  sajt = { "/robots.txt": robotsOdg("User-agent: *\nDisallow: /novo?strana=\n"), "/novo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: { url: "https://www.laguna.rs/novo?strana=3" } });
+  provera("robots.txt se poredi i sa upitom (/novo?strana=3 je zabranjeno, /novo nije)", o.status === 422 && o.telo.greska.kod === "robots_zabranjuje", o.status);
+  cisto();
+  sajt = { "/robots.txt": { status: 404 }, "/novo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("robots.txt ne postoji (404): nastavlja se; robotsProcitan = false", o.status === 200 && o.telo.rezultati[0].robotsProcitan === false && o.telo.rezultati[0].pauzaSekundi === null && o.telo.rezultati[0].linkovi.length === 5, o.status);
+  cisto();
+  sajt = { "/robots.txt": new ApiGreska(504, "predugo"), "/novo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("robots.txt se ne može pročitati (greška veze): nastavlja se", o.status === 200 && o.telo.rezultati[0].robotsProcitan === false, o.status);
+  cisto();
+  sajt = { "/robots.txt": robotsOdg("User-agent: *\nCrawl-delay: 7\n"), "/novo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("Crawl-delay (7 s) se vraća kao pauzaSekundi, a ekran ga primenjuje između stranica knjiga", o.status === 200 && o.telo.rezultati[0].pauzaSekundi === 7, o.telo?.rezultati?.[0]?.pauzaSekundi);
+  provera("ekran uzima veću od podrazumevane pauze i Crawl-delay-a (BibliotekarUnos prosleđuje pauzaMs u obradiRedom)", /pauzaMs/.test(citajIzvor("src/pages/BibliotekarUnos.jsx")) && /Math\.max\(PAUZA_MS/.test(citajIzvor("src/pages/BibliotekarUnos.jsx")));
+  cisto();
+  sajt = { "/robots.txt": robotsOdg("User-agent: *\nDisallow: /n6063\nDisallow: /n6065\n"), "/novo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("linkovi koje robots.txt zabranjuje se ne vraćaju (izbacenoRobots = 2), ostali ostaju", o.status === 200 && o.telo.rezultati[0].linkovi.length === 3 && o.telo.rezultati[0].izbacenoRobots === 2 && !o.sirovo.includes("n6063"), o.telo?.rezultati?.[0]?.izbacenoRobots);
+  cisto();
+  sajt = { "/robots.txt": robotsOdg("User-agent: *\nDisallow: /drugo\n"), "/novo": { status: 301, preusmerenje: "https://www.laguna.rs/drugo" }, "/drugo": html(LAGUNA) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("preusmeravanje na putanju koju robots.txt zabranjuje: odustaje se (konačna adresa se proverava iznova)", o.status === 422 && o.telo.greska.kod === "robots_zabranjuje" && !mreza.some((m) => m.endsWith("/drugo") && false), { status: o.status, mreza });
+
+  // mnogo linkova, tip sadržaja, ograničenje, baza
+  cisto();
+  sajt = { "/robots.txt": robotsOdg(""), "/novo": html(`<html><body>${Array.from({ length: 80 }, (_, i) => `<a href="/knjiga/naslov-broj-${i}">Naslov ${i}</a>`).join("")}</body></html>`) };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("iz-liste: najviše 50 linkova (od 80), skraceno = true, ukupno = 80", o.status === 200 && o.telo.rezultati[0].linkovi.length === 50 && o.telo.rezultati[0].skraceno === true && o.telo.rezultati[0].ukupno === 80, o.status);
+  cisto();
+  sajt = { "/robots.txt": robotsOdg(""), "/novo": { status: 200, tip: "application/pdf", telo: Buffer.from("%PDF") } };
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("iz-liste čita samo HTML: preuzmi se zove bez posebnih tipova (podrazumevano text/html i application/xhtml+xml, proverava se u zaštićenom preuzimaču)", /preuzmi\(url\.href\)/.test(citajIzvor("api/iz-liste.js")) && /tipovi = \["text\/html", "application\/xhtml\+xml"\]/.test(citajIzvor("api/_lib/bezbedan-fetch.js")));
+  cisto();
+  sajt = { "/robots.txt": robotsOdg(""), "/novo": html(LAGUNA) };
+  stanje.brojac.set(kljucB(BIBL.id, KANTA_BIBLIOTEKAR), 200);
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("iz-liste: kad se potroši 200 na sat, 429 previse_zahteva (Retry-After), mreža se ne dira", o.status === 429 && o.telo.greska.kod === "previse_zahteva" && o.zaglavlja["retry-after"] === "1234" && mreza.length === 0, { status: o.status, mreza: mreza.length });
+  cisto();
+  stanje.rpcGreska = true;
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("ograničenje je zatvoreno: kad baza ne radi, 503 i mreža se ne dira", o.status === 503 && o.telo.greska.kod === "ogranicenje_nedostupno" && mreza.length === 0, o.status);
+  cisto();
+  stanje.ulogaGreska = true;
+  o = await z(listaHandler, { token: "tok-bib", telo: TELO });
+  provera("kad se uloga ne može pročitati, zahtev se odbija (503), ne propušta", o.status === 503 && mreza.length === 0, o.status);
+  cisto();
+  o = await z(listaHandler, { token: "tok-admin", telo: TELO });
+  provera("administrator takođe sme", o.status === 200, o.status);
+  provera("granicaSpiska: samo bibliotekar i administrator (inače baca 403), u istoj kanti kao iz-linka za osoblje", (() => { try { granicaSpiska("citalac"); return false; } catch (e) { return e.status === 403; } })() && granicaSpiska("bibliotekar").kanta === "iz-linka:bibliotekar" && granicaSpiska("administrator").najvise === 200);
+
+  // tekst i ekran
+  const TK = (await import("../src/lib/tekst.js")).tekst;
+  provera("ekran: tekst za uvoz je u tekst.js na ćirilici; izabrano najviše 20 odjednom (kao postojeća obrada), spisak do 50", typeof TK.unos.lista.naslov === "string" && /[Ѐ-ӿ]/.test(TK.unos.lista.naslov + TK.unos.lista.uvod) && citajIzvor("src/components/UvozSaListe.jsx").includes("NAJVISE_LINKOVA") && TK.unos.lista.uvod.includes("50") && TK.unos.lista.uvod.includes("20"));
+  provera("ekran: uvoz ne piše ništa u bazu i ne čita stranice knjiga sam; izabrane adrese predaje postojećoj obradi (obradiRedom: jedna po jedna, sa pauzom)", (() => { const k = citajIzvor("src/components/UvozSaListe.jsx").replace(/\/\/.*$/gm, ""); const u = citajIzvor("src/pages/BibliotekarUnos.jsx"); return !/supabase|from\("/.test(k) && /izListe\(/.test(k) && /onIzabrano\(/.test(k) && /obradiRedom\(linkovi/.test(u) && /pokreniObradu\(/.test(u); })());
+  provera("uvoz se pokreće samo na dugme: nema useEffect-a koji bi sam čitao spisak ni petlje po stranicama", (() => { const k = citajIzvor("src/components/UvozSaListe.jsx").replace(/\/\/.*$/gm, ""); return !/useEffect/.test(k) && !/setInterval|setTimeout|while\s*\(|for\s*\(\s*;;/.test(k) && /onSubmit=\{/.test(k); })());
+
+  // kartica iz uvoza: „Samo nacrt”, Imamo, Nabavljamo
+  {
+    const U = await import("../src/lib/unos-knjiga.js");
+    const rezultat = { naslov: "Prokleta avlija", autori: ["Ivo Andrić"], izdavac: "Laguna", godina: 2020, isbn: "9788652126033", korica: "https://www.laguna.rs/k.jpg" };
+    const nacrt = U.pocetnaForma(rezultat, { nacrt: true });
+    provera("kartica iz uvoza počinje kao „Samo nacrt”, a nalepljena adresa kao „Imamo” (kao do sada); opis je prazan u oba slučaja", nacrt.stanje === "nacrt" && U.pocetnaForma(rezultat).stanje === "fond" && nacrt.opis === "" && U.pocetnaForma(rezultat, { nacrt: false }).stanje === "fond");
+    const u1 = U.urediUnos(nacrt, { uneoId: "11111111-1111-4111-8111-111111111111" });
+    provera("„Samo nacrt” se ne upisuje: urediUnos ne daje red za upis (razlog 'nacrt'), ni kad je sve ostalo ispravno", u1.ok === false && u1.polje === "stanje" && u1.razlog === "nacrt", u1);
+    const u2 = U.urediUnos({ ...nacrt, stanje: "fond", primerci: "2" }, { uneoId: "11111111-1111-4111-8111-111111111111" });
+    const u3 = U.urediUnos({ ...nacrt, stanje: "nabavka" }, { uneoId: "11111111-1111-4111-8111-111111111111" });
+    provera("izborom „Imamo” (u fondu, primerci) ili „Nabavljamo” kartica postaje upisiva, bez opisa (kao do sada)", u2.ok && u2.red.u_fondu === true && u2.red.broj_primeraka === 2 && u2.red.opis === null && u3.ok && u3.red.u_fondu === false && u3.red.broj_primeraka === 0 && u3.red.opis === null, [u2.ok, u3.ok]);
+    const TK2 = (await import("../src/lib/tekst.js")).tekst;
+    provera("tekst: oznake stanja kartice su „Имамо”, „Набављамо”, „Само нацрт”, a poruke za nacrt i prazno stanje postoje", TK2.unos.kartica.imamo === "Имамо" && TK2.unos.kartica.nabavljamo === "Набављамо" && TK2.unos.kartica.nacrt === "Само нацрт" && typeof TK2.unos.greskeKartice.stanje_nacrt === "string" && typeof TK2.unos.greskeKartice.stanje_prazno === "string" && typeof TK2.unos.kartica.nacrtNapomena === "string");
+    const kartica = citajIzvor("src/components/KarticaUnosa.jsx");
+    const unosEkran = citajIzvor("src/pages/BibliotekarUnos.jsx");
+    provera("ekran: nacrt se ne čuva: dugme „Sačuvaj” je isključeno za nacrt, a „Sačuvaj sve potvrđene” preskače nacrte", /disabled=\{saljem \|\| forma\.stanje === "nacrt"\}/.test(kartica) && (unosEkran.match(/stanje !== "nacrt"/g) ?? []).length === 2 && kartica.includes("T.kartica.imamo") && kartica.includes("T.kartica.nabavljamo") && kartica.includes("T.kartica.nacrt"));
+  }
+  bf.unutrasnje.jedanZahtev = original;
 }
 
 faza("11. Tajne");

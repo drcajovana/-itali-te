@@ -1310,6 +1310,148 @@ async function main() {
     return (a.error || (a.data ?? []).length === 0) && (b.error || (b.data ?? []).length === 0) ? true : "anon je dobio redove";
   });
 
+  // ───────────────────────── 15. Izveštaj za nabavku i zaštita administratora (migracija 0020) ─────────────────────────
+  // Proverava se: bibliotekar vidi samo agregat (brojeve), čitalac ne vidi ni agregat ni tuđe police, ni u kom pogledu
+  // nema imena ni id-a članova, odluku čuva samo bibliotekar, a bibliotekar ne može da dira administratora.
+  faza("15. Izveštaj za nabavku, odluka nabavke i zaštita administratora (migracija 0020)");
+  const P = await napraviClana("p", "citalac");
+  const Q = await napraviClana("q", "citalac");
+  const ADM2 = await napraviClana("adm", "administrator");
+  const KX = await napraviKnjigu("NAB-X", { u_fondu: false, broj_primeraka: 0, broj_slobodnih: 0, izvor: "clan" });
+  const KY = await napraviKnjigu("NAB-Y", { u_fondu: false, broj_primeraka: 0, broj_slobodnih: 0, izvor: "clan" });
+  await ubaci("polica", { clan_id: P.id, knjiga_id: KX.id, status: "zelim" });
+  await ubaci("polica", { clan_id: Q.id, knjiga_id: KX.id, status: "zelim" });
+  await ubaci("polica", { clan_id: P.id, knjiga_id: KY.id, status: "zelim" });
+  await ubaci("polica", { clan_id: Q.id, knjiga_id: KY.id, status: "citam" });
+  const izv = (c) => c.db.from("izvestaj_za_nabavku").select("*").like("naslov", `RLS-TEST ${RUN} NAB-%`);
+
+  await provera("bibliotekar vidi agregat: knjiga koju žele dvoje ima zele = 2, a ona koju želi jedan i čita drugi 1 i 1", async () => {
+    const r = await izv(BIB);
+    const x = r.data?.find((k) => k.id === KX.id);
+    const y = r.data?.find((k) => k.id === KY.id);
+    return !r.error && x?.zele === 2 && x.citaju_ili_procitali === 0 && y?.zele === 1 && y.citaju_ili_procitali === 1 ? true : `${opis(r)} ${JSON.stringify(r.data)}`;
+  });
+  await provera("izveštaj je poređan po broju onih koji žele (opadajuće)", async () => {
+    const r = await BIB.db.from("izvestaj_za_nabavku").select("id, zele").order("zele", { ascending: false });
+    return !r.error && r.data.every((k, i, a) => i === 0 || a[i - 1].zele >= k.zele) ? true : opis(r);
+  });
+  await provera("ni u jednom polju izveštaja nema člana: nema id-a, imena, broja karte, šifre poziva ni vremena na polici", async () => {
+    const r = await BIB.db.from("izvestaj_za_nabavku").select("*").like("naslov", `RLS-TEST ${RUN} NAB-%`);
+    const tekst = JSON.stringify(r.data ?? []);
+    const kolone = Object.keys(r.data?.[0] ?? {}).sort().join(",");
+    const bezClana = ![P, Q].some((c) => tekst.includes(c.id) || tekst.includes(c.sifra)) && !tekst.includes(`RLSTEST-${RUN}`) && !tekst.includes("RLS Test ") && !tekst.includes("izmenjeno");
+    return bezClana && kolone === "autor,citaju_ili_procitali,id,isbn,izdavac,korice_izvor,korice_url,naslov,odluka,odluka_datum,odluka_postavljena,u_fondu,zele" ? true : `kolone: ${kolone}`;
+  });
+  await provera("administrator takođe vidi izveštaj", async () => {
+    const r = await izv(ADM2);
+    return !r.error && r.data.some((k) => k.id === KX.id) ? true : opis(r);
+  });
+  await provera("čitalac (P, i Q, i povezani) kroz izveštaj ne vidi ništa: ni redove, ni brojeve", async () => {
+    const p = await izv(P);
+    const q = await izv(Q);
+    const a = await izv(A);
+    return tacno(p, 0, "P") === true && tacno(q, 0, "Q") === true && tacno(a, 0, "A") === true ? true : `${opis(p)} / ${opis(q)} / ${opis(a)}`;
+  });
+  await provera("anon ne sme da čita izveštaj", async () => {
+    const r = await anon.from("izvestaj_za_nabavku").select("*").limit(1);
+    return r.error || (r.data ?? []).length === 0 ? true : "anon je dobio redove";
+  });
+  await provera("izveštaj nije put do tuđe police: P ne vidi policu Q (nisu povezani), a polica se i dalje štiti RLS-om", async () => {
+    const r = await vidi(P.db, "polica", (q) => q.eq("clan_id", Q.id));
+    return nistaNeVidi(r, "P→polica Q");
+  });
+  await provera("stari pogled izvestaj_nabavka čitalac i dalje vidi samo kroz RLS (ništa tuđe): P ne dobija Q-ovu želju", async () => {
+    const r = await P.db.from("izvestaj_nabavka").select("*").eq("id", KX.id);
+    return !r.error && (r.data ?? []).every((k) => k.broj_trazenja === 1) ? true : opis(r);
+  });
+
+  // odluka nabavke
+  await provera("bibliotekar postavlja odluku: datum postavlja baza, „nabavljamo” drži u_fondu = false", async () => {
+    const r = await BIB.db.from("knjige").update({ odluka_nabavke: "nabavljamo" }).eq("id", KX.id).select("odluka_nabavke, odluka_datum, u_fondu");
+    return !r.error && r.data[0]?.odluka_nabavke === "nabavljamo" && r.data[0].odluka_datum && r.data[0].u_fondu === false ? true : opis(r);
+  });
+  await provera("„imamo” postavlja u_fondu = true, a izveštaj pokazuje odluku", async () => {
+    const r = await BIB.db.from("knjige").update({ odluka_nabavke: "imamo" }).eq("id", KX.id).select("u_fondu");
+    const i = await BIB.db.from("izvestaj_za_nabavku").select("odluka, odluka_postavljena").eq("id", KX.id).single();
+    return !r.error && r.data[0]?.u_fondu === true && i.data?.odluka === "imamo" && i.data.odluka_postavljena === true ? true : `${opis(r)} / ${JSON.stringify(i.data)}`;
+  });
+  await provera("nepoznata odluka se odbija u bazi (23514)", async () => {
+    const r = await BIB.db.from("knjige").update({ odluka_nabavke: "mozda" }).eq("id", KX.id).select("id");
+    return r.error?.code === "23514" ? true : opis(r);
+  });
+  await provera("datum odluke ne može da se postavi rukom", async () => {
+    const r = await BIB.db.from("knjige").update({ odluka_datum: "2000-01-01T00:00:00Z" }).eq("id", KX.id).select("odluka_datum");
+    return !r.error && !String(r.data?.[0]?.odluka_datum).startsWith("2000") ? true : opis(r);
+  });
+  await provera("čitalac ne može da postavi odluku (RLS): stanje ostaje", async () => {
+    const pre = await stanje("knjige", KY.id);
+    const r = await pokusaj(P.db.from("knjige").update({ odluka_nabavke: "imamo" }).eq("id", KY.id).select());
+    const posle = await stanje("knjige", KY.id);
+    return r.pogodjeno === 0 && posle.odluka_nabavke === pre.odluka_nabavke && posle.u_fondu === pre.u_fondu ? true : `pogođeno ${r.pogodjeno}; ${pre.odluka_nabavke} → ${posle.odluka_nabavke}`;
+  });
+  await provera("član koji sam upiše naslov ne može da mu postavi odluku (okidač je poništava)", async () => {
+    const r = await P.db.from("knjige").insert({ naslov: N("NAB-clan-upis"), odluka_nabavke: "imamo", u_fondu: true }).select("odluka_nabavke, odluka_datum, u_fondu");
+    return !r.error && r.data[0]?.odluka_nabavke === null && r.data[0].odluka_datum === null && r.data[0].u_fondu === false ? true : opis(r);
+  });
+  await provera("bibliotekar skida odluku: datum se prazni", async () => {
+    const r = await BIB.db.from("knjige").update({ odluka_nabavke: null }).eq("id", KX.id).select("odluka_nabavke, odluka_datum");
+    return !r.error && r.data[0]?.odluka_nabavke === null && r.data[0].odluka_datum === null ? true : opis(r);
+  });
+
+  // DEO B: bibliotekar ne dira administratora
+  await provera("bibliotekar ne može da deaktivira administratora: greška 42501, a administrator ostaje aktivan", async () => {
+    const r = await BIB.db.from("clanovi").update({ aktivan: false }).eq("id", ADM2.id).select("id");
+    const s2 = await stanje("clanovi", ADM2.id);
+    return r.error?.code === "42501" && s2.aktivan === true ? true : `${r.error?.code ?? opis(r)}; aktivan=${s2.aktivan}`;
+  });
+  await provera("bibliotekar ne menja ni ime ni ulogu administratora", async () => {
+    const a = await BIB.db.from("clanovi").update({ ime: "Hakovan" }).eq("id", ADM2.id).select("id");
+    const b = await BIB.db.from("clanovi").update({ uloga: "citalac" }).eq("id", ADM2.id).select("id");
+    const s2 = await stanje("clanovi", ADM2.id);
+    return a.error?.code === "42501" && b.error?.code === "42501" && s2.uloga === "administrator" && s2.ime !== "Hakovan" ? true : `${a.error?.code}/${b.error?.code}; ${s2.uloga}`;
+  });
+  await provera("bibliotekar i dalje deaktivira čitaoca, ali ne može nikome da promeni ulogu (ni sebi)", async () => {
+    const d = await BIB.db.from("clanovi").update({ aktivan: false }).eq("id", Q.id).select("aktivan");
+    await S.from("clanovi").update({ aktivan: true }).eq("id", Q.id);
+    const u1 = await BIB.db.from("clanovi").update({ uloga: "administrator" }).eq("id", P.id).select("uloga");
+    const u2 = await BIB.db.from("clanovi").update({ uloga: "administrator" }).eq("id", BIB.id).select("uloga");
+    return !d.error && d.data[0]?.aktivan === false && !u1.error && u1.data[0]?.uloga === "citalac" && !u2.error && u2.data[0]?.uloga === "bibliotekar" ? true : `${opis(d)} / ${opis(u1)} / ${opis(u2)}`;
+  });
+  await provera("bibliotekar ne može da upiše red sa ulogom administrator ili bibliotekar, ali upisuje čitaoca", async () => {
+    const novi = async (oznaka) => {
+      const k = await S.auth.admin.createUser({ email: `rls-test-${RUN}-${oznaka}@citaliste.test`, password: `${randomUUID()}aA1!`, email_confirm: true });
+      return mora(k, `createUser ${oznaka}`).user.id;
+    };
+    const idA = await novi("ins-adm");
+    const idB = await novi("ins-bib");
+    const idC = await novi("ins-cit");
+    const a = await BIB.db.from("clanovi").insert({ id: idA, broj_kartice: `RLSTEST-${RUN}-INS-A`, ime: "Ins A", uloga: "administrator" }).select("id");
+    const b = await BIB.db.from("clanovi").insert({ id: idB, broj_kartice: `RLSTEST-${RUN}-INS-B`, ime: "Ins B", uloga: "bibliotekar" }).select("id");
+    const c = await BIB.db.from("clanovi").insert({ id: idC, broj_kartice: `RLSTEST-${RUN}-INS-C`, ime: "Ins C", uloga: "citalac" }).select("id, uloga");
+    return a.error?.code === "42501" && b.error?.code === "42501" && !c.error && c.data[0]?.uloga === "citalac" ? true : `${a.error?.code}/${b.error?.code}/${opis(c)}`;
+  });
+  await provera("bibliotekar ne briše članove, pa ni administratora (brisanje je samo administratoru)", async () => {
+    const r = await pokusaj(BIB.db.from("clanovi").delete().eq("id", ADM2.id).select());
+    const postoji = await S.from("clanovi").select("id").eq("id", ADM2.id).maybeSingle();
+    return r.pogodjeno === 0 && postoji.data ? true : `pogođeno ${r.pogodjeno}`;
+  });
+  await provera("administrator sme sve: deaktivira bibliotekara, menja ulogu čitaocu, menja sebe", async () => {
+    const a = await ADM2.db.from("clanovi").update({ aktivan: false }).eq("id", BIB.id).select("aktivan");
+    await S.from("clanovi").update({ aktivan: true }).eq("id", BIB.id);
+    const b = await ADM2.db.from("clanovi").update({ uloga: "bibliotekar" }).eq("id", Q.id).select("uloga");
+    await S.from("clanovi").update({ uloga: "citalac" }).eq("id", Q.id);
+    const c = await ADM2.db.from("clanovi").update({ nadimak: "Admin" }).eq("id", ADM2.id).select("nadimak");
+    return !a.error && a.data[0]?.aktivan === false && !b.error && b.data[0]?.uloga === "bibliotekar" && !c.error && c.data[0]?.nadimak === "Admin" ? true : `${opis(a)} / ${opis(b)} / ${opis(c)}`;
+  });
+  await provera("servisna uloga je izuzeta: sme da menja administratora", async () => {
+    const r = await S.from("clanovi").update({ nadimak: "Servis" }).eq("id", ADM2.id).select("nadimak");
+    return !r.error && r.data[0]?.nadimak === "Servis" ? true : opis(r);
+  });
+  await provera("čitalac i dalje menja samo svoj nadimak (uloga i aktivnost ostaju)", async () => {
+    const r = await P.db.from("clanovi").update({ nadimak: `RLS-nad-P-${RUN}`, uloga: "administrator", aktivan: false }).eq("id", P.id).select("nadimak, uloga, aktivan");
+    return !r.error && r.data[0]?.uloga === "citalac" && r.data[0].aktivan === true && r.data[0].nadimak === `RLS-nad-P-${RUN}` ? true : opis(r);
+  });
+
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────

@@ -89,6 +89,7 @@ export function urediUnos(unos, { uneoId = null } = {}) {
   if (opis.length > 2000) return { ok: false, polje: "opis", razlog: "predugo" };
 
   const stanje = unos?.stanje;
+  if (stanje === "nacrt") return { ok: false, polje: "stanje", razlog: "nacrt" }; // „Samo nacrt": ništa se ne upisuje
   if (stanje !== "fond" && stanje !== "nabavka") return { ok: false, polje: "stanje", razlog: "prazno" };
 
   let primerci = 0;
@@ -140,8 +141,10 @@ export function sledecaZaObradu(stavke, id) {
 }
 
 // Početne vrednosti kartice iz pročitanog rezultata. Opis je NAMERNO prazan: ne preuzima
-// se sa sajta, piše ga bibliotekar. Stanje je podrazumevano „U fondu", 1 primerak.
-export const pocetnaForma = (rezultat) => ({
+// se sa sajta, piše ga bibliotekar. Stanje je podrazumevano „Imamo" (u fondu), 1 primerak; kartice iz
+// uvoza sa stranice izdavača počinju kao „Samo nacrt" (nacrt: true), pa se ništa ne upisuje dok bibliotekar
+// ne izabere „Imamo" ili „Nabavljamo".
+export const pocetnaForma = (rezultat, { nacrt = false } = {}) => ({
   naslov: rezultat?.naslov ?? "",
   autor: (rezultat?.autori ?? []).join(", "),
   izdavac: rezultat?.izdavac ?? "",
@@ -149,7 +152,7 @@ export const pocetnaForma = (rezultat) => ({
   isbn: rezultat?.isbn ?? "",
   zanr: "",
   opis: "",
-  stanje: "fond",
+  stanje: nacrt ? "nacrt" : "fond",
   primerci: "1",
   signatura: "",
 });

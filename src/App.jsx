@@ -3,6 +3,7 @@ import AuthProvider from "./components/AuthProvider.jsx";
 import RutaZaBibliotekare from "./components/RutaZaBibliotekare.jsx";
 import ZasticenaRuta from "./components/ZasticenaRuta.jsx";
 import BibliotekarClanovi from "./pages/BibliotekarClanovi.jsx";
+import BibliotekarNabavka from "./pages/BibliotekarNabavka.jsx";
 import BibliotekarPocetna from "./pages/BibliotekarPocetna.jsx";
 import BibliotekarUnos from "./pages/BibliotekarUnos.jsx";
 import Knjiga from "./pages/Knjiga.jsx";
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/bibliotekar" element={<BibliotekarPocetna />} />
             <Route path="/bibliotekar/unos" element={<BibliotekarUnos />} />
             <Route path="/bibliotekar/clanovi" element={<BibliotekarClanovi />} />
+            <Route path="/bibliotekar/nabavka" element={<BibliotekarNabavka />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

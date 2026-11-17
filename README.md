@@ -20,7 +20,9 @@ Aplikacija još nema ekrane.
 | 4–5. Polica, stranica knjige, utisci | ✅ početna „Moja polica”, `/knjiga/:id` sa stanjem police, napretkom i utiscima (vidi „Polica, stranica knjige i utisci”). **Treba migracija 0017** |
 | 6. Bibliotekarski panel | ✅ `/bibliotekar/clanovi` (upis člana, štampa kartice, novi PIN, aktivacija) ; `api/napravi-clana.js` i `api/resetuj-pin.js`. Vidi „Uputstvo za bibliotekare”. Rezervacije i dostupnost knjiga iz COBISS-a nisu deo aplikacije (vidi CLAUDE.md, „Šta se ne radi”). **Migracija 0018 je u bazi, ali se ne koristi** |
 | 7. Čitaoci | ✅ `/citaoci` (moja šifra, poziv, pozivi na čekanju, preporuke za mene, povezani) i `/citaoci/:id` (polica, utisci, preporuka, raskid, blokada, prijava), tačka na navigaciji, preporuka sa stranice knjige. Vidi „Čitaoci: veze, preporuke, blokada”. **Treba migracija 0019** |
-| 8–11. | ⬜ |
+| 8. Nabavka i zaštita administratora | ✅ `/bibliotekar/nabavka` (knjige koje čitaoci žele, samo brojevi, odluka „Имамо / Набављамо / Не набављамо”, filteri, pretraga, CSV); u bazi bibliotekar više ne dira administratora. Vidi „Uputstvo za bibliotekare”. **Treba migracija 0020** |
+| 9. Uvoz sa stranice izdavača | ✅ u unosu knjiga: adresa stranice SA SPISKOM, izvlači se najviše 50 linkova ka knjigama (`api/iz-liste.js`), bibliotekar štiklira (najviše 20), izabrani idu kroz postojeću obradu. Poštuje robots.txt. **Nije proveravano na pravim sajtovima.** Bez migracije |
+| 10–11. | ⬜ |
 
 ## Pokretanje
 
@@ -55,6 +57,7 @@ Migracije se puštaju redom, brojevima:
 | `0017_polica_napredak_utisci_autor.sql` | `polica.napredak` (0–100), pogled `utisci_sa_autorom` (nadimak autora uz utisak, RLS važi), rezervacija samo za knjigu u fondu |
 | `0018_rezervacije_statusi.sql` | **(puštena, ali ništa je ne koristi: aplikacija nema rezervacije)** stanja rezervacije `nova`, `spremna`, `preuzeta`, `otkazana` (stara `obradjena` postaje `preuzeta`); jedinstveni indeks „jedna otvorena rezervacija po članu i knjizi” važi za `nova` i `spremna`. Politike se ne menjaju; idempotentna |
 | `0019_citaoci_nadimci_preporuke.sql` | pogledi `moje_veze` i `moje_preporuke` (samo moje, samo nadimak druge strane, bez blokiranih), `privatno.ima_blokade()`, prijava člana (`prijave.tip = 'clan'`), napomena preporuke do 280 znakova i jedna neobrađena preporuka iste knjige po paru. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
+| `0020_nabavka_i_zastita_administratora.sql` | `knjige.odluka_nabavke` i `odluka_datum` (datum postavlja okidač; „imamo” = `u_fondu`), pogled `izvestaj_za_nabavku` nad `privatno.izvestaj_nabavke()` (samo agregat, samo bibliotekar), i okidači koji bibliotekaru zabranjuju da menja administratora ili dodeljuje ulogu. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 
 Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na
 `privatno.su_povezani()` iz `0002`, a politika na `preporuke` gleda u `prijave`,
@@ -78,6 +81,7 @@ samo za prikaz uživo. `iz-linka` dodaje `korica`: samo **predlog adrese** slike
 |---|---|
 | `api/pretraga-google.js` | Google Books po naslovu, autoru ili ISBN-u (`izvor: 'google_books'`) |
 | `api/iz-linka.js` | čita Open Graph i JSON-LD jedne stranice knjige: bibliotekarska polja (naslov, autor, izdavač, godina, ISBN; `izvor: 'link'`) i predlog adrese korice; kad parser ne nađe ništa, vraća bar naslov iz `<title>` |
+| `api/iz-liste.js` | **samo bibliotekar i administrator**: čita JEDNU stranicu sa spiskom knjiga jednog izdavača (posle provere robots.txt) i vraća najviše 50 linkova ka knjigama; ne čuva ništa, ne prati paginaciju |
 | `api/korica-iz-linka.js` | **samo bibliotekar i administrator** (uloga se čita na serveru): preuzima predloženu sliku jednom i čuva je u Storage (vidi „Korice”) |
 | `api/napravi-clana.js` | **samo bibliotekar i administrator**: pravi Auth nalog `{karta}@citaliste.local` i red u `clanovi` (uloga uvek `citalac`), vraća PIN jednom (vidi „Uputstvo za bibliotekare”) |
 | `api/resetuj-pin.js` | **samo bibliotekar i administrator**: postavlja novi 6-cifreni PIN i vraća ga jednom; bibliotekar samo čitaocima |
@@ -172,6 +176,26 @@ početnu) služi da se knjiga upiše iz stranice izdavača, bez kucanja:
    **Ukloni koricu**: pita „Ukloniti koricu?", a na „Da, ukloni" briše sliku iz baze i prazni podatke
    o korici (adresu, izvor i poreklo). Knjiga tada ponovo dobija Open Library ili pločicu.
 
+### Za bibliotekara: uvod sa stranice izdavača
+
+Iznad polja za adrese stoji **Увоз са странице издавача**. Služi da ne lepite knjigu po knjigu:
+
+1. Nalepite adresu **stranice sa spiskom** knjiga jednog izdavača (novi naslovi, kategorija, rezultati
+   pretrage na njegovom sajtu) i dodirnite **Прочитај списак**. Čita se **samo ta jedna stranica**, i to samo
+   kad vi dodirnete dugme. Sajt mora biti na listi dozvoljenih (isto kao za pojedinačne knjige).
+2. Pre čitanja aplikacija proveri **robots.txt** tog sajta. Ako sajt zabranjuje čitanje te stranice, piše:
+   „Сајт не дозвољава аутоматско читање ове странице". Linkovi koje sajt zabranjuje se ne nude. Ako sajt traži
+   pauzu između zahteva (Crawl-delay), obrada knjiga je sporija za toliko (najviše 30 sekundi između knjiga).
+3. Dobijate **najviše 50 linkova** ka stranicama knjiga, sa tekstom linka kao naslovom, da prepoznate šta
+   biraju. Štiklirajte koje želite (**najviše 20 odjednom**; **Изабери првих 20** i **Поништи избор** pomažu).
+   Ako ima sledeća stranica spiska, dugme **Учитај следећу страницу списка** je novi klik, nikad automatski.
+4. **Прочитај изабране књиге** šalje izabrane adrese kroz običnu obradu ispod: jedna po jedna, sa pauzom.
+   Svaka knjiga troši po jedan zahtev iz istog ograničenja od 200 na sat, a sam spisak jedan.
+5. Kartice iz uvoza počinju kao **Само нацрт**: ništa se ne upisuje. Za svaku birate **Имамо** (u fondu, sa
+   brojem primeraka), **Набављамо**, ili je ostavite kao nacrt. Tek posle izbora (i vašeg „Сачувај”, ili
+   potvrde za „Сачувај све потврђене") knjiga se upisuje. Opis se i dalje ne preuzima.
+6. Spisak linkova se ne čuva nigde (ni u bazi, ni u kešu).
+
 Ograničenje: **200 pročitanih adresa na sat** za bibliotekare (čitaoci imaju 30). Kad se
 dostigne, ostale adrese nisu poslate; pokušajte ponovo kasnije.
 
@@ -214,15 +238,15 @@ može da lažira izvor `'preuzeto'`. Preuzimanje sa linka proverava samo `test:a
   „Sadrži spojler”; izmena i brisanje (uz potvrdu) sopstvenog utiska. **Tuđi utisci**: samo oni koje RLS pokazuje, uz
   nadimak autora; tekst sa spojlerom je zamagljen dok se ne dodirne. Ni ovde nema filtriranja po vidljivosti u React
   kodu: pogled `utisci_sa_autorom` je `security_invoker`, pa važe politike tabele `utisci`.
-- **Ručni upis naslova koji nemamo** (pretraga) ostaje; takva knjiga ulazi u izveštaj za nabavku.
+- **Ručni upis naslova koji nemamo** (pretraga) ostaje; takva knjiga ulazi u izveštaj za nabavku (`/bibliotekar/nabavka`).
 - Pravila (prelaz stanja, napredak, ocena, utisak) su u `src/lib/polica-logika.js`, upiti u `src/lib/polica.js`.
   `test:db` proverava pogled i napredak; `test:rls` (faza 12) isto na pravoj bazi.
 
 ### Uputstvo za bibliotekare
 
 Ovo je kratko uputstvo za rad u aplikaciji. Tekst u aplikaciji je na ćirilici, pa su natpisi dugmadi i menija ovde navedeni onako kako ih vidite na ekranu. Prijavite se svojom kartom i PIN-om. Dole u meniju
-postoji stavka **Библиотека** (vide je samo bibliotekari i administratori). U njoj su dva alata:
-**Унос књига** i **Чланови**.
+postoji stavka **Библиотека** (vide je samo bibliotekari i administratori). U njoj su tri alata:
+**Унос књига**, **Чланови** i **Набавка**.
 
 **Kako se upisuje novi član**
 
@@ -252,6 +276,24 @@ postoji stavka **Библиотека** (vide je samo bibliotekari i administrat
 Na istom ekranu dodirnite **Деактивирај** (uz potvrdu) ili **Активирај**. Neaktivan član se ne može
 prijaviti i ne vidi ništa, ali njegovi podaci ostaju. Sebe ne možete da deaktivirate.
 
+**Kako se čita izveštaj za nabavku i beleži odluka**
+
+Aplikacija nije povezana sa COBISS-om, pa **Библиотека → Набавка** je jedino mesto gde vi kažete da li
+biblioteka ima knjigu.
+
+1. Spisak su knjige koje je bar jedan čitalac stavio na listu želja (**Желим**), a poređane su po broju
+   čitalaca koji ih žele, od najvećeg. Uz svaku piše **Желе: N** (koliko čitalaca je želi) i **Читају или су
+   прочитали: N** (kao pokazatelj interesovanja). Vidite samo brojeve: **ni ovde ni u tabeli se ne vidi ko je
+   šta stavio na policu**. I broj 1 se prikazuje tačno, jer bez imena i vremena nikoga ne otkriva.
+2. Dugmad na vrhu biraju prikaz: **Нове** (knjige bez vaše odluke, podrazumevano), **Набављамо**, **Имамо** i
+   **Све** (tu su i „Не набављамо”). Uz svako dugme piše koliko knjiga ima. Polje ispod traži po naslovu ili
+   autoru, i latinicom i ćirilicom.
+3. Svakoj knjizi dodirnite odluku: **Имамо** (knjiga je u fondu), **Набављамо**, **Не набављамо** ili
+   **Без одлуке**. Odluka se odmah čuva, a ispod piše od kog je datuma. Knjiga koju ste pri unosu upisali kao
+   „U fondu” već vodi „Имамо”.
+4. **Преузми као табелу** preuzima CSV fajl (otvara se u Excelu, ćirilica je u redu) sa knjigama iz
+   trenutnog prikaza: naslov, autor, izdavač, ISBN, broj čitalaca koji žele i odluka.
+
 **Za one koji održavaju aplikaciju**
 
 - PIN pravi server (`crypto.randomInt`, 6 cifara, može da počne nulom) i vraća ga **jednom** u odgovoru
@@ -262,11 +304,13 @@ prijaviti i ne vidi ništa, ali njegovi podaci ostaju. Sebe ne možete da deakti
   `uzmi_zahtev`); kad baza ne odgovara, zahtev se odbija (503).
 - Greška pri upisu reda poništava i Auth nalog. Postojeće sesije člana posle novog PIN-a ostaju dok ne
   isteknu: promena lozinke ih ne prekida.
-- Deaktivacija ide običnim klijentom (RLS: `clanovi_bibliotekar_update`), ne kroz funkciju. Baza
-  dozvoljava bibliotekaru da promeni `aktivan` i administratoru; zato ekran nudi dugme samo za čitaoce
-  (administrator vidi sve), ali to nije zaštita u bazi.
+- Deaktivacija ide običnim klijentom (RLS: `clanovi_bibliotekar_update`), ne kroz funkciju. **Administratora
+  štiti baza** (migracija 0020, okidači `clanovi_zastita` i `clanovi_insert_zastita`): bibliotekar ne može da
+  menja ni deaktivira člana sa ulogom administrator (greška 42501), ne menja ulogu nikome i ne upisuje red sa
+  ulogom različitom od `citalac`; brisanje je samo administratoru. Administrator i servisna uloga sme sve.
+  Ekran svejedno nudi dugme samo za čitaoce (administrator vidi sve), da korisnik ne nailazi na grešku.
 - `npm run test:api` proverava uloge, ograničenje, vodeću nulu i da PIN nije u logu ni u poruci greške;
-  `test:db` migraciju 0018; `test:rls` (faza 13) isto na pravoj bazi.
+  `test:db` migracije 0018 do 0020; `test:rls` (faze 13 do 15) isto na pravoj bazi.
 
 ### Čitaoci: veze, preporuke, blokada
 
@@ -350,12 +394,12 @@ nule ako ijedna provera padne.
 ### Migracije su puštene ručno
 
 Port 5432 je blokiran sa razvojne mreže, pa `supabase db push` ne radi. Migracije
-se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0019 treba zalepiti, tim redom). Zato je tabela
+se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0020 treba zalepiti, tim redom). Zato je tabela
 `supabase_migrations.schema_migrations` u bazi **prazna** i CLI misli da ništa
 nije primenjeno. Kad se ostvari veza, uskladiti:
 
 ```bash
-npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019
+npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020
 ```
 
 Do tada: izmena postojeće migracije u repozitorijumu **nije** u bazi dok se

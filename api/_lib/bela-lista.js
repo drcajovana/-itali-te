@@ -1,6 +1,8 @@
 // Domeni sa kojih api/iz-linka.js sme da pročita stranicu knjige. Jedno mesto,
 // lako se proširuje: dodaje se samo domen, bez „www." (važi i za poddomene, pa
 // „laguna.rs" propušta i „www.laguna.rs"). Sve ostalo se odbija.
+// Ista lista važi i za api/iz-liste.js (stranica sa spiskom knjiga; samo bibliotekar, jedan zahtev po
+// kliku, uz proveru robots.txt): domen se tamo ne dodaje zasebno.
 //
 // Pre dodavanja domena proveriti da sajt dozvoljava ovakvo čitanje (link koji
 // član sam zalepi, jedna stranica, uz ograničenje 30 zahteva na sat). Ovo nije

@@ -178,6 +178,17 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 - **Adrese se čitaju REDOM, jedna po jedna, najviše 20, sa pauzom** (`obradiRedom` u
   `src/lib/unos-knjiga.js`). Nikad paralelno, nikad „pretraga" kataloga izdavača: samo adrese
   koje je korisnik nalepio, jedna stranica po adresi. Kad server javi ograničenje, ostatak se ne šalje.
+- **Uvoz sa stranice izdavača** (`api/iz-liste.js`, `UvozSaListe.jsx`) ne menja ovo pravilo, nego ga proširuje na
+  jedan korak ranije: bibliotekar lepi adresu STRANICE SA SPISKOM, na dugme se čita jedna stranica i izvlači najviše
+  50 linkova (`api/_lib/spisak-knjiga.js`); izabrani (najviše 20) idu kroz istu `obradiRedom`, jedna po jedna, sa
+  pauzom. **Pravila koja se ne oslabljuju:** samo na klik bibliotekara (nema automatskog ni zakazanog prolaska i
+  nema praćenja paginacije: „sledeća stranica" je novi klik); ista SSRF zaštita i bela lista kao `iz-linka`; pre
+  stranice se čita `robots.txt` istim zaštićenim preuzimačem (`api/_lib/robots.js`): zabrana za „Citaliste" ili „*"
+  prekida uz poruku, nečitljiv `robots.txt` ne prekida, `Crawl-delay` se poštuje (najviše 30 s) i primenjuje i između
+  knjiga; linkovi koje `robots.txt` zabranjuje se ne nude; kanta je ista kao za `iz-linka` osoblja (200 na sat; spisak
+  troši 1, svaka obrađena knjiga po 1); server ništa ne čuva (nema tabele ni keša za spisak). Kartice iz uvoza počinju
+  kao „Само нацрт" (ništa se ne upisuje bez izbora „Имамо"/„Набављамо" i potvrde). Heuristika „liči na knjigu" nije
+  proveravana na pravim sajtovima; kad sajt promeni izgled, dopunjava se `OBRASCI_SAJTOVA` (po jedan obrazac putanje).
 - **Opis se ne povlači sa sajta.** `pocetnaForma` ga ostavlja praznim, a piše ga bibliotekar.
   `npm run test:api` proverava da opis sa sajta nikad ne dospe u formu ni u red za upis.
 - **Upis** ide običnim klijentom kao prijavljeni bibliotekar, nikad kroz `service_role`. Izvor je
@@ -197,7 +208,11 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   pregledaču živi samo u stanju ekrana (nikad localStorage). Ne praviti „prikaži PIN opet".
 - **Uloga novog člana je uvek `citalac`** i ne čita se iz zahteva. Uloga pozivaoca se čita iz baze.
   Bibliotekar resetuje PIN samo čitaocima; administrator svima. Isto pravilo ponavlja
-  `mozeDaUpravlja` u interfejsu, ali bezbednost je u funkciji.
+  `mozeDaUpravlja` u interfejsu, ali bezbednost je u funkciji i u bazi.
+- **Bibliotekar ne dira administratora ni u bazi** (0020): okidač `clanovi_zastita` baca 42501 za izmenu reda sa
+  ulogom administrator, ne dozvoljava promenu uloge, a `clanovi_insert_zastita` bibliotekaru dozvoljava samo
+  upis čitaoca. Politike na `clanovi` se ne menjaju (politika ne zna za vrednost kolone). Ne vraćati proveru
+  samo u interfejs.
 - **Broj karte člana je 7 cifara kao tekst** (`proveriBrojKarte`, `src/lib/clan-unos.js`); broj koji
   stigne kao JSON broj se odbija jer je vodeća nula već izgubljena. Ostalo o kartama: „Klijent".
 - **Ograničenje**: kanta `clanovi:bibliotekar`, 60 na sat po korisniku, zajednička za obe funkcije.
@@ -217,6 +232,20 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   učitava dok veza nije prihvaćena (prvo `ucitajVezuSaClanom`).
 - `preporuke.procitana = true` znači „primalac je odlučio" (želim, već pročitano, nije za mene). `skrivena` je samo moderacija.
 - Svaka nova migracija za ovaj ekran ostaje idempotentna i bez izmene politika (0019 ne dira nijednu politiku).
+
+## Nabavka (/bibliotekar/nabavka)
+
+- **Izveštaj je samo agregat.** Čita se isključivo pogled `izvestaj_za_nabavku` (nad `privatno.izvestaj_nabavke()`,
+  SECURITY DEFINER, proverava `je_bibliotekar()`): po knjizi samo `zele` i `citaju_ili_procitali` (brojevi), ostalo su
+  podaci o knjizi. Nema id-a članova, imena, nadimaka ni vremena kad je neko stavio knjigu na policu, i ekran ne sme da
+  dobije put do njih. RLS na `polica` se ne menja. Broj se prikazuje tačno (i 1): ekran je samo za bibliotekare, a bez
+  imena i vremena broj nikoga ne otkriva. Ne dodavati spisak čitalaca uz knjigu ni „ko je želi".
+- **Odluka** (`knjige.odluka_nabavke`: `imamo`, `nabavljamo`, `ne_nabavljamo`, null) i datum su jedino mesto gde se kaže da li
+  biblioteka ima knjigu (nema COBISS-a). Datum postavlja okidač; „imamo" postavlja `u_fondu = true`, ostale odluke
+  `u_fondu = false`. Odluku menja samo bibliotekar (postojeća politika `knjige_update_bibliotekar`); član koji sam
+  upiše naslov ne može da je postavi.
+- CSV (`nabavka-logika.js`): UTF-8 sa BOM-om, `sep=;`, polja u navodnicima, tekst koji liči na formulu dobija apostrof,
+  ISBN se piše kao `="…"`.
 
 ## API funkcije (api/)
 

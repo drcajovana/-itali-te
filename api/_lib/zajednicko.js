@@ -33,6 +33,14 @@ export function granicaIzLinka(uloga) {
     : { kanta: KANTA_OPSTA, najvise: NAJVISE_ZAHTEVA };
 }
 
+// Granica za iz-liste (stranica sa spiskom knjiga): samo bibliotekar i administrator, u ISTOJ kanti kao
+// iz-linka za osoblje (200 na sat). Sam spisak troši jedan zahtev, a svaka knjiga koja se posle toga
+// obrađuje troši po jedan kroz iz-linka. Ostali dobijaju 403 pre ograničenja i pre mreže.
+export function granicaSpiska(uloga) {
+  if (!jeBibliotekarskaUloga(uloga)) throw new ApiGreska(403, "nije_bibliotekar", "Само библиотекар може да чита спискове са сајта издавача.");
+  return { kanta: KANTA_BIBLIOTEKAR, najvise: NAJVISE_ZAHTEVA_BIBLIOTEKAR };
+}
+
 // Granica za korica-iz-linka: samo bibliotekar i administrator. Ostali dobijaju 403 pre
 // ograničenja i pre ikakvog mrežnog poziva.
 export function granicaKorice(uloga) {

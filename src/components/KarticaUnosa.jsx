@@ -206,8 +206,9 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
               <legend className="text-base font-medium">{T.kartica.stanje}</legend>
               <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:gap-6">
                 {[
-                  ["fond", T.kartica.uFondu],
-                  ["nabavka", T.kartica.zaNabavku],
+                  ["fond", T.kartica.imamo],
+                  ["nabavka", T.kartica.nabavljamo],
+                  ["nacrt", T.kartica.nacrt],
                 ].map(([vrednost, oznaka]) => (
                   <label key={vrednost} className="flex min-h-11 items-center gap-3 text-base">
                     <input
@@ -223,6 +224,8 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
                 ))}
               </div>
             </fieldset>
+
+            {forma.stanje === "nacrt" && <p className="text-sm text-mastilo-2">{T.kartica.nacrtNapomena}</p>}
 
             {forma.stanje === "fond" && (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -293,7 +296,7 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
 
             <button
               type="button"
-              disabled={saljem}
+              disabled={saljem || forma.stanje === "nacrt"}
               onClick={onSacuvaj}
               className="w-full rounded-full bg-bordo px-5 py-3 text-base font-semibold text-white disabled:opacity-60 sm:w-auto"
             >

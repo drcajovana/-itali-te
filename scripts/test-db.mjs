@@ -98,7 +98,8 @@ try {
   const POLICA = fajlovi.filter((f) => /^0017_/.test(f));
   const REZERVACIJE = fajlovi.filter((f) => /^0018_/.test(f));
   const CITAOCI = fajlovi.filter((f) => /^0019_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x))) await pusti(f);
+  const NABAVKA = fajlovi.filter((f) => /^0020_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -1039,6 +1040,159 @@ try {
   ok(!r.greska && r.redovi.length === 1 && r.redovi[0].nadimak === "Nadimak B", "posle drugog puštanja pogled i dalje radi", r.greska?.message ?? r.redovi);
   const fn = (await db.query("select p.proname, p.prosecdef, p.proconfig, has_function_privilege('anon', p.oid, 'execute') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'privatno' and p.proname = 'ima_blokade'")).rows[0];
   ok(fn?.prosecdef === true && (fn.proconfig ?? []).some((c) => c.startsWith("search_path=")) && fn.anon === false, "privatno.ima_blokade: SECURITY DEFINER sa search_path, nedostupna anon-u", fn);
+
+  // ───────── 0020: izveštaj za nabavku i zaštita administratora ─────────
+  faza("0020: izveštaj za nabavku (samo agregat, samo bibliotekar), odluka nabavke, bibliotekar ne dira administratora");
+  const otisakPolitika20 = async () =>
+    JSON.stringify((await db.query(`select c.relname, p.polname, p.polcmd::text as cmd, pg_get_expr(p.polqual, p.polrelid) as q, pg_get_expr(p.polwithcheck, p.polrelid) as w
+                                      from pg_policy p join pg_class c on c.oid = p.polrelid where c.relname in ('clanovi', 'knjige', 'polica') order by 1, 2`)).rows);
+  const politikePre20 = await otisakPolitika20();
+
+  // knjige za izveštaj
+  const novaK = async (naslov, uFondu = false, spojena = null) =>
+    (await db.query("insert into knjige (naslov, autor, izdavac, isbn, izvor, u_fondu, broj_primeraka, broj_slobodnih, spojena_sa_id) values ($1, 'Autor N', 'Izdavač N', '9788652119875', 'fond', $2, $3, $3, $4) returning id", [naslov, uFondu, uFondu ? 1 : 0, spojena])).rows[0].id;
+  const NA = await novaK("N1 tri žele");
+  const NB = await novaK("N1 jedan želi, drugi čita");
+  const NC = await novaK("N1 niko ne želi");
+  const ND = await novaK("N1 u fondu, jedan želi", true);
+  const NE = await novaK("N1 samo neaktivan želi");
+  const NF = await novaK("N1 matični");
+  const NG = await novaK("N1 duplikat matičnog", false, NF);
+  const pol = (c, k, s) => db.query("insert into polica (clan_id, knjiga_id, status) values ($1, $2, $3) on conflict (clan_id, knjiga_id) do update set status = excluded.status", [c, k, s]);
+  for (const c of [UA, UB, UC]) await pol(c, NA, "zelim");
+  await pol(UA, NB, "zelim");
+  await pol(UB, NB, "citam");
+  await pol(UC, NB, "procitano");
+  await pol(UA, NC, "procitano");
+  await pol(UA, ND, "zelim");
+  await pol(NEAKTIVAN, NE, "zelim");
+  await pol(UA, NG, "zelim");
+  await pol(UB, NF, "zelim");
+
+  // pre migracije: rupa koju 0020 zatvara
+  r = await kao("authenticated", BIB, "update public.clanovi set aktivan = false where id = $1 returning aktivan", [ADM]);
+  ok(!r.greska && r.redovi[0]?.aktivan === false, "PRE 0020: bibliotekar može da deaktivira administratora (rupa)", r.greska?.message ?? r.redovi);
+  await db.query("update public.clanovi set aktivan = true where id = $1", [ADM]);
+  const TUDJI_ADM = "99999999-9999-4999-8999-999999999999";
+  await db.query("insert into auth.users (id) values ($1)", [TUDJI_ADM]);
+  r = await kao("authenticated", BIB, "insert into public.clanovi (id, broj_kartice, ime, uloga) values ($1, 'PRE-ADM', 'Pre', 'administrator') returning uloga", [TUDJI_ADM]);
+  ok(!r.greska && r.redovi[0]?.uloga === "administrator", "PRE 0020: bibliotekar može da upiše red sa ulogom administrator (rupa)", r.greska?.message ?? r.redovi);
+  await db.query("delete from public.clanovi where id = $1", [TUDJI_ADM]);
+
+  for (const f of NABAVKA) await pusti(f);
+
+  ok((await otisakPolitika20()) === politikePre20, "0020: politike (RLS) na clanovi, knjige i polica su iste kao pre (nijedna dodata, izbrisana ni izmenjena)");
+
+  // izveštaj: brojevi
+  const IZV = "select * from public.izvestaj_za_nabavku where naslov like 'N1 %' order by zele desc, naslov";
+  r = await kao("authenticated", BIB, IZV);
+  const po = (naslovPocetak) => r.redovi?.find((x) => x.naslov.startsWith(naslovPocetak));
+  ok(!r.greska && po("N1 tri žele")?.zele === 3 && po("N1 tri žele")?.citaju_ili_procitali === 0, "izveštaj: tri različita čitaoca žele knjigu → zele = 3", r.greska?.message ?? r.redovi);
+  ok(po("N1 jedan želi")?.zele === 1 && po("N1 jedan želi")?.citaju_ili_procitali === 2, "izveštaj: jedan želi, dvoje čita ili je pročitalo → 1 i 2", r.redovi?.map((x) => [x.naslov, x.zele, x.citaju_ili_procitali]));
+  ok(!po("N1 niko ne želi") && !po("N1 samo neaktivan"), "izveštaj: knjiga koju niko ne želi i knjiga koju želi samo neaktivan član se ne pojavljuju", r.redovi?.map((x) => x.naslov));
+  ok(po("N1 matični")?.zele === 1 && !po("N1 duplikat"), "izveštaj: spojeni duplikat se ne računa zasebno (samo matični zapis; ovde A želi duplikat, a B matični → matični ima 1, duplikat nema red)", r.redovi?.map((x) => [x.naslov, x.zele]));
+  ok(r.redovi?.map((x) => x.naslov)[0] === "N1 tri žele", "izveštaj je poređan po broju onih koji žele, opadajuće", r.redovi?.map((x) => x.naslov));
+  const kolIzv = (await db.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'izvestaj_za_nabavku' order by ordinal_position")).rows.map((x) => x.column_name);
+  ok(JSON.stringify(kolIzv) === JSON.stringify(["id", "naslov", "autor", "izdavac", "isbn", "korice_url", "korice_izvor", "u_fondu", "odluka", "odluka_postavljena", "odluka_datum", "zele", "citaju_ili_procitali"]), "izveštaj vraća samo ove kolone: nema id-a članova, imena, brojeva karata ni vremena kad je neko stavio knjigu na policu", kolIzv);
+  ok(po("N1 u fondu")?.odluka === "imamo" && po("N1 u fondu")?.odluka_postavljena === false, "knjiga u_fondu bez odluke se vodi kao „imamo”, ali odluka nije postavljena", po("N1 u fondu"));
+  ok(po("N1 tri žele")?.odluka === null && po("N1 tri žele")?.odluka_postavljena === false, "knjiga van fonda bez odluke je „nova” (odluka je prazna)", po("N1 tri žele"));
+  r = await kao("authenticated", ADM, IZV);
+  ok(!r.greska && r.redovi.length === 4, "administrator takođe vidi izveštaj", r.greska?.message ?? r.redovi?.length);
+  for (const [naziv, sub] of [["čitalac A (povezan sa B)", UA], ["čitalac B", UB], ["čitalac C", UC]]) {
+    r = await kao("authenticated", sub, "select * from public.izvestaj_za_nabavku");
+    ok(!r.greska && r.redovi.length === 0, `${naziv} kroz izveštaj ne vidi ništa (ni agregat)`, r.greska?.message ?? r.redovi?.length);
+  }
+  r = await kao("authenticated", UA, "select * from privatno.izvestaj_nabavke()");
+  ok(Boolean(r.greska) || r.redovi.length === 0, "čitalac ni direktnim pozivom funkcije ne dobija redove", r.greska?.message ?? r.redovi?.length);
+  r = await kao("anon", null, "select * from public.izvestaj_za_nabavku");
+  ok(nemaPrava(r), "anon ne sme da čita izveštaj", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, "select count(*)::int as n from public.polica where clan_id = $1", [UA]);
+  ok(r.redovi?.[0]?.n === 0, "RLS na polici je isti: čitalac C i dalje ne vidi tuđu policu (izveštaj nije put do nje)", r.greska?.message ?? r.redovi);
+
+  // odluka nabavke
+  const ODL = "update public.knjige set odluka_nabavke = $2 where id = $1 returning odluka_nabavke, odluka_datum, u_fondu";
+  r = await kao("authenticated", BIB, ODL, [NA, "nabavljamo"]);
+  ok(!r.greska && r.redovi[0]?.odluka_nabavke === "nabavljamo" && r.redovi[0]?.odluka_datum !== null && r.redovi[0]?.u_fondu === false, "bibliotekar postavlja „nabavljamo”: datum postavlja okidač, u_fondu = false", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, ODL, [NA, "imamo"]);
+  ok(!r.greska && r.redovi[0]?.odluka_nabavke === "imamo" && r.redovi[0]?.u_fondu === true, "„imamo” postavlja u_fondu = true", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select odluka, odluka_postavljena, odluka_datum from public.izvestaj_za_nabavku where id = $1", [NA]);
+  ok(r.redovi?.[0]?.odluka === "imamo" && r.redovi[0].odluka_postavljena === true && r.redovi[0].odluka_datum !== null, "izveštaj pokazuje postavljenu odluku i datum", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, ODL, [NA, "ne_nabavljamo"]);
+  ok(!r.greska && r.redovi[0]?.u_fondu === false, "„ne_nabavljamo” postavlja u_fondu = false", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, ODL, [NA, null]);
+  ok(!r.greska && r.redovi[0]?.odluka_nabavke === null && r.redovi[0]?.odluka_datum === null, "skidanje odluke prazni i datum", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, ODL, [NA, "mozda"]);
+  ok(r.greska?.message?.includes("knjige_odluka_nabavke_check"), "nepoznata odluka se odbija u bazi", r.greska?.message ?? r.redovi);
+  await kao("authenticated", BIB, ODL, [NB, "nabavljamo"]);
+  r = await kao("authenticated", BIB, "update public.knjige set odluka_datum = '2000-01-01' where id = $1 returning odluka_datum", [NB]);
+  ok(!r.greska && !String(r.redovi[0]?.odluka_datum).startsWith("2000"), "datum odluke ne može da se postavi rukom (okidač ga čuva)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, ODL, [NC, "imamo"]);
+  ok(!r.greska && r.redovi.length === 0, "čitalac ne može da postavi odluku (RLS: izmenu knjige sme samo bibliotekar)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "insert into public.knjige (naslov, odluka_nabavke, u_fondu) values ('N1 član upisao sa odlukom', 'imamo', true) returning odluka_nabavke, odluka_datum, u_fondu");
+  ok(!r.greska && r.redovi[0]?.odluka_nabavke === null && r.redovi[0]?.odluka_datum === null && r.redovi[0]?.u_fondu === false, "član koji sam upiše naslov ne može da mu postavi odluku (okidač je poništava)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, IZV);
+  ok(r.redovi?.find((x) => x.naslov.startsWith("N1 jedan želi"))?.odluka === "nabavljamo", "odluka postavljena na jednoj knjizi ne menja druge (NA je bez odluke, NB je „nabavljamo”)", r.redovi?.map((x) => [x.naslov, x.odluka]));
+
+  // DEO B: bibliotekar ne dira administratora
+  r = await kao("authenticated", BIB, "update public.clanovi set aktivan = false where id = $1 returning id", [ADM]);
+  ok(r.greska?.code === "42501", "POSLE 0020: bibliotekar ne može da deaktivira administratora (greška 42501)", r.greska?.message ?? r.redovi);
+  ok((await db.query("select aktivan from public.clanovi where id = $1", [ADM])).rows[0].aktivan === true, "administrator je i dalje aktivan");
+  r = await kao("authenticated", BIB, "update public.clanovi set ime = 'Hakovan', nadimak = 'x' where id = $1 returning id", [ADM]);
+  ok(r.greska?.code === "42501", "bibliotekar ne menja ni ime ni nadimak administratora", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.clanovi set uloga = 'citalac' where id = $1 returning id", [ADM]);
+  ok(r.greska?.code === "42501", "bibliotekar ne može da degradira administratora", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.clanovi set aktivan = false where id = $1 returning aktivan", [UA]);
+  ok(!r.greska && r.redovi[0]?.aktivan === false, "bibliotekar i dalje deaktivira čitaoca (postojeće pravo)", r.greska?.message ?? r.redovi);
+  await db.query("update public.clanovi set aktivan = true where id = $1", [UA]);
+  r = await kao("authenticated", BIB, "update public.clanovi set uloga = 'administrator' where id = $1 returning uloga", [UA]);
+  ok(!r.greska && r.redovi[0]?.uloga === "citalac", "bibliotekar ne može nikome da promeni ulogu (promena se poništava): čitalac ostaje čitalac", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.clanovi set uloga = 'administrator' where id = $1 returning uloga", [BIB]);
+  ok(!r.greska && r.redovi[0]?.uloga === "bibliotekar", "bibliotekar ne može ni sebe da unapredi", r.greska?.message ?? r.redovi);
+  const NOVI = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  await db.query("insert into auth.users (id) values ($1)", [NOVI]);
+  for (const uloga of ["administrator", "bibliotekar"]) {
+    r = await kao("authenticated", BIB, "insert into public.clanovi (id, broj_kartice, ime, uloga) values ($1, 'POS-' || $2, 'Posle', $2) returning uloga", [NOVI, uloga]);
+    ok(r.greska?.code === "42501", `bibliotekar ne može da upiše red sa ulogom '${uloga}'`, r.greska?.message ?? r.redovi);
+  }
+  r = await kao("authenticated", BIB, "insert into public.clanovi (id, broj_kartice, ime, uloga) values ($1, 'POS-CIT', 'Posle', 'citalac') returning uloga", [NOVI]);
+  ok(!r.greska && r.redovi[0]?.uloga === "citalac", "bibliotekar i dalje upisuje čitaoca", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "delete from public.clanovi where id = $1 returning id", [NOVI]);
+  ok(!r.greska && r.redovi.length === 0, "bibliotekar ne briše članove (brisanje je samo administratoru)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "delete from public.clanovi where id = $1 returning id", [ADM]);
+  ok(!r.greska && r.redovi.length === 0, "bibliotekar ne briše administratora", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", ADM, "update public.clanovi set aktivan = false where id = $1 returning aktivan", [BIB]);
+  ok(!r.greska && r.redovi[0]?.aktivan === false, "administrator sme da deaktivira bibliotekara", r.greska?.message ?? r.redovi);
+  await db.query("update public.clanovi set aktivan = true where id = $1", [BIB]);
+  r = await kao("authenticated", ADM, "update public.clanovi set uloga = 'bibliotekar' where id = $1 returning uloga", [NOVI]);
+  ok(!r.greska && r.redovi[0]?.uloga === "bibliotekar", "administrator menja ulogu", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", ADM, "update public.clanovi set ime = 'Admin Novo Ime' where id = $1 returning ime", [ADM]);
+  ok(!r.greska && r.redovi[0]?.ime === "Admin Novo Ime", "administrator sme da menja i sebe", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", ADM, "insert into public.clanovi (id, broj_kartice, ime, uloga) values ($1, 'POS-ADM', 'Posle', 'administrator') on conflict (id) do update set uloga = 'administrator' returning uloga", [NOVI]);
+  ok(!r.greska && r.redovi[0]?.uloga === "administrator", "administrator sme da dodeli ulogu administratora", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", ADM, "delete from public.clanovi where id = $1 returning id", [NOVI]);
+  ok(!r.greska && r.redovi.length === 1, "administrator sme da briše članove", r.greska?.message ?? r.redovi);
+  r = await kao("service_role", null, "update public.clanovi set ime = 'Administrator' where id = $1 returning ime", [ADM]);
+  ok(!r.greska && r.redovi[0]?.ime === "Administrator", "servisna uloga je izuzeta (menja administratora)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "update public.clanovi set nadimak = 'Moje ime', uloga = 'administrator', aktivan = false where id = $1 returning nadimak, uloga, aktivan", [UA]);
+  ok(!r.greska && r.redovi[0]?.nadimak === "Moje ime" && r.redovi[0]?.uloga === "citalac" && r.redovi[0]?.aktivan === true, "čitalac i dalje menja samo svoj nadimak (uloga i aktivnost ostaju)", r.greska?.message ?? r.redovi);
+  ok((await otisakPolitika20()) === politikePre20, "politike su iste i posle svih izmena");
+
+  // idempotentnost i funkcije
+  const fn20 = async () =>
+    JSON.stringify([
+      (await db.query("select pg_get_viewdef('public.izvestaj_za_nabavku'::regclass) as v")).rows,
+      (await db.query("select pg_get_constraintdef(oid) as d from pg_constraint where conname = 'knjige_odluka_nabavke_check'")).rows,
+      (await db.query("select tgname from pg_trigger where tgname in ('knjige_odluka_zastita_bu', 'clanovi_insert_zastita_bi', 'clanovi_zastita_bu') order by 1")).rows,
+    ]);
+  const pre20 = await fn20();
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, NABAVKA[0]), "utf8"));
+  ok((await fn20()) === pre20 && (await otisakPolitika20()) === politikePre20, "0020 je idempotentna: drugo puštanje ne duplira okidače, ograničenje ni pogled i ne menja politike", await fn20());
+  r = await kao("authenticated", BIB, IZV);
+  ok(!r.greska && r.redovi.length >= 4, "posle drugog puštanja izveštaj radi", r.greska?.message ?? r.redovi?.length);
+  const f20 = (await db.query("select p.prosecdef, p.proconfig, has_function_privilege('anon', p.oid, 'execute') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'privatno' and p.proname = 'izvestaj_nabavke'")).rows[0];
+  ok(f20?.prosecdef === true && (f20.proconfig ?? []).some((c) => c.startsWith("search_path=")) && f20.anon === false, "privatno.izvestaj_nabavke: SECURITY DEFINER sa search_path, nedostupna anon-u", f20);
+  const opc20 = (await db.query("select reloptions from pg_class where relname = 'izvestaj_za_nabavku'")).rows[0];
+  ok((opc20?.reloptions ?? []).includes("security_invoker=true"), "pogled izvestaj_za_nabavku je security_invoker", opc20);
 
   // ───────── opšte ─────────
   faza("Opšta pravila");

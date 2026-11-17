@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import KarticaUnosa from "../components/KarticaUnosa.jsx";
+import UvozSaListe from "../components/UvozSaListe.jsx";
 import { GreskaApija, porukaGreske } from "../lib/api.js";
 import { useAuth } from "../lib/auth-context.js";
 import { dodajPrimerke, izLinka, koricaIzLinka, nadjiDuplikate, postaviKoricu, sacuvajKnjigu } from "../lib/knjige.js";
 import { izborKorice, primeniKoricu, sacuvajPaKoricu, sacuvajSve as sacuvajSveRedom, tekstSazetka } from "../lib/korica-tok.js";
 import { tekst } from "../lib/tekst.js";
 import { nasaFotografija } from "../lib/korica-slika.js";
-import { lokalnoNeispravan, obradiRedom, pocetnaForma, razdvojiLinkove, sledecaZaObradu, urediUnos } from "../lib/unos-knjiga.js";
+import { lokalnoNeispravan, obradiRedom, PAUZA_MS, pocetnaForma, razdvojiLinkove, sledecaZaObradu, urediUnos } from "../lib/unos-knjiga.js";
 
 const T = tekst.unos;
 const dugme = "block w-full rounded-full bg-bordo px-5 py-3 text-base font-semibold text-white disabled:opacity-60 sm:w-auto";
@@ -51,7 +52,19 @@ export default function BibliotekarUnos() {
     const { linkovi, ponovljenih, previse } = razdvojiLinkove(tekstLinkova);
     if (!linkovi.length) return setObavest({ poruka: T.greske.prazno, greska: true });
     if (previse) return setObavest({ poruka: T.greske.previse, greska: true });
+    return pokreniObradu(linkovi, { ponovljenih });
+  }
 
+  // Izabrane adrese sa stranice izdavača idu kroz ISTU obradu kao nalepljene: jedna po jedna, sa pauzom
+  // (najmanje podrazumevana, a Crawl-delay sajta je veći ako ga sajt traži). Kartice počinju kao „Samo nacrt".
+  function izabranoSaListe(adrese, pauzaSekundi) {
+    if (radi || cuvaSve || !adrese.length) return;
+    setTekstLinkova(adrese.join("\n"));
+    pokreniObradu(adrese, { nacrt: true, pauzaMs: Math.max(PAUZA_MS, (Number(pauzaSekundi) || 0) * 1000) });
+  }
+
+  // Zajednička obrada (nalepljene adrese i izabrane sa stranice izdavača): obradiRedom, jedna po jedna.
+  async function pokreniObradu(linkovi, { ponovljenih = 0, nacrt = false, pauzaMs = PAUZA_MS } = {}) {
     stopRef.current = false;
     limitRef.current = null;
     const prefiks = Date.now();
@@ -61,12 +74,13 @@ export default function BibliotekarUnos() {
     setRadi(true);
 
     const { prekinuto } = await obradiRedom(linkovi, {
+      pauzaMs,
       obradi: procitajJedan,
       stop: () => stopRef.current,
       naStatus: (i, status, podaci) => {
         const id = pocetne[i].id;
         if (status === "prepoznato" || status === "delimicno") {
-          izmeni(id, { status, rezultat: podaci.rezultat, forma: pocetnaForma(podaci.rezultat) });
+          izmeni(id, { status, rezultat: podaci.rezultat, forma: pocetnaForma(podaci.rezultat, { nacrt }) });
         } else if (status === "nije_uspelo") {
           if (podaci.greska?.kod === "previse_zahteva") limitRef.current = podaci.greska.ponovoZaSekundi;
           izmeni(id, { status, poruka: porukaGreske(podaci.greska) });
@@ -191,7 +205,7 @@ export default function BibliotekarUnos() {
   // Kad se potroši ograničenje preuzimanja, ostatak se čuva bez korice (piše u sažetku).
   async function sacuvajSve() {
     if (radi || cuvaSve) return;
-    const potvrdjene = stavkeRef.current.filter((s) => s.potvrdjeno && !s.sacuvano && s.forma);
+    const potvrdjene = stavkeRef.current.filter((s) => s.potvrdjeno && !s.sacuvano && s.forma && s.forma.stanje !== "nacrt");
     if (!potvrdjene.length) return setObavest({ poruka: T.sacuvajSve.nema });
     setCuvaSve(true);
     setObavest(null);
@@ -219,12 +233,14 @@ export default function BibliotekarUnos() {
   }
 
   const obradjeno = stavke.filter((s) => !["ceka", "trazi"].includes(s.status)).length;
-  const brojPotvrdjenih = stavke.filter((s) => s.potvrdjeno && !s.sacuvano && s.forma).length;
+  const brojPotvrdjenih = stavke.filter((s) => s.potvrdjeno && !s.sacuvano && s.forma && s.forma.stanje !== "nacrt").length;
 
   return (
     <>
       <h1 className="text-3xl font-semibold text-bordo">{T.naslov}</h1>
       <p className="mt-1 text-base">{T.uvod}</p>
+
+      <UvozSaListe zauzet={radi || cuvaSve} onIzabrano={izabranoSaListe} />
 
       <form onSubmit={procitaj} className="mt-4 space-y-3" noValidate>
         <label htmlFor="linkovi" className="sr-only">
