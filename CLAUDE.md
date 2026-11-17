@@ -62,8 +62,10 @@ tekst aplikacije. Ne transliterovati je i ne dirati migracije radi pisma.
   prikazuje uz oznaku „Google Books" i vezu ka njihovoj stranici, nikad se ne čuva.
   Isto važi za opis sa tuđeg sajta (link): ne čuva se. Slika sa linka je predlog adrese; vidi
   „Korice i ISBN”.
-- **Ne piše se ništa u COBISS.** COBISS je izvor istine za katalog i
-  zaduženja; „Rezerviši" je obaveštenje bibliotekaru, ništa više.
+- **Aplikacija nije povezana sa COBISS-om i ne treba da bude** (nemamo API ključ, a to nije cilj): to je lična
+  evidencija čitalaca (polica, utisci, preporuke). Zato **nema rezervacija, dostupnosti ni stanja zaliha** u
+  interfejsu: ni „Rezerviši”, ni „U fondu, N primeraka”, ni „Slobodnih”, ni „Izdato”. Ne vraćati ih. Migracija
+  0018 (stanja rezervacije) je puštena u bazu, ali je ništa ne koristi; tabela `rezervacije` ostaje nedirnuta.
 - **Nema samostalne registracije.** Nalog postoji samo ako je članstvo
   aktivno, otvara ga bibliotekar.
 - **Nema slobodnog dopisivanja.** Poruka uvek visi o konkretnoj knjizi.
@@ -185,7 +187,7 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   autor; normalizaciju radi baza). Povećanje primeraka je izmena sa uslovom na staro stanje, pa
   istovremena izmena ne daje pogrešan broj.
 
-## Članovi i rezervacije (/bibliotekar/clanovi, /bibliotekar/rezervacije)
+## Članovi (/bibliotekar/clanovi)
 
 - **Nalog pravi samo server** (`api/napravi-clana.js`, `api/resetuj-pin.js`): Auth nalog i PIN traže
   `service_role`, koji nikad ne dolazi u pregledač. Klijent (`src/lib/clanovi.js`) ih zove preko
@@ -199,10 +201,22 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 - **Broj karte člana je 7 cifara kao tekst** (`proveriBrojKarte`, `src/lib/clan-unos.js`); broj koji
   stigne kao JSON broj se odbija jer je vodeća nula već izgubljena. Ostalo o kartama: „Klijent".
 - **Ograničenje**: kanta `clanovi:bibliotekar`, 60 na sat po korisniku, zajednička za obe funkcije.
-- **Rezervacija** ima stanja `nova`, `spremna`, `preuzeta`, `otkazana` (migracija 0018). Otvorena je
-  nova ili spremna (jedinstveni indeks). Član otkazuje samo novu; ostalo menja bibliotekar.
 - **Kartica za štampu** (`PinPrikaz.jsx`) je portal u `<body>`; `@media print` u `index.css` sakriva
   sve ostalo. Ne vraćati štampu na `visibility: hidden` (ostavlja prazne stranice).
+
+## Čitaoci (/citaoci, /citaoci/:id)
+
+- **Veza je samo pozivom; nema spiska ni pretrage članova.** Ekran nikad ne čita `clanovi` (osim sopstvene šifre iz profila
+  prijavljenog člana). Nadimak drugog člana dolazi samo iz pogleda `moje_veze` i `moje_preporuke` (0019). Ne dodavati upit koji vraća
+  ime, broj karte ili šifru poziva drugog člana.
+- **Nepostojeća šifra i šifra blokiranog člana daju istu poruku**: baza vraća istu grešku (`P0001`), `posaljiPoziv` je pretvara u jedan
+  kod, a ekran ima jednu poruku. Ne razlikovati ih, ni u tekstu ni u kodu.
+- **Blokirani ne saznaje za blokadu**: pogled izbacuje blokirane parove za obe strane, a blokada ne šalje nikakav signal.
+- **Slobodnih poruka nema.** Jedino što član šalje drugom članu je preporuka knjige sa napomenom do 280 znakova (granica i u bazi).
+- Šta se prikazuje određuje RLS i pogledi; React ništa ne filtrira po vezi ni po vidljivosti. Jedino pravilo ekrana je da se profil ne
+  učitava dok veza nije prihvaćena (prvo `ucitajVezuSaClanom`).
+- `preporuke.procitana = true` znači „primalac je odlučio" (želim, već pročitano, nije za mene). `skrivena` je samo moderacija.
+- Svaka nova migracija za ovaj ekran ostaje idempotentna i bez izmene politika (0019 ne dira nijednu politiku).
 
 ## API funkcije (api/)
 

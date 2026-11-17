@@ -1,14 +1,13 @@
-// Upiti za policu, utiske i rezervacije (običan klijent, kao prijavljeni član: RLS važi).
+// Upiti za policu i utiske (običan klijent, kao prijavljeni član: RLS važi).
 // Logika (prelaz stanja, napredak, ocena) je u polica-logika.js.
 //
 // Šta čita ko: vidljivost police i utisaka određuju politike u bazi. Ovde se NE filtrira po tome ko
 // sme da vidi šta. Jedini filteri po članu (.eq("clan_id", ...)) služe tome da ekran traži SVOJU policu:
 // RLS pokazuje i policu povezanih članova (i bibliotekaru sve), pa bi bez njega „moja polica" sadržala i tuđe.
-import { GreskaApija } from "./api.js";
 import { promenaStanja, urediUtisak } from "./polica-logika.js";
 import { supabase } from "./supabase.js";
 
-const KNJIGA_ZA_PRIKAZ = "id, naslov, autor, isbn, korice_url, korice_izvor, u_fondu, broj_primeraka, broj_slobodnih";
+const KNJIGA_ZA_PRIKAZ = "id, naslov, autor, isbn, korice_url, korice_izvor";
 
 // Moja polica sa podacima o knjigama.
 export async function ucitajPolicu(clanId) {
@@ -101,28 +100,4 @@ export async function obrisiUtisak(id) {
   const { data, error } = await supabase.from("utisci").delete().eq("id", id).select("id");
   if (error) throw error;
   if (!data?.length) throw Object.assign(new Error("utisak nije obrisan"), { kod: "utisak_nije_obrisan" });
-}
-
-// Otvorena rezervacija ove knjige (status 'nova' ili 'spremna', migracija 0018) ili null.
-export async function ucitajRezervaciju(clanId, knjigaId) {
-  const { data, error } = await supabase.from("rezervacije").select("id, status, kreirana").eq("clan_id", clanId).eq("knjiga_id", knjigaId).in("status", ["nova", "spremna"]).maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-// Rezervacija je poruka bibliotekaru (zaduženja vodi COBISS). Baza odbija knjigu koja nije u fondu.
-export async function rezervisi(clanId, knjigaId) {
-  const { data, error } = await supabase.from("rezervacije").insert({ clan_id: clanId, knjiga_id: knjigaId }).select("id, status, kreirana").single();
-  if (error) {
-    if (error.code === "23505") throw new GreskaApija("rezervacija_vec_postoji");
-    if (error.code === "42501") throw new GreskaApija("rezervacija_nije_u_fondu");
-    throw error;
-  }
-  return data;
-}
-
-export async function otkaziRezervaciju(id) {
-  const { data, error } = await supabase.from("rezervacije").update({ status: "otkazana" }).eq("id", id).select("id").maybeSingle();
-  if (error) throw error;
-  if (!data) throw new GreskaApija("rezervacija_nije_otkazana");
 }

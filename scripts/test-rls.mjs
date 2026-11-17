@@ -1114,6 +1114,202 @@ async function main() {
     const bib = await vidi(BIB.db, "rezervacije", (q) => q.eq("clan_id", A.id));
     return nistaNeVidi(b, "B") === true && tudja.pogodjeno === 0 && !bib.error && bib.data.length >= 2 ? true : `${opis(b)} / pogođeno ${tudja.pogodjeno} / ${opis(bib)}`;
   });
+  // ───────────────────────── 14. Čitaoci: nadimci, pozivi, preporuke, blokada, prijava člana (migracija 0019) ─────────────────────────
+  // Nove članove pravimo za ovu fazu (D, E, F), da stanje iz ranijih faza ne utiče. Proverava se: ko vidi
+  // nadimak pre i posle veze, da se nikad ne vidi ime, broj karte ni šifra poziva, da nepostojeća i blokirana
+  // šifra daju isti odgovor i da blokirani ne sazna za blokadu.
+  faza("14. Čitaoci: nadimci, pozivi, preporuke, blokada i prijava člana (migracija 0019)");
+  const D = await napraviClana("d", "citalac");
+  const E = await napraviClana("e", "citalac");
+  const F = await napraviClana("f", "citalac");
+  for (const [c, ime] of [[D, "D"], [E, "E"], [F, "F"]]) await S.from("clanovi").update({ nadimak: `RLS-nad-${ime}-${RUN}` }).eq("id", c.id);
+  const nad = (ime) => `RLS-nad-${ime}-${RUN}`;
+  const KP = await napraviKnjigu("K-PREP");
+  const KP2 = await napraviKnjigu("K-PREP2");
+  const veze = (c) => c.db.from("moje_veze").select("*");
+  const preporuke = (c) => c.db.from("moje_preporuke").select("*");
+  const poverljivo = (podaci, ...clanovi) => {
+    const tekst = JSON.stringify(podaci ?? []);
+    return clanovi.flatMap((c) => [c.sifra, `RLSTEST-${RUN}`, "RLS Test"]).some((t) => tekst.includes(t));
+  };
+
+  await provera("pre poziva: D ne vidi ništa o E (nema veze, nema nadimka)", async () => {
+    const r = await veze(D);
+    const c = await D.db.from("clanovi").select("id, nadimak").eq("id", E.id);
+    return tacno(r, 0, "moje_veze") === true && tacno(c, 0, "clanovi E") === true ? true : `${opis(r)} / ${opis(c)}`;
+  });
+
+  // poziv: D unosi šifru E (postojeći RPC)
+  let vezaDE = null;
+  await provera("D šalje poziv E-u preko posalji_poziv (šifra sa razmacima i malim slovima)", async () => {
+    const kucano = E.sifra.toLowerCase().replace(/·/g, " ");
+    const r = await D.db.rpc("posalji_poziv", { sifra: kucano });
+    vezaDE = r.data;
+    return !r.error && r.data ? true : opis(r);
+  });
+  await provera("poziv na čekanju: E vidi „primljen” sa nadimkom pošiljaoca D; D vidi „poslat” sa nadimkom E", async () => {
+    const e = await veze(E);
+    const d = await veze(D);
+    const re = e.data?.[0];
+    const rd = d.data?.[0];
+    return !e.error && !d.error && e.data.length === 1 && d.data.length === 1 && re.smer === "primljen" && re.status === "na_cekanju" && re.nadimak === nad("D") && rd.smer === "poslat" && rd.nadimak === nad("E")
+      ? true
+      : `${JSON.stringify(e.data)} / ${JSON.stringify(d.data)}`;
+  });
+  await provera("poziv na čekanju: F i bibliotekar ga ne vide (bibliotekar kroz moje_veze samo svoje)", async () => {
+    const f = await veze(F);
+    const b = await veze(BIB);
+    return tacno(f, 0, "F") === true && tacno(b, 0, "bibliotekar") === true ? true : `${opis(f)} / ${opis(b)}`;
+  });
+  await provera("pogled ne vraća pravo ime, broj karte ni šifru poziva (ni E-u o D, ni D-u o E)", async () => {
+    const e = await veze(E);
+    const d = await veze(D);
+    const kolone = Object.keys(e.data?.[0] ?? {}).sort().join(",");
+    return !poverljivo(e.data, D, E) && !poverljivo(d.data, D, E) && kolone === "clan_id,id,kreirana,nadimak,potvrdjena,smer,status" ? true : `kolone: ${kolone}`;
+  });
+  await provera("clanovi se i dalje ne otvaraju: E ne vidi red D, a D ne vidi red E", async () => {
+    const e = await E.db.from("clanovi").select("*").eq("id", D.id);
+    const d = await D.db.from("clanovi").select("*").eq("id", E.id);
+    return tacno(e, 0, "E→D") === true && tacno(d, 0, "D→E") === true ? true : `${opis(e)} / ${opis(d)}`;
+  });
+  await provera("pre prihvatanja: E ne vidi policu D", async () => {
+    await ubaci("polica", { clan_id: D.id, knjiga_id: KP.id, status: "zelim" });
+    return nistaNeVidi(await vidi(E.db, "polica", (q) => q.eq("clan_id", D.id)), "E→polica D");
+  });
+  await provera("posalji_poziv ponovo (isti par) ne pravi duplikat i vraća isti id veze", async () => {
+    const r = await D.db.rpc("posalji_poziv", { sifra: E.sifra });
+    const n = await S.from("veze").select("id", { count: "exact", head: true }).in("pozivalac_id", [D.id, E.id]).in("pozvani_id", [D.id, E.id]);
+    return !r.error && r.data === vezaDE && n.count === 1 ? true : `${opis(r)}; veza ${r.data}; broj redova ${n.count}`;
+  });
+  await provera("poziv ne može da prihvati pošiljalac (D), samo pozvani (E)", async () => {
+    const d = await D.db.rpc("prihvati_poziv", { veza: vezaDE });
+    const stanjeVeze = await stanje("veze", vezaDE);
+    return d.error && stanjeVeze.status === "na_cekanju" ? true : `D: ${opis(d)}; status ${stanjeVeze.status}`;
+  });
+  await provera("E prihvata poziv (prihvati_poziv); posle toga obe strane vide „prihvaćena” i nadimak druge strane", async () => {
+    const a = await E.db.rpc("prihvati_poziv", { veza: vezaDE });
+    const e = await veze(E);
+    const d = await veze(D);
+    return !a.error && e.data?.[0]?.status === "prihvacena" && e.data[0].nadimak === nad("D") && d.data?.[0]?.status === "prihvacena" && d.data[0].nadimak === nad("E") ? true : `${opis(a)} / ${JSON.stringify(e.data)} / ${JSON.stringify(d.data)}`;
+  });
+  await provera("posle prihvatanja: E vidi policu D (RLS), F je i dalje ne vidi", async () => {
+    const e = await vidi(E.db, "polica", (q) => q.eq("clan_id", D.id));
+    const f = await vidi(F.db, "polica", (q) => q.eq("clan_id", D.id));
+    return !e.error && e.data.length === 1 && tacno(f, 0, "F→polica D") === true ? true : `${opis(e)} / ${opis(f)}`;
+  });
+
+  // preporuke
+  let prepId = null;
+  await provera("D preporučuje knjigu E-u (povezani): prolazi; F (nepovezan) ne može da preporuči E-u", async () => {
+    const d = await D.db.from("preporuke").insert({ posiljalac_id: D.id, primalac_id: E.id, knjiga_id: KP.id, poruka: "RLS preporuka" }).select("id");
+    prepId = d.data?.[0]?.id;
+    const f = await F.db.from("preporuke").insert({ posiljalac_id: F.id, primalac_id: E.id, knjiga_id: KP.id, poruka: "x" }).select("id");
+    return !d.error && prepId && f.error?.code === "42501" ? true : `D: ${opis(d)}; F: ${f.error?.code ?? "prošlo"}`;
+  });
+  await provera("E vidi primljenu preporuku sa nadimkom pošiljaoca; D, F i bibliotekar je ne vide kroz moje_preporuke", async () => {
+    const e = await preporuke(E);
+    const d = await preporuke(D);
+    const f = await preporuke(F);
+    const b = await preporuke(BIB);
+    return !e.error && e.data.length === 1 && e.data[0].posiljalac_nadimak === nad("D") && e.data[0].poruka === "RLS preporuka" && tacno(d, 0, "D") === true && tacno(f, 0, "F") === true && tacno(b, 0, "bibliotekar") === true && !poverljivo(e.data, D)
+      ? true
+      : `${JSON.stringify(e.data)} / ${opis(d)} / ${opis(f)} / ${opis(b)}`;
+  });
+  await provera("napomena: 281 znak odbija baza, 280 prolazi; ista neobrađena preporuka se ne ponavlja", async () => {
+    const duga = await D.db.from("preporuke").insert({ posiljalac_id: D.id, primalac_id: E.id, knjiga_id: KP2.id, poruka: "x".repeat(281) }).select("id");
+    const tacna = await D.db.from("preporuke").insert({ posiljalac_id: D.id, primalac_id: E.id, knjiga_id: KP2.id, poruka: "x".repeat(280) }).select("id");
+    const ponovo = await D.db.from("preporuke").insert({ posiljalac_id: D.id, primalac_id: E.id, knjiga_id: KP2.id, poruka: "opet" }).select("id");
+    return duga.error?.code === "23514" && !tacna.error && ponovo.error?.code === "23505" ? true : `281: ${duga.error?.code ?? "prošlo"}; 280: ${opis(tacna)}; ponovo: ${ponovo.error?.code ?? "prošlo"}`;
+  });
+  await provera("E obrađuje preporuku (procitana = true); skrivena i poruka ostaju, pošiljalac ne može da menja", async () => {
+    const e = await E.db.from("preporuke").update({ procitana: true, skrivena: true, poruka: "izmenjeno" }).eq("id", prepId).select("procitana, skrivena, poruka");
+    const d = await pokusaj(D.db.from("preporuke").update({ procitana: false }).eq("id", prepId).select());
+    return !e.error && e.data[0].procitana === true && e.data[0].skrivena === false && e.data[0].poruka === "RLS preporuka" && d.pogodjeno === 0 ? true : `${opis(e)}; D pogodio ${d.pogodjeno}`;
+  });
+  await provera("skrivena (moderacija) preporuka se ne pokazuje primaocu", async () => {
+    await S.from("preporuke").update({ skrivena: true }).eq("id", prepId);
+    const r = await preporuke(E);
+    await S.from("preporuke").update({ skrivena: false }).eq("id", prepId);
+    return r.data?.every((x) => x.id !== prepId) ? true : "skrivena preporuka je vidljiva";
+  });
+
+  // raskid: običan DELETE, posle koga nestaje nadimak pošiljaoca (preporuka ostaje)
+  await provera("raskid veze (DELETE): obe strane ostaju bez veze, E više ne vidi policu D, a preporuka ostaje bez nadimka pošiljaoca", async () => {
+    await S.from("preporuke").update({ procitana: false }).eq("id", prepId);
+    const del = await E.db.from("veze").delete().eq("id", vezaDE).select("id");
+    const e = await veze(E);
+    const d = await veze(D);
+    const pol = await vidi(E.db, "polica", (q) => q.eq("clan_id", D.id));
+    const p = await preporuke(E);
+    const red = p.data?.find((x) => x.id === prepId);
+    return !del.error && del.data.length === 1 && tacno(e, 0, "E") === true && tacno(d, 0, "D") === true && tacno(pol, 0, "polica") === true && red && red.posiljalac_nadimak === null ? true : `${opis(del)} / ${opis(e)} / ${opis(d)} / ${opis(pol)} / ${JSON.stringify(red)}`;
+  });
+
+  // odbijanje i povlačenje poziva (običan DELETE reda koji čeka)
+  await provera("odbijanje poziva: F šalje poziv E-u, E ga odbija (DELETE); F posle toga vidi isto što i pre poziva", async () => {
+    const p = await F.db.rpc("posalji_poziv", { sifra: E.sifra });
+    const odbij = await E.db.from("veze").delete().eq("id", p.data).eq("status", "na_cekanju").select("id");
+    const f = await veze(F);
+    return !p.error && !odbij.error && odbij.data.length === 1 && tacno(f, 0, "F") === true ? true : `${opis(p)} / ${opis(odbij)} / ${opis(f)}`;
+  });
+  await provera("povlačenje poziva: F šalje poziv E-u i povlači ga; treća strana (D) ne može da ga obriše", async () => {
+    const p = await F.db.rpc("posalji_poziv", { sifra: E.sifra });
+    const tudji = await pokusaj(D.db.from("veze").delete().eq("id", p.data).select("id"));
+    const povuci = await F.db.from("veze").delete().eq("id", p.data).eq("status", "na_cekanju").select("id");
+    return !p.error && tudji.pogodjeno === 0 && !povuci.error && povuci.data.length === 1 ? true : `${opis(p)} / tuđi ${tudji.pogodjeno} / ${opis(povuci)}`;
+  });
+
+  // blokada: ista poruka za nepostojeću i blokiranu šifru, blokirani ne saznaje ništa
+  await provera("veza D–E ponovo (poziv i prihvatanje), pa E blokira D", async () => {
+    const p = await D.db.rpc("posalji_poziv", { sifra: E.sifra });
+    const a = await E.db.rpc("prihvati_poziv", { veza: p.data });
+    const b = await E.db.from("blokade").insert({ blokirao_id: E.id, blokirani_id: D.id }).select("id");
+    return !p.error && !a.error && !b.error ? true : `${opis(p)} / ${opis(a)} / ${opis(b)}`;
+  });
+  await provera("posle blokade vezu ne vidi nijedna strana (pogled moje_veze), pa ni polica D", async () => {
+    const e = await veze(E);
+    const d = await veze(D);
+    const pol = await vidi(E.db, "polica", (q) => q.eq("clan_id", D.id));
+    return tacno(e, 0, "E") === true && tacno(d, 0, "D") === true && tacno(pol, 0, "polica") === true ? true : `${opis(e)} / ${opis(d)} / ${opis(pol)}`;
+  });
+  await provera("blokirani D ne vidi tabelu blokade ni preporuke koje je poslao E-u u pogledu E-a; E ih ne vidi u moje_preporuke", async () => {
+    const bl = await D.db.from("blokade").select("*");
+    await S.from("preporuke").update({ procitana: false }).eq("id", prepId);
+    const p = await preporuke(E);
+    return tacno(bl, 0, "D→blokade") === true && p.data?.every((x) => x.id !== prepId) ? true : `${opis(bl)} / ${JSON.stringify(p.data)}`;
+  });
+  await provera("posalji_poziv: nepostojeća šifra, šifra člana koji me je blokirao i šifra člana koga sam blokirao daju ISTI odgovor (kod i poruka)", async () => {
+    const nepostojeca = await D.db.rpc("posalji_poziv", { sifra: NEPOSTOJECA_SIFRA });
+    const blokiranOdE = await D.db.rpc("posalji_poziv", { sifra: E.sifra }); // D je blokiran
+    const blokiraoBlokiranog = await E.db.rpc("posalji_poziv", { sifra: D.sifra }); // E je blokirao
+    const potpis = (r) => JSON.stringify([r.error?.code, r.error?.message, r.error?.details, r.error?.hint, r.status]);
+    return nepostojeca.error && potpis(nepostojeca) === potpis(blokiranOdE) && potpis(nepostojeca) === potpis(blokiraoBlokiranog) ? true : `${potpis(nepostojeca)} / ${potpis(blokiranOdE)} / ${potpis(blokiraoBlokiranog)}`;
+  });
+  await provera("blokirani D posle pokušaja poziva i dalje ne vidi nikakvu vezu; nova veza nije napravljena (ostaje samo stara, blokadom skrivena)", async () => {
+    const n = await S.from("veze").select("id", { count: "exact", head: true }).in("pozivalac_id", [D.id, E.id]).in("pozvani_id", [D.id, E.id]);
+    const d = await veze(D);
+    return n.count === 1 && tacno(d, 0, "D") === true ? true : `redova veze (očekivan 1, stara): ${n.count}; ${opis(d)}`;
+  });
+
+  // prijava člana
+  await provera("E prijavljuje člana D (tip 'clan'); ista prijava dvaput se odbija; D prijave ne vidi; bibliotekar vidi", async () => {
+    const a = await E.db.from("prijave").insert({ prijavio_id: E.id, tip: "clan", stavka_id: D.id, razlog: "RLS test prijava člana" }).select("id");
+    const b = await E.db.from("prijave").insert({ prijavio_id: E.id, tip: "clan", stavka_id: D.id, razlog: "opet" }).select("id");
+    const d = await D.db.from("prijave").select("*");
+    const bib = await BIB.db.from("prijave").select("*").eq("tip", "clan").eq("stavka_id", D.id);
+    return !a.error && b.error?.code === "23505" && tacno(d, 0, "D") === true && !bib.error && bib.data.length === 1 ? true : `${opis(a)}; ponovo: ${b.error?.code ?? "prošlo"}; ${opis(d)}; ${opis(bib)}`;
+  });
+  await provera("prijava u tuđe ime i prijava nepoznatog tipa se odbijaju", async () => {
+    const tudje = await F.db.from("prijave").insert({ prijavio_id: E.id, tip: "clan", stavka_id: D.id, razlog: "u tuđe ime" }).select("id");
+    const tip = await E.db.from("prijave").insert({ prijavio_id: E.id, tip: "nesto", stavka_id: D.id, razlog: "x" }).select("id");
+    return tudje.error?.code === "42501" && tip.error?.code === "23514" ? true : `tuđe: ${tudje.error?.code ?? "prošlo"}; tip: ${tip.error?.code ?? "prošlo"}`;
+  });
+  await provera("anon ne sme da čita moje_veze ni moje_preporuke", async () => {
+    const a = await anon.from("moje_veze").select("*").limit(1);
+    const b = await anon.from("moje_preporuke").select("*").limit(1);
+    return (a.error || (a.data ?? []).length === 0) && (b.error || (b.data ?? []).length === 0) ? true : "anon je dobio redove";
+  });
+
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────

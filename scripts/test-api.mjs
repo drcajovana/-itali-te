@@ -1711,8 +1711,7 @@ faza("16. Polica, stranica knjige i utisci (polica-logika.js, izgled i tekst)");
 
   // tekst: natpisi i opisi ocena
   provera("ocene 1 do 10 imaju opis vrednosti", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((n) => typeof TK.utisak.ocene[n] === "string" && TK.utisak.ocene[n].length > 2) && new Set(Object.values(TK.utisak.ocene)).size === 10, TK.utisak.ocene);
-  provera("natpisi: stanja police, Rezerviši, Označi kao pročitano, vidljivost, spojler", TK.knjigaEkran.polica.stanja.zelim === "Желим" && TK.knjigaEkran.polica.stanja.citam === "Читам" && TK.knjigaEkran.polica.stanja.procitano === "Прочитано" && TK.knjigaEkran.rezervacija.dugme === "Резервиши" && TK.knjigaEkran.polica.oznaciProcitano === "Означи као прочитано" && TK.utisak.vidljivosti.javno === "Сви чланови" && TK.utisak.vidljivosti.prijatelji === "Само повезани" && TK.utisak.vidljivosti.samo_ja === "Само ја" && TK.utisak.spojler === "Садржи спојлер");
-  provera("dostupnost: „U fondu, N primeraka” i „Nema u fondu, na listi za nabavku”", TK.knjigaEkran.uFondu === "У фонду, {primeraka}" && TK.knjigaEkran.nijeUFondu === "Нема у фонду, на листи за набавку");
+  provera("natpisi: stanja police, Označi kao pročitano, vidljivost, spojler", TK.knjigaEkran.polica.stanja.zelim === "Желим" && TK.knjigaEkran.polica.stanja.citam === "Читам" && TK.knjigaEkran.polica.stanja.procitano === "Прочитано" && TK.knjigaEkran.polica.oznaciProcitano === "Означи као прочитано" && TK.utisak.vidljivosti.javno === "Сви чланови" && TK.utisak.vidljivosti.prijatelji === "Само повезани" && TK.utisak.vidljivosti.samo_ja === "Само ја" && TK.utisak.spojler === "Садржи спојлер");
   provera("početna: tri kartice Čitam / Pročitano / Želim i prazna stanja za svaku", TK.pocetna.kartice.citam === "Читам" && TK.pocetna.kartice.procitano === "Прочитано" && TK.pocetna.kartice.zelim === "Желим" && ["citam", "procitano", "zelim"].every((s) => TK.pocetna.prazneKartice[s].length > 5) && TK.pocetna.prazno.length > 10 && TK.utisak.tudji.nema.length > 10);
 
   // izvorni kod: RLS se ne filtrira u React kodu; palete; tekst samo iz tekst.js
@@ -1731,8 +1730,7 @@ faza("16. Polica, stranica knjige i utisci (polica-logika.js, izgled i tekst)");
   provera("početna i stranica knjige ne pišu natpise direktno: nema ćiriličnih ni dugih srpskih rečenica izvan tekst.js (provera: svaki JSX tekst dolazi iz T/tekst)", komponente.every((p) => !/>\s*[A-ZČĆŠŽĐ][a-zčćšžđ]+(?:\s+[a-zčćšžđ]+){2,}[.!?]?\s*</.test(izvor(p))));
   provera("početna čita policu preko ucitajPolicu (moja polica), a stranica knjige poziva StanjePolice i Utisci", izvor("src/pages/Pocetna.jsx").includes("ucitajPolicu(clan.id)") && izvor("src/pages/Knjiga.jsx").includes("<StanjePolice") && izvor("src/pages/Knjiga.jsx").includes("<Utisci"));
   provera("spojler: tuđi tekst je zamagljen (blur) i sakriven od čitača ekrana dok se ne dodirne", izvor("src/components/Utisci.jsx").includes("blur-md") && izvor("src/components/Utisci.jsx").includes("aria-hidden={zamagljen}"));
-  provera("rezervacija se nudi samo za knjigu u fondu (interfejs) — a baza to proverava (0017)", izvor("src/components/StanjePolice.jsx").includes("knjiga.u_fondu && rezervacija !== undefined") && /k\.u_fondu/.test(izvor("supabase/migrations/0017_polica_napredak_utisci_autor.sql")));
-  provera("stranica knjige: ručno upisana knjiga (izvor 'clan', u_fondu=false) ima oznaku „Nema u fondu, na listi za nabavku”", izvor("src/pages/Knjiga.jsx").includes("knjiga.u_fondu ? T.uFondu") && izvor("src/pages/Knjiga.jsx").includes(": T.nijeUFondu") && izvor("src/components/PlocicaKnjige.jsx").includes("!knjiga.u_fondu"));
+  provera("rezervacija i dostupnost iz COBISS-a nisu deo aplikacije: nema dugmeta „Rezerviši”, „U fondu”, „Slobodnih” ni „Izdato” u interfejsu (stranica knjige, polica, pretraga)", ["src/pages/Knjiga.jsx", "src/pages/Pocetna.jsx", "src/pages/Pretraga.jsx", "src/components/StanjePolice.jsx", "src/components/PlocicaKnjige.jsx", "src/components/RezultatKnjige.jsx", "src/lib/polica.js"].every((f) => !/rezerv|u_fondu|broj_slobodnih|broj_primeraka|uFondu|nijeUFondu|slobodnih|sviIzdati/i.test(izvor(f).replace(/\/\/.*$/gm, ""))) && !("rezervacija" in TK.knjigaEkran) && !("rezervacijeOsoblje" in TK) && !("rezervacije" in TK.osoblje) && !("fond" in TK.pocetna) && !("nijeUFondu" in TK.pocetna) && !("nijeUFondu" in TK.pretraga.knjiga) && !("slobodna" in TK.pretraga.knjiga) && !("izdata" in TK.pretraga.knjiga) && !("uFondu" in TK.knjigaEkran) && !("uBiblioteci" in TK.knjigaEkran));
 }
 
 faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ograničenje");
@@ -1971,20 +1969,18 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
       const ol = await import("../src/lib/osoblje-logika.js");
       const TK = (await import("../src/lib/tekst.js")).tekst;
       const bezKom = (s) => s.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-      const ekrani = ["src/pages/BibliotekarClanovi.jsx", "src/pages/BibliotekarRezervacije.jsx", "src/pages/BibliotekarPocetna.jsx", "src/components/PinPrikaz.jsx"];
+      const ekrani = ["src/pages/BibliotekarClanovi.jsx", "src/pages/BibliotekarPocetna.jsx", "src/components/PinPrikaz.jsx"];
 
       provera("upit za pretragu članova: znaci filtera (zarez, zagrade, navodnici, %, *, \\) postaju razmaci", clanUnos.upitZaPretragu("Ana,(Petrović)%*\"x\"\\") === "Ana Petrović x" && clanUnos.upitZaPretragu("  0101228 ") === "0101228" && clanUnos.upitZaPretragu(null) === "" && clanUnos.upitZaPretragu("x".repeat(200)).length === 60);
-      provera("stanja rezervacije: nova, spremna, preuzeta, otkazana (isto kao ograničenje u bazi, 0018)", JSON.stringify(ol.STATUSI_REZERVACIJE) === JSON.stringify(["nova", "spremna", "preuzeta", "otkazana"]) && ol.STATUSI_REZERVACIJE.every((s) => new RegExp(`check \\(status in \\([^)]*'${s}'`).test(citaj("supabase/migrations/0018_rezervacije_statusi.sql").replace(/\s+/g, " "))));
-      provera("otvorena rezervacija je nova ili spremna; filter „Otvorene” ih pokazuje, „Sve” sve", ol.jeOtvorena("nova") && ol.jeOtvorena("spremna") && !ol.jeOtvorena("preuzeta") && !ol.jeOtvorena("otkazana") && ol.filtrirajRezervacije(ol.STATUSI_REZERVACIJE.map((status) => ({ status })), "otvorene").length === 2 && ol.filtrirajRezervacije(ol.STATUSI_REZERVACIJE.map((status) => ({ status })), "sve").length === 4);
       provera("ko kim upravlja u prikazu: administrator svima; bibliotekar samo čitaocima; čitalac nikome", ol.mozeDaUpravlja("administrator", "administrator") && ol.mozeDaUpravlja("administrator", "citalac") && ol.mozeDaUpravlja("bibliotekar", "citalac") && !ol.mozeDaUpravlja("bibliotekar", "administrator") && !ol.mozeDaUpravlja("bibliotekar", "bibliotekar") && !ol.mozeDaUpravlja("citalac", "citalac") && !ol.mozeDaUpravlja(undefined, "citalac"));
       provera("datum rezervacije: vreme iz baze postaje „D. M. GGGG.” (lokalno), neispravan ulaz se vraća", (await import("../src/lib/polica-logika.js")).formatDatum(ol.datumIzVremena(new Date(2026, 10, 9, 12, 0, 0).toISOString())) === "9. 11. 2026." && ol.datumIzVremena("nije datum") === "nije datum" && ol.datumIzVremena(null) === "");
-      provera("tekst.js: statusi rezervacije imaju natpis za svako stanje", ol.STATUSI_REZERVACIJE.every((s) => typeof TK.rezervacijeOsoblje.statusi[s] === "string") && ["citalac", "bibliotekar", "administrator"].every((u) => typeof TK.clanovi.uloge[u] === "string"));
+      provera("tekst.js: uloge članova imaju natpis", ["citalac", "bibliotekar", "administrator"].every((u) => typeof TK.clanovi.uloge[u] === "string"));
       provera("tekst.js: svaki kod greške koji funkcije vraćaju ima poruku za bibliotekara", ["nije_prijavljen", "nije_bibliotekar", "nema_dozvole", "kartica_postoji", "neispravna_kartica", "neispravno_ime", "clan_ne_postoji", "previse_zahteva", "ogranicenje_nedostupno", "mreza", "greska_servera"].every((k) => typeof TK.clanovi.greske[k] === "string" && TK.clanovi.greske[k].length > 5) && TK.clanovi.greske.previse_zahteva.includes("{minuta}"));
 
       // rute i navigacija: samo bibliotekari
       const aplikacija = citaj("src/App.jsx");
       const unutarRute = /<RutaZaBibliotekare>|<Route element=\{<RutaZaBibliotekare \/>\}>([\s\S]*?)<\/Route>/.exec(aplikacija)?.[1] ?? "";
-      provera("rute /bibliotekar, /bibliotekar/clanovi i /bibliotekar/rezervacije su unutar RutaZaBibliotekare", ["/bibliotekar\"", "/bibliotekar/unos", "/bibliotekar/clanovi", "/bibliotekar/rezervacije"].every((p) => unutarRute.includes(`path="${p.replace(/"$/, "")}"`)), unutarRute);
+      provera("rute /bibliotekar, /bibliotekar/unos i /bibliotekar/clanovi su unutar RutaZaBibliotekare, a /bibliotekar/rezervacije više ne postoji", ["/bibliotekar\"", "/bibliotekar/unos", "/bibliotekar/clanovi"].every((p) => unutarRute.includes(`path="${p.replace(/"$/, "")}"`)) && !aplikacija.includes("rezervacije"), unutarRute);
       const okvir = citaj("src/components/Okvir.jsx");
       provera("navigacija: ulaz u alate za bibliotekare se dodaje samo kad je jeBibliotekar(clan?.uloga)", /jeBibliotekar\(clan\?\.uloga\) \? \[\.\.\.STAVKE, STAVKA_OSOBLJA\] : STAVKE/.test(okvir) && !/STAVKE = \[[\s\S]*?bibliotekar[\s\S]*?\];/.test(okvir.replace(/STAVKA_OSOBLJA[\s\S]*$/m, "")));
 
@@ -2003,8 +1999,6 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
       provera("klijent pravi člana i menja PIN samo preko /api/napravi-clana i /api/resetuj-pin", citaj("src/lib/clanovi.js").includes('"/api/napravi-clana"') && citaj("src/lib/clanovi.js").includes('"/api/resetuj-pin"'));
       provera("kartica za štampu: portal u <body>, na ekranu skrivena, pri štampi sakriva sve ostalo (@media print)", /createPortal\([\s\S]*document\.body/.test(citaj("src/components/PinPrikaz.jsx")) && /\.stampa-kartica\s*\{\s*display:\s*none/.test(citaj("src/index.css")) && /@media print[\s\S]*body > \*:not\(\.stampa-kartica\)[\s\S]*display:\s*none !important/.test(citaj("src/index.css")));
       provera("kartica za štampu sadrži ustanovu, grb 1846, ime, broj karte, PIN i uputstvo za prijavu", ["aplikacija.ustanova", "aplikacija.godina", "clan.ime", "clan.broj_kartice", "{pin}", "kartica.uputstvo"].every((s) => citaj("src/components/PinPrikaz.jsx").includes(s)));
-      provera("rezervacije (interfejs) ne diraju politike: samo select i update kroz običan klijent", !/service_role|\.rpc\(/.test(bezKom(citaj("src/lib/clanovi.js"))) && /from\("rezervacije"\)[\s\S]*?\.update\(\{ status \}\)/.test(citaj("src/lib/clanovi.js")));
-      provera("član vidi i spremnu rezervaciju, a otkazuje samo novu (0018)", citaj("src/lib/polica.js").includes('.in("status", ["nova", "spremna"])') && /rezervacija\.status === "nova" && \(/.test(citaj("src/components/StanjePolice.jsx")) && typeof TK.knjigaEkran.rezervacija.spremna === "string");
     }
 
     // ── ćirilica (tekst aplikacije, pismo, ime, API poruke) ──
@@ -2031,9 +2025,9 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
       provera("tekst.js: svaka vrednost je na ćirilici (latinica samo u zaštićenim izrazima)", latinicni.length === 0, latinicni.slice(0, 5));
       provera("tekst.js: ključevi su ostali latinični (nijedan ključ nema ćirilicu)", kljucevi.every((k) => !/[Ѐ-ӿ]/.test(k)) && kljucevi.length > 300);
       provera("tekst.js: ime aplikacije, ustanova i grb (1846 ostaje); jezik je sr-Cyrl-RS", TK.aplikacija.naziv === "Читалиште" && TK.aplikacija.ustanova.includes("Доситеј Новаковић") && TK.aplikacija.godina === "1846" && TK.aplikacija.jezik === "sr-Cyrl-RS");
-      provera("tekst.js: ekavica i slova srpske ćirilice (љ њ џ ђ ћ) rade u natpisima", TK.pocetna.kartice.zelim === "Желим" && TK.knjigaEkran.polica.stanja.procitano === "Прочитано" && /Књига/.test(TK.rezervacijeOsoblje.statusi.nova + TK.rezervacijeOsoblje.nepoznataKnjiga) && vrednosti.some(([, , v]) => /џ/.test(v) === false) && vrednosti.some(([, , v]) => /ђ|ћ/.test(v)) && vrednosti.some(([, , v]) => /љ/.test(v)) && vrednosti.some(([, , v]) => /њ/.test(v)));
-      provera("tekst.js: {placeholderi} su neprevedeni (kod ih zamenjuje po imenu)", ["{n}", "{ime}", "{karta}", "{naziv}", "{minuta}", "{primeraka}", "{datum}", "{ocena}", "{opis}", "{naslov}", "{autor}", "{stanje}"].every((h) => vrednosti.some(([, , v]) => v.includes(h))) && vrednosti.every(([, , v]) => [...v.matchAll(/\{([^}]*)\}/g)].every((m) => /^[a-z_]+$/.test(m[1]))));
-      provera("tekst.js: PIN je „ПИН”, a ostali nazivi (Google Books, COBISS, ISBN, https://) ostaju kakvi su", vrednosti.some(([, , v]) => v.includes("ПИН")) && !vrednosti.some(([, , v]) => /\bPIN\b/.test(v)) && TK.pretraga.google.naslov.includes("Google Books") && TK.rezervacijeOsoblje.uvod.includes("COBISS-у") && TK.pretraga.link.polje.includes("https://"));
+      provera("tekst.js: ekavica i slova srpske ćirilice (љ њ џ ђ ћ) rade u natpisima", TK.pocetna.kartice.zelim === "Желим" && TK.knjigaEkran.polica.stanja.procitano === "Прочитано" && /књиг/.test(TK.pretraga.nase.nema + TK.unos.naslov) && vrednosti.some(([, , v]) => /џ/.test(v) === false) && vrednosti.some(([, , v]) => /ђ|ћ/.test(v)) && vrednosti.some(([, , v]) => /љ/.test(v)) && vrednosti.some(([, , v]) => /њ/.test(v)));
+      provera("tekst.js: {placeholderi} su neprevedeni (kod ih zamenjuje po imenu)", ["{n}", "{ime}", "{karta}", "{naziv}", "{minuta}", "{primeraka}", "{datum}", "{ocena}", "{opis}", "{naslov}", "{autor}"].every((h) => vrednosti.some(([, , v]) => v.includes(h))) && vrednosti.every(([, , v]) => [...v.matchAll(/\{([^}]*)\}/g)].every((m) => /^[a-z_]+$/.test(m[1]))));
+      provera("tekst.js: PIN je „ПИН”, a ostali nazivi (Google Books, ISBN, https://) ostaju kakvi su; COBISS se ne pominje (aplikacija nije povezana sa njim)", vrednosti.some(([, , v]) => v.includes("ПИН")) && !vrednosti.some(([, , v]) => /\bPIN\b/.test(v)) && TK.pretraga.google.naslov.includes("Google Books") && !vrednosti.some(([, , v]) => /COBISS/.test(v)) && TK.pretraga.link.polje.includes("https://"));
       provera("tekst.js: oblici reči „примерак” (1, 2 do 4, ostalo) su u tekst.js, ne u kodu", TK.opste.primerak.jedan === "примерак" && TK.opste.primerak.paukal === "примерка" && TK.opste.primerak.mnogo === "примерака" && !/"primerak"|"primerka"|"primeraka"/.test(citaj("src/lib/unos-knjiga.js")));
 
       // nijedan korisnički tekst van tekst.js: JSX i src/lib bez latiničnih rečenica i bez ćirilice (ćirilica je samo u tekst.js i pismo.js)
@@ -2093,6 +2087,95 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
       const vite = citaj("vite.config.js");
       provera("vite.config.js: ime, kratko ime i opis PWA, kao i naslov stranice, dolaze iz tekst.js (ćirilica), jezik manifesta iz tekst.js", /name:\s*tekst\.aplikacija\.naziv/.test(vite) && /short_name:\s*tekst\.aplikacija\.naziv/.test(vite) && /description:\s*tekst\.aplikacija\.opis/.test(vite) && /lang:\s*tekst\.aplikacija\.jezik/.test(vite) && /replaceAll\("%NAZIV%", tekst\.aplikacija\.naziv\)/.test(vite) && /[Ѐ-ӿ]/.test(TK.aplikacija.naziv + TK.aplikacija.opis) && !/[Ѐ-ӿ]/.test(vite));
       provera("kartica za štampu: ustanova, naslov kartice i uputstvo su iz tekst.js na ćirilici, grb 1846 ostaje", /[Ѐ-ӿ]/.test(TK.aplikacija.ustanova + TK.clanovi.kartica.naslov + TK.clanovi.kartica.uputstvo) && TK.clanovi.kartica.uputstvo.includes("{naziv}") && citaj("src/components/PinPrikaz.jsx").includes("aplikacija.godina"));
+    }
+
+    // ── ekran „Читаоци" (čista logika, izvorni kod, migracija 0019) ──
+    {
+      const L = await import("../src/lib/citaoci-logika.js");
+      const TK = (await import("../src/lib/tekst.js")).tekst;
+      const bezKom = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      const nove = ["src/pages/Citaoci.jsx", "src/pages/CitalacProfil.jsx", "src/components/PreporuciKnjigu.jsx", "src/components/PreporuciCitaocu.jsx", "src/components/UtisakCitaoca.jsx", "src/components/Avatar.jsx"];
+      const libNove = ["src/lib/citaoci.js", "src/lib/citaoci-logika.js"];
+
+      // šifra poziva, napomena, razlog
+      provera("šifra poziva: razmaci na krajevima se skidaju, unutra sabijaju; mala slova i razdelnici ostaju (baza ih izjednačava); prekratko, predugo i ne-tekst daju null", L.urediSifru("  NEG·4471·KJ ") === "NEG·4471·KJ" && L.urediSifru("neg  4471   kj") === "neg 4471 kj" && L.urediSifru("NEG-4471-KJ") === "NEG-4471-KJ" && L.urediSifru("ab") === null && L.urediSifru("x".repeat(41)) === null && L.urediSifru("") === null && L.urediSifru(null) === null && L.urediSifru(4471) === null);
+      provera("napomena uz preporuku: najviše 280 znakova (280 prolazi, 281 ne), prazno je null, razmaci sa krajeva se skidaju", L.NAJDUZA_NAPOMENA === 280 && L.urediNapomenu("x".repeat(280)).ok && !L.urediNapomenu("x".repeat(281)).ok && L.urediNapomenu("x".repeat(281)).razlog === "predugo" && L.urediNapomenu("   ").vrednost === null && L.urediNapomenu(" Pročitaj ").vrednost === "Pročitaj" && L.urediNapomenu(undefined).ok);
+      provera("razlog prijave: obavezan, do 300 znakova", !L.urediRazlog("  ").ok && L.urediRazlog("  ").razlog === "prazno" && L.urediRazlog("x".repeat(300)).ok && L.urediRazlog("x".repeat(301)).razlog === "predugo" && L.urediRazlog(" razlog ").vrednost === "razlog");
+      provera("veze se grupišu: primljeni i poslati pozivi (na čekanju) i povezani (prihvaćene), najnovije prvo; nepoznato se izostavlja", (() => {
+        const g = L.grupisiVeze([
+          { id: 1, status: "na_cekanju", smer: "primljen", kreirana: "2026-11-01" },
+          { id: 2, status: "na_cekanju", smer: "primljen", kreirana: "2026-11-05" },
+          { id: 3, status: "na_cekanju", smer: "poslat", kreirana: "2026-11-02" },
+          { id: 4, status: "prihvacena", smer: "poslat", kreirana: "2026-10-01" },
+          { id: 5, status: "prihvacena", smer: "primljen", kreirana: "2026-10-09" },
+          { id: 6, status: "nesto", smer: "poslat", kreirana: "2026-11-09" },
+        ]);
+        return g.primljeni.map((x) => x.id).join() === "2,1" && g.poslati.map((x) => x.id).join() === "3" && g.povezani.map((x) => x.id).join() === "5,4" && L.grupisiVeze(null).povezani.length === 0;
+      })());
+      provera("prikaz drugog člana je samo nadimak: bez nadimka dolazi zamena (opšta reč), nikad nešto drugo", L.prikaznoIme("Ана П.", "Читалац") === "Ана П." && L.prikaznoIme(null, "Читалац") === "Читалац" && L.prikaznoIme("   ", "Читалац") === "Читалац" && L.prikaznoIme(undefined, "Читалац") === "Читалац" && TK.citaoci.anonimno === "Читалац");
+      provera("inicijali iz nadimka (ćirilica i latinica), do dva slova, velika; bez nadimka „?”", L.inicijaliNadimka("Ана П.") === "АП" && L.inicijaliNadimka("jovana đ.") === "JĐ" && L.inicijaliNadimka("Ђорђе") === "Ђ" && L.inicijaliNadimka("Ана Мариа Петровић") === "АМ" && L.inicijaliNadimka("") === "?" && L.inicijaliNadimka(null) === "?");
+      provera("boja avatara je iz teme (bordo, smeđa, zlato, ljubičasta) i ista za istog člana", L.BOJE_AVATARA.length === 4 && L.BOJE_AVATARA.every((b) => /^bg-(bordo|avatar-smeda|zlato|avatar-ljubicasta)$/.test(b)) && L.bojaAvatara("abc") === L.bojaAvatara("abc") && new Set(["a", "b", "c", "d", "e", "f", "g", "h"].map(L.bojaAvatara)).size > 1 && /--color-avatar-smeda/.test(citaj("src/index.css")) && /--color-avatar-ljubicasta/.test(citaj("src/index.css")));
+      provera("obaveštenja: zbir poziva i neobrađenih preporuka; nebroj je 0; samo prihvaćene veze se nude za preporuku", L.brojObavestenja(2, 3) === 5 && L.brojObavestenja(0, 0) === 0 && L.brojObavestenja(undefined, "x") === 0 && L.povezaniSamo([{ status: "prihvacena", id: 1 }, { status: "na_cekanju", id: 2 }]).length === 1);
+      provera("utisci sa knjigama i ocene po knjizi: utisak bez knjige se izostavlja, ocena samo kad je ima", (() => {
+        const knjige = new Map([["k1", { id: "k1" }], ["k2", { id: "k2" }]]);
+        const u = [{ id: 1, knjiga_id: "k1", ocena: 8 }, { id: 2, knjiga_id: "k2", ocena: null }, { id: 3, knjiga_id: "k9", ocena: 5 }];
+        return L.utisciSaKnjigama(u, knjige).length === 2 && L.ocenePoKnjizi(u).get("k1") === 8 && !L.ocenePoKnjizi(u).has("k2");
+      })());
+
+      // pravila: nema spiska ni pretrage članova; samo nadimak; jedna poruka za nepostojeću i blokiranu šifru
+      for (const p of libNove) {
+        const kod = bezKom(citaj(p));
+        provera(`${p}: ne čita clanovi, nijedno pravo ime, broj karte ni šifru poziva drugog člana; nadimci samo iz pogleda moje_veze i moje_preporuke`, !/from\("clanovi"\)/.test(kod) && !/\b(broj_kartice|sifra_poziva)\b/.test(kod) && !/select\([^)]*\bime\b/.test(kod));
+      }
+      provera("citaoci.js: nadimci dolaze iz pogleda moje_veze i moje_preporuke", citaj("src/lib/citaoci.js").includes('from("moje_veze")') && citaj("src/lib/citaoci.js").includes('from("moje_preporuke")'));
+      provera("citaoci.js: posaljiPoziv pretvara SVE greške P0001 (nepostojeća šifra, blokada, sopstvena šifra) u jedan kod, bez razlikovanja", (() => { const m = /export async function posaljiPoziv[\s\S]*?\n}\n/.exec(citaj("src/lib/citaoci.js"))?.[0] ?? ""; return (m.match(/GreskaApija\("/g) ?? []).length === 1 && m.includes('error.code === "P0001"') && m.includes('"sifra_nije_nadjena"'); })());
+      for (const p of nove) {
+        const kod = bezKom(citaj(p));
+        provera(`${p}: bez prava imena, broja karte i šifre drugog člana u prikazu (samo nadimak; sopstvena šifra samo na Читаоци)`, !/\b(broj_kartice|ime_i_prezime)\b/.test(kod) && !/\.ime\b/.test(kod) && (p === "src/pages/Citaoci.jsx" || !/sifra_poziva/.test(kod)));
+        provera(`${p}: bez localStorage i kolačića`, !/localStorage|sessionStorage|indexedDB|document\.cookie/.test(kod));
+        provera(`${p}: bez hex boja i tuđih paleta (samo boje iz teme)`, !/#[0-9a-fA-F]{3,8}\b/.test(kod) && !/\b(?:bg|text|border|ring|accent|fill|stroke|from|to|via|outline|divide)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone|black)(?:-\d{2,3})?\b/.test(kod));
+        provera(`${p}: svako dugme ima stil iz stil.js ili min-h-11 (najmanje 44 px)`, kod.split("<button").slice(1).every((deo) => /className=\{(?:`\$\{)?(?:stil\.|zauzet === v\.id|c\.aktivan)|className=\{stil\./.test(deo.split("</button>")[0]) || /min-h-1[1-9]/.test(deo.split("</button>")[0]) || /className=\{`\$\{stil\./.test(deo.split("</button>")[0])));
+      }
+      provera("ekran Читаоци: poruka za neuspeh poziva je jedna (nepostojeća i blokirana šifra), nigde se ne pominje blokada", (() => { const kod = bezKom(citaj("src/pages/Citaoci.jsx")); return (kod.match(/T\.poziv\.nijeNadjena/g) ?? []).length === 1 && !/blok/i.test(kod); })());
+      provera("slobodnih poruka nema: jedini tekst koji član šalje drugom članu je napomena uz preporuku (≤ 280) i razlog prijave bibliotekaru", !/from\("poruke"\)|from\("razgovori"\)/.test(citaj("src/lib/citaoci.js")) && /from\("preporuke"\)\.insert/.test(citaj("src/lib/citaoci.js")) && /maxLength=\{NAJDUZA_NAPOMENA\}/.test(citaj("src/components/PreporuciKnjigu.jsx")) && /maxLength=\{NAJDUZA_NAPOMENA\}/.test(citaj("src/components/PreporuciCitaocu.jsx")));
+      provera("profil čitaoca: ništa se ne prikazuje bez prihvaćene veze (prvo se traži veza, tek onda polica i utisci)", (() => { const kod = citaj("src/pages/CitalacProfil.jsx"); return kod.indexOf("ucitajVezuSaClanom(id)") > -1 && kod.indexOf("ucitajVezuSaClanom(id)") < kod.indexOf("ucitajPolicuCitaoca(id)") && /if \(!veza\) return/.test(kod); })());
+      provera("spojler na profilu čitaoca: tekst je zamagljen (blur) i sakriven od čitača ekrana dok se ne dodirne", citaj("src/components/UtisakCitaoca.jsx").includes("blur-md") && citaj("src/components/UtisakCitaoca.jsx").includes("aria-hidden={zamagljen}"));
+      provera("preporuka sa police ili iz pretrage; polica je MOJA (clan.id), pretraga ide kroz trazi_knjige", citaj("src/components/PreporuciKnjigu.jsx").includes("ucitajPolicu(clan.id)") && citaj("src/components/PreporuciKnjigu.jsx").includes("pretraziNasuBazu"));
+      provera("blokada: prvo upis blokade, pa brisanje veze; raskid je običan DELETE; prijava člana je tip 'clan'", (() => { const c = citaj("src/lib/citaoci.js"); const b = /export async function blokiraj[\s\S]*?\n}\n/.exec(c)?.[0] ?? ""; return b.indexOf('from("blokade").insert') > -1 && b.indexOf('from("blokade").insert') < b.indexOf('from("veze").delete') && /from\("veze"\)\.delete\(\)/.test(c) && /prijavi\(clan\.id, "clan", id/.test(citaj("src/pages/CitalacProfil.jsx")); })());
+      provera("rute: /citaoci/:id je unutar ZasticenaRuta, a ne u delu za bibliotekare", (() => { const a = citaj("src/App.jsx"); const i = a.indexOf('path="/citaoci/:id"'); const bib = a.indexOf("<RutaZaBibliotekare />"); return i > -1 && bib > -1 && i < bib; })());
+      provera("tačka na stavci „Читаоци”: samo za tu stavku, kad ima novih poziva ili neobrađenih preporuka; ima tekst za čitače ekrana", /s\.kljuc === "citaoci" && obavestenja > 0/.test(citaj("src/components/Okvir.jsx")) && citaj("src/components/Okvir.jsx").includes("tekst.meni.obavestenje") && /moje_veze[\s\S]*?"primljen"[\s\S]*?"na_cekanju"/.test(citaj("src/lib/citaoci.js")) && /moje_preporuke"\)\.select\("id", \{ count: "exact", head: true \}\)\.eq\("procitana", false\)/.test(citaj("src/lib/citaoci.js")));
+      provera("preporuka: „Желим да прочитам” dodaje na policu u „zelim”, „Прочитано је већ” u „procitano”, „Није за мене” samo skriva; sve tri označavaju preporuku obrađenom", (() => { const kod = citaj("src/pages/Citaoci.jsx"); return /preporukaNaPolicu\(clan\.id, p\.knjiga_id, "zelim"\)/.test(kod) && /preporukaNaPolicu\(clan\.id, p\.knjiga_id, "procitano"\)/.test(kod) && /nijeZaMene = \(p\) => uradi\(p\.id, \(\) => oznaciObradjenom\(p\.id\)/.test(kod) && (kod.match(/oznaciObradjenom\(p\.id\)/g) ?? []).length === 3; })());
+
+      // svaki ključ iz tekst.js koji nove datoteke koriste postoji (i je tekst)
+      const aliasi = {
+        "src/pages/Citaoci.jsx": { T: "citaoci" },
+        "src/pages/CitalacProfil.jsx": { T: "citalac" },
+        "src/components/UtisakCitaoca.jsx": { T: "citalac" },
+        "src/components/PreporuciKnjigu.jsx": { T: "preporuka" },
+        "src/components/PreporuciCitaocu.jsx": { T: "knjigaEkran.preporuci", P: "preporuka" },
+      };
+      const nedostaju = [];
+      for (const [p, mapa] of Object.entries(aliasi)) {
+        const kod = bezKom(citaj(p));
+        for (const [alias, put] of Object.entries(mapa)) {
+          for (const m of kod.matchAll(new RegExp(`\\b${alias}\\.([A-Za-z]+(?:\\.[A-Za-z]+)*)`, "g"))) {
+            const vrednost = `${put}.${m[1].replace(/\.(replace|length|trim)$/, "")}`.split(".").reduce((o, k) => o?.[k], TK);
+            if (typeof vrednost !== "string") nedostaju.push(`${p}: ${alias}.${m[1]}`);
+          }
+        }
+      }
+      for (const p of ["src/pages/Citaoci.jsx", "src/pages/CitalacProfil.jsx", "src/components/PreporuciCitaocu.jsx"]) {
+        for (const m of bezKom(citaj(p)).replace(/^const \w+ = tekst\.[\w.]+;$/gm, "").matchAll(/tekst\.([A-Za-z]+(?:\.[A-Za-z]+)+)/g)) if (typeof m[1].replace(/\.(replace|length|trim)$/, "").split(".").reduce((o, k) => o?.[k], TK) !== "string") nedostaju.push(`${p}: tekst.${m[1]}`);
+      }
+      provera("svi natpisi koje ekran Читаоци koristi postoje u tekst.js (nijedan ključ ne nedostaje)", nedostaju.length === 0, nedostaju);
+
+      // migracija 0019
+      const m19 = citaj("supabase/migrations/0019_citaoci_nadimci_preporuke.sql");
+      const m19kod = m19.replace(/^--.*$/gm, "");
+      provera("0019 je sledeća migracija posle 0018 i ne dira starije", readdirSync(new URL("../supabase/migrations/", import.meta.url)).filter((f) => /^\d{4}_/.test(f)).sort().slice(-2).join() === "0018_rezervacije_statusi.sql,0019_citaoci_nadimci_preporuke.sql");
+      provera("0019 ne dodaje, ne briše ni ne menja nijednu politiku (RLS) i ne pravi tabele; pogledi su security_invoker", !/\b(create|drop|alter)\s+policy\b/i.test(m19kod) && !/create\s+table/i.test(m19kod) && (m19kod.match(/security_invoker = true/g) ?? []).length === 2);
+      provera("0019: funkcija u šemi privatno sa search_path, prava eksplicitna (revoke od anon, grant authenticated), notify pgrst", /create or replace function privatno\.ima_blokade[\s\S]*?set search_path = pg_catalog, public/.test(m19kod) && /revoke all on public\.moje_veze from public, anon, authenticated/.test(m19kod) && /grant select on public\.moje_preporuke to authenticated/.test(m19kod) && /notify pgrst, 'reload schema'/.test(m19kod));
+      provera("0019: pogled moje_veze izbacuje blokirane i ograničava na svoje; moje_preporuke samo primljene, ne skrivene, ne od blokiranih", /not privatno\.ima_blokade\(v\.pozivalac_id, v\.pozvani_id\)/.test(m19kod) && /v\.pozivalac_id = auth\.uid\(\) or v\.pozvani_id = auth\.uid\(\)/.test(m19kod) && /p\.primalac_id = auth\.uid\(\)/.test(m19kod) && /not p\.skrivena/.test(m19kod) && /not privatno\.ima_blokade\(p\.posiljalac_id, p\.primalac_id\)/.test(m19kod));
     }
   } finally {
     Object.assign(console, izvornik);

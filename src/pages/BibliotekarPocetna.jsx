@@ -7,10 +7,9 @@ const T = tekst.osoblje;
 const STAVKE = [
   { putanja: "/bibliotekar/unos", kljuc: "unos" },
   { putanja: "/bibliotekar/clanovi", kljuc: "clanovi" },
-  { putanja: "/bibliotekar/rezervacije", kljuc: "rezervacije" },
 ];
 
-// Početni ekran za bibliotekare i administratore: tri alata, svaki sa jednom rečenicom.
+// Početni ekran za bibliotekare i administratore: dva alata, svaki sa jednom rečenicom.
 export default function BibliotekarPocetna() {
   return (
     <>

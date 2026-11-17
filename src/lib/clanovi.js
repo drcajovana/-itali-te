@@ -1,5 +1,5 @@
-// Upiti za ekrane bibliotekara: članovi i rezervacije. Običan klijent kao prijavljeni bibliotekar:
-// RLS važi (bibliotekar vidi sve članove i sve rezervacije). Pravljenje naloga i novi PIN idu preko
+// Upiti za ekran bibliotekara: članovi. Običan klijent kao prijavljeni bibliotekar:
+// RLS važi (bibliotekar vidi sve članove). Pravljenje naloga i novi PIN idu preko
 // api/ funkcija, jer traže servisni ključ koji nikad ne dolazi u pregledač.
 import { GreskaApija, pozoviApi } from "./api.js";
 import { upitZaPretragu } from "./clan-unos.js";
@@ -37,26 +37,6 @@ export async function napraviClana(kartica, ime) {
 export async function resetujPin(clanId) {
   const [rezultat] = await pozoviApi("/api/resetuj-pin", { clanId });
   return rezultat;
-}
-
-export async function ucitajRezervacije() {
-  const { data, error } = await supabase
-    .from("rezervacije")
-    .select("id, status, kreirana, knjiga:knjige(id, naslov, autor), clan:clanovi(id, ime, broj_kartice)")
-    .order("kreirana", { ascending: false })
-    .limit(200);
-  if (error) throw error;
-  return data ?? [];
-}
-
-export async function postaviStatusRezervacije(id, status) {
-  const { data, error } = await supabase.from("rezervacije").update({ status }).eq("id", id).select("id, status").maybeSingle();
-  if (error) {
-    if (error.code === "23505") throw new GreskaApija("duplikat");
-    throw error;
-  }
-  if (!data) throw new GreskaApija("status");
-  return data;
 }
 
 // Poruka za korisnika (tekst.clanovi.greske). Nepoznat kod daje opštu poruku.

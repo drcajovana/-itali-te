@@ -1,5 +1,8 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth-context.js";
+import { brojObavestenja } from "../lib/citaoci-logika.js";
+import { ucitajObavestenja } from "../lib/citaoci.js";
 import { tekst } from "../lib/tekst.js";
 import { jeBibliotekar } from "../lib/uloge.js";
 
@@ -44,13 +47,33 @@ const STAVKE = [
   { putanja: "/citaoci", kljuc: "citaoci", natpis: tekst.meni.citaoci },
   { putanja: "/profil", kljuc: "profil", natpis: tekst.meni.profil },
 ];
-// Samo za bibliotekare i administratore: ulaz u alate (članovi, rezervacije, unos knjiga).
+// Samo za bibliotekare i administratore: ulaz u alate (članovi, unos knjiga).
 const STAVKA_OSOBLJA = { putanja: "/bibliotekar", kljuc: "biblioteka", natpis: tekst.meni.biblioteka };
 
 // Okvir svih stranica posle prijave (prototip): lepljivo zaglavlje sa grbom „1846", imenom i avatarom,
 // sadržaj najviše 520 px širine i donja navigacija Polica, Traži, Čitaoci, Profil.
 export default function Okvir() {
   const { clan } = useAuth();
+  const { pathname } = useLocation();
+  const [obavestenja, setObavestenja] = useState(0);
+
+  // Tačka na stavci „Читаоци": novi poziv ili neobrađena preporuka. Osvežava se pri promeni ekrana,
+  // kad se prozor vrati u prvi plan i kad ekran Читаоци javi promenu. Greška je tiha (tačka samo izostane).
+  useEffect(() => {
+    let otkazano = false;
+    const osvezi = () =>
+      ucitajObavestenja()
+        .then((o) => !otkazano && setObavestenja(brojObavestenja(o.pozivi, o.preporuke)))
+        .catch(() => {});
+    osvezi();
+    window.addEventListener("citaoci-promena", osvezi);
+    window.addEventListener("focus", osvezi);
+    return () => {
+      otkazano = true;
+      window.removeEventListener("citaoci-promena", osvezi);
+      window.removeEventListener("focus", osvezi);
+    };
+  }, [pathname]);
 
   return (
     <div className="mx-auto w-full max-w-[520px]">
@@ -94,10 +117,16 @@ export default function Okvir() {
             end={s.end}
             className="group flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-srednji px-1 py-2 text-[11px] font-medium text-mastilo-2 transition aria-[current=page]:text-bordo"
           >
-            <span className="flex h-7 w-[46px] items-center justify-center rounded-full transition group-aria-[current=page]:bg-bordo-svetla">
+            <span className="relative flex h-7 w-[46px] items-center justify-center rounded-full transition group-aria-[current=page]:bg-bordo-svetla">
               <svg viewBox="0 0 24 24" className="size-[19px] fill-none stroke-current stroke-[1.7]" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 {IKONE[s.kljuc]}
               </svg>
+              {s.kljuc === "citaoci" && obavestenja > 0 && (
+                <>
+                  <span aria-hidden="true" className="absolute right-1.5 top-0 size-2.5 rounded-full bg-bordo ring-2 ring-povrsina" />
+                  <span className="sr-only">{tekst.meni.obavestenje}</span>
+                </>
+              )}
             </span>
             {s.natpis}
           </NavLink>

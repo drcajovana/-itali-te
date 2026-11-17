@@ -12,9 +12,6 @@ import { tekst } from "../lib/tekst.js";
 const T = tekst.pocetna;
 const KARTICE = ["citam", "procitano", "zelim"];
 
-// Gde je knjiga u biblioteci, za red „čitam": u fondu (ima slobodnih), izdato ili nije u fondu.
-const gdeJe = (k) => (k.u_fondu ? (k.broj_slobodnih > 0 ? T.fond.slobodno : T.fond.izdato) : T.fond.nema);
-
 // Početna: „Moja polica" (prototip, ekran Polica). Pozdrav po dobu dana, knjige u toku sa trakom
 // napretka, segmentna kontrola (Čitam, Pročitano, Želim) i mreža korica izabrane kartice. Čita samo
 // SVOJU policu (RLS pokazuje i policu povezanih članova).
@@ -98,7 +95,6 @@ export default function Pocetna() {
                         </span>
                         <span className="mt-2 flex items-center justify-between gap-2 text-[12px] tabular-nums text-mastilo-2">
                           <span>{T.napredakPostotak.replace("{n}", String(prikazaniNapredak(r)))}</span>
-                          <span>{gdeJe(r.knjiga)}</span>
                         </span>
                       </span>
                     </Link>

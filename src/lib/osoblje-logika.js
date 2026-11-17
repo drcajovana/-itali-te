@@ -1,16 +1,5 @@
-// Čista logika ekrana za bibliotekare (članovi, rezervacije). Bez React-a i bez mreže, da je
+// Čista logika ekrana za bibliotekare (članovi). Bez React-a i bez mreže, da je
 // proverava `npm run test:api`.
-
-// Stanja rezervacije u bazi (migracija 0018). Redosled je redosled dugmadi.
-export const STATUSI_REZERVACIJE = ["nova", "spremna", "preuzeta", "otkazana"];
-
-// Otvorena rezervacija: knjiga još čeka člana (nova ili spremna). Ista definicija kao jedinstveni
-// indeks u bazi.
-export const jeOtvorena = (status) => status === "nova" || status === "spremna";
-
-export function filtrirajRezervacije(lista, filter) {
-  return filter === "sve" ? lista : lista.filter((r) => jeOtvorena(r.status));
-}
 
 // Da li član sme da menja uloge i naloge ovog reda u prikazu: administrator sve; bibliotekar samo
 // čitaoce (isto pravilo kao api/resetuj-pin.js). Samo udobnost: server i baza proveravaju sami.

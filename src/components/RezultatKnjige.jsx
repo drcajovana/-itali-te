@@ -18,7 +18,7 @@ const izbor = `${stil.polje} w-auto`;
 //  - spoljni: prvo se prikazuju izmenljiva polja sa vrednostima iz rezultata, a upis
 //    ide tek na dugme „Potvrdi". Trajno se čuva samo ono što član potvrdi (naslov,
 //    autor, izdavač, godina, ISBN), nikad opis ni Google-ova korica.
-// `onDodaj(knjiga, status)` vraća { uFondu }.
+// `onDodaj(knjiga, status)` dodaje knjigu na policu.
 export default function RezultatKnjige({ knjiga, onDodaj }) {
   const id = useId();
   const izBaze = Boolean(knjiga.id);
@@ -35,9 +35,9 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
     setSaljem(true);
     setIshod(null);
     try {
-      const { uFondu } = await onDodaj(zaDodavanje, status);
+      await onDodaj(zaDodavanje, status);
       setForma(null);
-      setIshod({ poruka: uFondu === false ? T.polica.dodatoNijeUFondu : T.polica.dodato });
+      setIshod({ poruka: T.polica.dodato });
     } catch (e) {
       console.error("dodavanje na policu:", e);
       setIshod({ poruka: e?.kod ? porukaGreske(e) : T.polica.nijeDodato, greska: true });
@@ -75,10 +75,6 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
 
   const promeni = (ime) => (e) => setForma((f) => ({ ...f, [ime]: e.target.value }));
 
-  let dostupnost = null;
-  if (izBaze) {
-    dostupnost = knjiga.u_fondu ? (knjiga.broj_slobodnih > 0 ? T.knjiga.slobodna : T.knjiga.izdata) : T.knjiga.nijeUFondu;
-  }
   const izGoogle = knjiga.izvor === "google_books";
 
   return (
@@ -89,9 +85,6 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
         <p className="mt-0.5 text-[13.5px] text-mastilo-2">{autor || T.knjiga.bezAutora}</p>
         {izdavac && <p className="text-xs text-mastilo-2">{izdavac}</p>}
 
-        {dostupnost && (
-          <p className={`mt-2 ${knjiga.u_fondu ? stil.izvorFond : stil.izvor}`}>{dostupnost}</p>
-        )}
         {izBaze && (
           <div className="mt-1">
             <Link to={`/knjiga/${knjiga.id}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-bordo underline">

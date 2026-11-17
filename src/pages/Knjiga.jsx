@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Korica from "../components/Korica.jsx";
 import KoricaIzbor from "../components/KoricaIzbor.jsx";
-import StanjePolice, { Rezervacija } from "../components/StanjePolice.jsx";
+import PreporuciCitaocu from "../components/PreporuciCitaocu.jsx";
+import StanjePolice from "../components/StanjePolice.jsx";
 import Utisci from "../components/Utisci.jsx";
 import { useAuth } from "../lib/auth-context.js";
 import { ucitajKnjigu } from "../lib/knjige.js";
@@ -11,7 +12,6 @@ import { prosecnaOcena } from "../lib/polica-logika.js";
 import { ucitajOcenu } from "../lib/polica.js";
 import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
-import { primeraka } from "../lib/unos-knjiga.js";
 import { jeBibliotekar } from "../lib/uloge.js";
 
 const T = tekst.knjigaEkran;
@@ -84,10 +84,7 @@ function KnjigaSadrzaj({ id }) {
     );
   }
 
-  // Dostupnost: „U fondu, N primeraka" ili „Nema u fondu, na listi za nabavku" (i knjiga koju je član ručno upisao)
-  const dostupnost = knjiga.u_fondu ? T.uFondu.replace("{primeraka}", primeraka(knjiga.broj_primeraka)) : T.nijeUFondu;
   const prosek = prosecnaOcena(ocena);
-  const slobodna = knjiga.u_fondu && knjiga.broj_slobodnih > 0;
 
   return (
     <>
@@ -134,37 +131,10 @@ function KnjigaSadrzaj({ id }) {
         </section>
       )}
 
-      {/* U biblioteci: dostupnost i rezervacija (prototip: .dostupnost) */}
-      <section className="mt-7" aria-labelledby="u-biblioteci">
-        <h2 id="u-biblioteci" className="mb-3 font-naslov text-[15px] font-bold tracking-tight">
-          {T.uBiblioteci}
-        </h2>
-        <div className={stil.karta}>
-          <p className="flex items-center gap-2 text-[13px]">
-            <span aria-hidden="true" className={`size-2 flex-none rounded-full ${slobodna ? "bg-bordo" : "bg-zlato"}`} />
-            <span className="font-medium">{dostupnost}</span>
-          </p>
-          {knjiga.u_fondu && (
-            <p className="mt-1 pl-4 text-[13px] text-mastilo-2">{knjiga.broj_slobodnih > 0 ? T.slobodnih.replace("{n}", String(knjiga.broj_slobodnih)) : T.sviIzdati}</p>
-          )}
-          <Rezervacija knjiga={knjiga} />
-        </div>
-      </section>
-
       <StanjePolice knjiga={knjiga} />
 
-      {/* Preporuči čitaocu: preporuke stižu uz povezivanje čitalaca (sledeći korak plana) */}
-      <section className="mt-7" aria-labelledby="preporuci">
-        <h2 id="preporuci" className="mb-3 font-naslov text-[15px] font-bold tracking-tight">
-          {T.preporuci.naslov}
-        </h2>
-        <div className={stil.karta}>
-          <p className="text-sm text-mastilo-2">{T.preporuci.nema}</p>
-          <Link to="/citaoci" className={`${stil.tiho} mt-3`}>
-            {T.preporuci.dugme}
-          </Link>
-        </div>
-      </section>
+      {/* Preporuči čitaocu: povezani čitaoci (nadimci iz pogleda moje_veze), preporuka ide u tabelu preporuke */}
+      <PreporuciCitaocu knjigaId={knjiga.id} />
 
       <Utisci knjigaId={knjiga.id} naPromenjeno={() => setOsveziOcenu((n) => n + 1)} />
 

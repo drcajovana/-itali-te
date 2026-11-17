@@ -125,7 +125,7 @@ export default function Pretraga() {
       await dodajRucno(clan.id, rucnoNaslov, rucnoAutor);
       setRucnoNaslov("");
       setRucnoAutor("");
-      setRucno({ saljem: false, poruka: T.polica.dodatoNijeUFondu, greska: false });
+      setRucno({ saljem: false, poruka: T.polica.dodato, greska: false });
     } catch (err) {
       console.error("ručni upis:", err);
       setRucno({ saljem: false, poruka: T.polica.nijeDodato, greska: true });

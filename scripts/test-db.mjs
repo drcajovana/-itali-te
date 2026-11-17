@@ -97,7 +97,8 @@ try {
   const PUTANJA = fajlovi.filter((f) => /^0016_/.test(f));
   const POLICA = fajlovi.filter((f) => /^0017_/.test(f));
   const REZERVACIJE = fajlovi.filter((f) => /^0018_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x))) await pusti(f);
+  const CITAOCI = fajlovi.filter((f) => /^0019_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -882,6 +883,162 @@ try {
   ok((await definicije()) === definicijePre, "0018 je idempotentna: drugo puštanje ne menja ograničenje ni indekse", await definicije());
   ok((await otisakPolitika()) === politikePre, "0018: posle drugog puštanja politike su iste");
   ok((await db.query("select count(*)::int as n from public.rezervacije where status = 'preuzeta'")).rows[0].n >= 1, "0018: drugo puštanje ne dira podatke");
+
+  // ───────── 0019: nadimci povezanih, preporuke, prijava člana ─────────
+  faza("0019: pogledi moje_veze i moje_preporuke (samo nadimak, samo moje), blokada, prijava člana, preporuka do 280 znakova");
+  const otisakTabela = async () =>
+    JSON.stringify(
+      (await db.query(`select c.relname, p.polname, p.polcmd::text as cmd, pg_get_expr(p.polqual, p.polrelid) as q, pg_get_expr(p.polwithcheck, p.polrelid) as w
+                         from pg_policy p join pg_class c on c.oid = p.polrelid
+                        where c.relname in ('clanovi', 'veze', 'blokade', 'preporuke', 'prijave', 'polica', 'utisci') order by 1, 2`)).rows
+    );
+  const politikePre19 = await otisakTabela();
+  const tipPre = (await db.query("select pg_get_constraintdef(oid) as d from pg_constraint where conrelid = 'public.prijave'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%tip%'")).rows[0]?.d ?? "";
+  ok(tipPre.includes("preporuka") && tipPre.includes("utisak") && !tipPre.includes("clan'"), "pre 0019: prijava postoji samo za preporuku i utisak", tipPre);
+  await db.query("update public.clanovi set nadimak = 'Nadimak C' where id = $1", [UC]);
+  const dugacka = "x".repeat(300);
+  const K19 = await nova("R1 knjiga za preporuku");
+  await db.query("insert into public.preporuke (posiljalac_id, primalac_id, knjiga_id, poruka) values ($1, $2, $3, $4)", [UB, UA, K19, dugacka]);
+  ok((await db.query("select count(*)::int as n from public.preporuke where char_length(poruka) = 300")).rows[0].n === 1, "pre 0019: napomena od 300 znakova se još može upisati (nije ograničena)");
+  await db.query("delete from public.preporuke where char_length(poruka) = 300");
+
+  for (const f of CITAOCI) await pusti(f);
+
+  ok((await otisakTabela()) === politikePre19, "0019: politike (RLS) na clanovi, veze, blokade, preporuke, prijave, polica i utisci su iste kao pre (nijedna dodata, izbrisana ni izmenjena)");
+  const opcije = (await db.query("select c.relname, c.reloptions, c.relkind from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname in ('moje_veze', 'moje_preporuke') order by 1")).rows;
+  ok(opcije.length === 2 && opcije.every((x) => x.relkind === "v" && (x.reloptions ?? []).includes("security_invoker=true")), "pogledi moje_veze i moje_preporuke su security_invoker", opcije);
+  const kolone = async (pogled) => (await db.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = $1 order by ordinal_position", [pogled])).rows.map((x) => x.column_name);
+  const kv = await kolone("moje_veze");
+  const kp = await kolone("moje_preporuke");
+  ok(JSON.stringify(kv) === JSON.stringify(["id", "clan_id", "smer", "status", "kreirana", "potvrdjena", "nadimak"]), "moje_veze vraća samo: id, clan_id, smer, status, kreirana, potvrdjena, nadimak (nema imena, broja karte ni šifre poziva)", kv);
+  ok(JSON.stringify(kp) === JSON.stringify(["id", "knjiga_id", "poruka", "procitana", "kreirana", "posiljalac_nadimak"]), "moje_preporuke vraća samo: id, knjiga_id, poruka, procitana, kreirana, posiljalac_nadimak (bez id-a pošiljaoca, imena i karte)", kp);
+  r = await kao("anon", null, "select * from public.moje_veze");
+  ok(nemaPrava(r), "anon ne sme da čita moje_veze", r.greska?.message ?? r.redovi);
+  r = await kao("anon", null, "select * from public.moje_preporuke");
+  ok(nemaPrava(r), "anon ne sme da čita moje_preporuke", r.greska?.message ?? r.redovi);
+
+  // nadimak povezanog: vidi se, i to samo nadimak
+  const MV = "select clan_id, smer, status, nadimak from public.moje_veze order by clan_id";
+  r = await kao("authenticated", UA, MV);
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].clan_id === UB && r.redovi[0].smer === "poslat" && r.redovi[0].status === "prihvacena" && r.redovi[0].nadimak === "Nadimak B", "A vidi povezanog B: samo njegov nadimak („Nadimak B”)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, MV);
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].clan_id === UA && r.redovi[0].smer === "primljen" && r.redovi[0].nadimak === null, "B vidi povezanog A (smer „primljen”); A nema nadimak, pa je nadimak prazan, a ne ime", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, MV);
+  ok(!r.greska && r.redovi.length === 0, "stranac C ne vidi nijednu vezu, ni nadimak A ili B", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, MV);
+  ok(!r.greska && r.redovi.length === 0, "bibliotekar kroz moje_veze vidi samo SVOJE veze (iako veze_bibliotekar_select dozvoljava sve)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "select id, ime from public.clanovi where id = $1", [UB]);
+  ok(!r.greska && r.redovi.length === 0, "clanovi se i dalje ne otvaraju: A ne vidi tuđi red (ni povezanog B)", r.greska?.message ?? r.redovi);
+
+  // poziv na čekanju: nadimak pošiljaoca se vidi primaocu (i obrnuto)
+  const vezaC = (await db.query("insert into public.veze (pozivalac_id, pozvani_id) values ($1, $2) returning id", [UC, UA])).rows[0].id;
+  r = await kao("authenticated", UA, MV);
+  const pozivC = r.redovi?.find((x) => x.clan_id === UC);
+  ok(!r.greska && pozivC?.smer === "primljen" && pozivC?.status === "na_cekanju" && pozivC?.nadimak === "Nadimak C", "primljeni poziv na čekanju: A vidi nadimak pošiljaoca C", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, MV);
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].clan_id === UA && r.redovi[0].smer === "poslat" && r.redovi[0].status === "na_cekanju", "poslati poziv na čekanju: C ga vidi kao „poslat”", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, MV);
+  ok(!r.greska && r.redovi.length === 1, "tuđi poziv (C→A) B ne vidi", r.greska?.message ?? r.redovi);
+
+  // blokada: veza i poziv nestaju sa obe strane, bez ikakvog traga u pogledu
+  await db.query("insert into public.blokade (blokirao_id, blokirani_id) values ($1, $2)", [UA, UC]);
+  r = await kao("authenticated", UA, MV);
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].clan_id === UB, "posle blokade C, A više ne vidi poziv od C (ostaje samo B)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, MV);
+  ok(!r.greska && r.redovi.length === 0, "blokirani C ne vidi ni svoj poslati poziv (nestao je kao da je odbijen): ne saznaje za blokadu", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, "select * from public.blokade");
+  ok(!r.greska && r.redovi.length === 0, "blokirani ne vidi tabelu blokade (nema politike koja mu to daje)", r.greska?.message ?? r.redovi);
+  await db.query("delete from public.blokade where blokirao_id = $1 and blokirani_id = $2", [UA, UC]);
+  await db.query("delete from public.veze where id = $1", [vezaC]);
+
+  // posalji_poziv: nepostojeća šifra i blokirani član daju ISTU poruku (postojeće ponašanje, ostaje)
+  const sifraC = (await db.query("select sifra_poziva from public.clanovi where id = $1", [UC])).rows[0].sifra_poziva;
+  await db.query("insert into public.blokade (blokirao_id, blokirani_id) values ($1, $2)", [UC, UA]);
+  const poziv = (sifra) => kao("authenticated", UA, "select public.posalji_poziv($1)", [sifra]);
+  const nepostojeca = await poziv("NEG·0000·AA");
+  const blokirana = await poziv(sifraC);
+  const sopstvena = await poziv((await db.query("select sifra_poziva from public.clanovi where id = $1", [UA])).rows[0].sifra_poziva);
+  ok(nepostojeca.greska && blokirana.greska && nepostojeca.greska.message === blokirana.greska.message && nepostojeca.greska.code === blokirana.greska.code && sopstvena.greska?.message === nepostojeca.greska.message, "posalji_poziv: nepostojeća šifra, šifra člana koji me je blokirao i sopstvena šifra daju ISTU grešku (isti kod i poruka)", [nepostojeca.greska?.message, blokirana.greska?.message, sopstvena.greska?.message]);
+  ok(nepostojeca.greska?.code === "P0001", "ta greška je P0001 (klijent je prepoznaje i pokazuje jednu poruku)", nepostojeca.greska?.code);
+  await db.query("delete from public.blokade where blokirao_id = $1 and blokirani_id = $2", [UC, UA]);
+
+  // preporuke: primljene sa nadimkom pošiljaoca
+  const PREP = "insert into public.preporuke (posiljalac_id, primalac_id, knjiga_id, poruka) values ($1, $2, $3, $4) returning id";
+  r = await kao("authenticated", UB, PREP, [UB, UA, K19, "Pročitaj ovo."]);
+  const prepId = r.redovi?.[0]?.id;
+  ok(!r.greska && prepId, "povezani B preporučuje knjigu A-u (RLS: su_povezani)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, PREP, [UC, UA, K19, "Nepovezan"]);
+  ok(r.greska?.message?.includes("row-level security"), "nepovezani C ne može da pošalje preporuku A-u", r.greska?.message ?? r.redovi);
+  const MP = "select id, poruka, procitana, posiljalac_nadimak from public.moje_preporuke order by kreirana";
+  r = await kao("authenticated", UA, MP);
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].posiljalac_nadimak === "Nadimak B" && r.redovi[0].poruka === "Pročitaj ovo.", "A vidi primljenu preporuku sa nadimkom pošiljaoca", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, MP);
+  ok(!r.greska && r.redovi.length === 0, "pošiljalac B kroz moje_preporuke ne vidi svoje poslate (pogled je samo za primljene)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, MP);
+  ok(!r.greska && r.redovi.length === 0, "stranac C ne vidi tuđe preporuke", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, MP);
+  ok(!r.greska && r.redovi.length === 0, "ni bibliotekar kroz moje_preporuke ne vidi tuđe", r.greska?.message ?? r.redovi);
+
+  // napomena do 280 znakova i jedna neobrađena iste knjige
+  r = await kao("authenticated", UB, PREP, [UB, UA, await nova("R2"), "x".repeat(281)]);
+  ok(r.greska?.message?.includes("preporuke_poruka_duzina"), "napomena od 281 znak se odbija u bazi", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, PREP, [UB, UA, await nova("R3"), "x".repeat(280)]);
+  ok(!r.greska, "napomena od tačno 280 znakova prolazi", r.greska?.message);
+  r = await kao("authenticated", UB, PREP, [UB, UA, K19, "Opet"]);
+  ok(r.greska?.code === "23505", "ista neobrađena preporuka iste knjige istom primaocu se ne može ponoviti", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "update public.preporuke set procitana = true, skrivena = true, poruka = 'izmenjeno' where id = $1 returning procitana, skrivena, poruka", [prepId]);
+  ok(!r.greska && r.redovi[0]?.procitana === true && r.redovi[0]?.skrivena === false && r.redovi[0]?.poruka === "Pročitaj ovo.", "primalac obrađuje preporuku (procitana = true), a skrivena i poruka ostaju (trigger preporuke_zastita)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, PREP, [UB, UA, K19, "Ponovo, posle obrade"]);
+  ok(!r.greska, "posle obrade ista knjiga može ponovo da se preporuči", r.greska?.message);
+  const novaPrep = r.redovi?.[0]?.id;
+  await db.query("update public.preporuke set skrivena = true where id = $1", [novaPrep]);
+  r = await kao("authenticated", UA, "select count(*)::int as n from public.moje_preporuke where id = $1", [novaPrep]);
+  ok(r.redovi?.[0]?.n === 0, "skrivena (moderacija) preporuka se ne pokazuje primaocu", r.greska?.message ?? r.redovi);
+
+  // blokada sakriva preporuke blokiranog; raskid veze skida nadimak pošiljaoca
+  await db.query("update public.preporuke set skrivena = false where id = $1", [novaPrep]);
+  await db.query("delete from public.veze where pozivalac_id = $1 and pozvani_id = $2", [UA, UB]);
+  r = await kao("authenticated", UA, "select posiljalac_nadimak from public.moje_preporuke where id = $1", [novaPrep]);
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].posiljalac_nadimak === null, "posle raskida veze preporuka ostaje, ali bez nadimka pošiljaoca (ekran piše „Читалац”)", r.greska?.message ?? r.redovi);
+  await db.query("insert into public.veze (pozivalac_id, pozvani_id, status) values ($1, $2, 'prihvacena')", [UA, UB]);
+  await db.query("insert into public.blokade (blokirao_id, blokirani_id) values ($1, $2)", [UA, UB]);
+  r = await kao("authenticated", UA, "select count(*)::int as n from public.moje_preporuke");
+  ok(r.redovi?.[0]?.n === 0, "kad A blokira B, njegove preporuke nestaju iz pogleda", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "select count(*)::int as n from public.polica where clan_id = $1", [UB]);
+  ok(r.redovi?.[0]?.n === 0, "kad A blokira B, A ne vidi ni policu B (su_povezani je false)", r.greska?.message ?? r.redovi);
+  await db.query("delete from public.blokade where blokirao_id = $1 and blokirani_id = $2", [UA, UB]);
+
+  // prijava člana (tip 'clan')
+  const PRIJAVA = "insert into public.prijave (prijavio_id, tip, stavka_id, razlog) values ($1, $2, $3, $4) returning id";
+  r = await kao("authenticated", UA, PRIJAVA, [UA, "clan", UB, "Neprimeren nadimak"]);
+  ok(!r.greska && r.redovi.length === 1, "A prijavljuje člana B (tip 'clan', stavka_id je id člana)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, PRIJAVA, [UA, "clan", UB, "Opet"]);
+  ok(r.greska?.code === "23505", "ista prijava istog člana se ne podnosi dvaput", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, PRIJAVA, [UA, "nesto", UB, "x"]);
+  ok(r.greska?.message?.includes("prijave_tip_check"), "nepoznat tip prijave se odbija", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, PRIJAVA, [UA, "utisak", UB, "stari tipovi i dalje rade"]);
+  ok(!r.greska, "prijava utiska i preporuke i dalje radi (stari tipovi)", r.greska?.message);
+  r = await kao("authenticated", UB, "select count(*)::int as n from public.prijave");
+  ok(r.redovi?.[0]?.n === 0, "prijavljeni B ne vidi prijave (nema znaka da je prijavljen)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select count(*)::int as n from public.prijave where tip = 'clan'");
+  ok(r.redovi?.[0]?.n >= 1, "bibliotekar vidi prijavu člana", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, PRIJAVA, [UB, "clan", UC, "u tuđe ime"]);
+  ok(r.greska?.message?.includes("row-level security"), "prijava u tuđe ime se odbija (postojeća politika)", r.greska?.message ?? r.redovi);
+
+  // idempotentnost
+  const definicije19 = async () =>
+    JSON.stringify([
+      (await db.query("select pg_get_viewdef('public.moje_veze'::regclass) as v, pg_get_viewdef('public.moje_preporuke'::regclass) as p")).rows,
+      (await db.query("select pg_get_constraintdef(oid) as d from pg_constraint where conrelid in ('public.prijave'::regclass, 'public.preporuke'::regclass) and conname in ('prijave_tip_check', 'preporuke_poruka_duzina') order by conname")).rows,
+      (await db.query("select indexdef from pg_indexes where schemaname = 'public' and indexname = 'preporuke_otvorena_idx'")).rows,
+    ]);
+  const pre19 = await definicije19();
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, CITAOCI[0]), "utf8"));
+  ok((await definicije19()) === pre19 && (await otisakTabela()) === politikePre19, "0019 je idempotentna: drugo puštanje ne menja poglede, ograničenja, indeks ni politike", await definicije19());
+  r = await kao("authenticated", UA, MV);
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].nadimak === "Nadimak B", "posle drugog puštanja pogled i dalje radi", r.greska?.message ?? r.redovi);
+  const fn = (await db.query("select p.proname, p.prosecdef, p.proconfig, has_function_privilege('anon', p.oid, 'execute') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'privatno' and p.proname = 'ima_blokade'")).rows[0];
+  ok(fn?.prosecdef === true && (fn.proconfig ?? []).some((c) => c.startsWith("search_path=")) && fn.anon === false, "privatno.ima_blokade: SECURITY DEFINER sa search_path, nedostupna anon-u", fn);
 
   // ───────── opšte ─────────
   faza("Opšta pravila");

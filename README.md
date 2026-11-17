@@ -17,9 +17,10 @@ Aplikacija još nema ekrane.
 | 3. Pretraga knjiga | ✅ `/pretraga`: naša baza, Google Books, link, ručni upis; dodavanje na policu. Pre dodavanja spoljne knjige član potvrđuje izmenljiva polja. **0013 i 0014 (Storage za korice) treba zalepiti u SQL Editor, tim redom**, a Google Books traži API ključ (vidi niže) |
 | 3a. Unos linkom | ✅ `api/iz-linka.js`, parser prenet iz `docs/nabavka-extract.js` |
 | 3b. Korice | ✅ lanac: naša slika iz Storage-a (fotografija bibliotekara, ili slika preuzeta sa linka na njegov zahtev) → Open Library po ISBN-u → pločica sa naslovom i autorom. Slika se nikad ne učitava sa tuđeg servera. Google sličica se samo prikazuje u rezultatima pretrage, ne čuva se. **Trebaju migracije 0013 i 0014** |
-| 4–5. Polica, stranica knjige, utisci | ✅ početna „Moja polica”, `/knjiga/:id` sa stanjem police, napretkom, rezervacijom i utiscima (vidi „Polica, stranica knjige i utisci”). **Treba migracija 0017** |
-| 6. Bibliotekarski panel | ✅ `/bibliotekar/clanovi` (upis člana, štampa kartice, novi PIN, aktivacija) i `/bibliotekar/rezervacije` (nova, spremna, preuzeta, otkazana); `api/napravi-clana.js` i `api/resetuj-pin.js`. Vidi „Uputstvo za bibliotekare”. **Treba migracija 0018** |
-| 7–11. | ⬜ |
+| 4–5. Polica, stranica knjige, utisci | ✅ početna „Moja polica”, `/knjiga/:id` sa stanjem police, napretkom i utiscima (vidi „Polica, stranica knjige i utisci”). **Treba migracija 0017** |
+| 6. Bibliotekarski panel | ✅ `/bibliotekar/clanovi` (upis člana, štampa kartice, novi PIN, aktivacija) ; `api/napravi-clana.js` i `api/resetuj-pin.js`. Vidi „Uputstvo za bibliotekare”. Rezervacije i dostupnost knjiga iz COBISS-a nisu deo aplikacije (vidi CLAUDE.md, „Šta se ne radi”). **Migracija 0018 je u bazi, ali se ne koristi** |
+| 7. Čitaoci | ✅ `/citaoci` (moja šifra, poziv, pozivi na čekanju, preporuke za mene, povezani) i `/citaoci/:id` (polica, utisci, preporuka, raskid, blokada, prijava), tačka na navigaciji, preporuka sa stranice knjige. Vidi „Čitaoci: veze, preporuke, blokada”. **Treba migracija 0019** |
+| 8–11. | ⬜ |
 
 ## Pokretanje
 
@@ -52,7 +53,8 @@ Migracije se puštaju redom, brojevima:
 | `0015_domeni_korica_ispravka.sql` | ispravka liste domena za korice u bazi: briše `books.google.com` i `books.googleusercontent.com`, dodaje naš Supabase domen; idempotentna (može i na već ispravljenoj bazi) |
 | `0016_search_path_pomocne_funkcije.sql` | `search_path = pg_catalog` za `privatno.norm_tekst`, `norm_sifra`, `dodirni_izmenjeno` i `isbn13` (`alter function`, idempotentno) |
 | `0017_polica_napredak_utisci_autor.sql` | `polica.napredak` (0–100), pogled `utisci_sa_autorom` (nadimak autora uz utisak, RLS važi), rezervacija samo za knjigu u fondu |
-| `0018_rezervacije_statusi.sql` | stanja rezervacije `nova`, `spremna`, `preuzeta`, `otkazana` (stara `obradjena` postaje `preuzeta`); jedinstveni indeks „jedna otvorena rezervacija po članu i knjizi” važi za `nova` i `spremna`. Politike se ne menjaju; idempotentna |
+| `0018_rezervacije_statusi.sql` | **(puštena, ali ništa je ne koristi: aplikacija nema rezervacije)** stanja rezervacije `nova`, `spremna`, `preuzeta`, `otkazana` (stara `obradjena` postaje `preuzeta`); jedinstveni indeks „jedna otvorena rezervacija po članu i knjizi” važi za `nova` i `spremna`. Politike se ne menjaju; idempotentna |
+| `0019_citaoci_nadimci_preporuke.sql` | pogledi `moje_veze` i `moje_preporuke` (samo moje, samo nadimak druge strane, bez blokiranih), `privatno.ima_blokade()`, prijava člana (`prijave.tip = 'clan'`), napomena preporuke do 280 znakova i jedna neobrađena preporuka iste knjige po paru. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 
 Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na
 `privatno.su_povezani()` iz `0002`, a politika na `preporuke` gleda u `prijave`,
@@ -203,25 +205,24 @@ može da lažira izvor `'preuzeto'`. Preuzimanje sa linka proverava samo `test:a
 
 - **Početna („Moja polica”)**: knjige u toku sa trakom napretka, tri kartice (**Čitam**, **Pročitano**, **Želim**,
   svaka sa brojem knjiga) i mreža korica izabrane kartice (naša slika, pa Open Library po ISBN-u, pa složena
-  pločica sa naslovom i autorom). Knjiga koja nije u fondu ima oznaku „nije u fondu”. Prazna polica, prazna kartica
+  pločica sa naslovom i autorom). Prazna polica, prazna kartica
   i greška pri učitavanju imaju svoje poruke. Čita se samo SVOJA polica (RLS pokazuje i policu povezanih članova).
-- **`/knjiga/:id`**: dostupnost („U fondu, N primeraka” ili „Nema u fondu, na listi za nabavku”), prosečna ocena
+- **`/knjiga/:id`**: prosečna ocena
   iz pogleda `ocene_knjiga`, promena stanja (Želim, Čitam, Pročitano), napredak u procentima za knjige u toku,
-  **Označi kao pročitano** (datum kraja je danas, napredak 100) i **Rezerviši** (poruka bibliotekaru; samo za knjige u
-  fondu, što proverava i baza; zaduženja vodi biblioteka). Datum početka čitanja se upisuje kad knjiga postane „Čitam”.
+  i **Označi kao pročitano** (datum kraja je danas, napredak 100). Nema dostupnosti ni rezervacije (to je COBISS). Datum početka čitanja se upisuje kad knjiga postane „Čitam”.
 - **Utisak**: ocena 1 do 10 sa opisom vrednosti, tekst, vidljivost (svi članovi / samo povezani / samo ja), kvačica
   „Sadrži spojler”; izmena i brisanje (uz potvrdu) sopstvenog utiska. **Tuđi utisci**: samo oni koje RLS pokazuje, uz
   nadimak autora; tekst sa spojlerom je zamagljen dok se ne dodirne. Ni ovde nema filtriranja po vidljivosti u React
   kodu: pogled `utisci_sa_autorom` je `security_invoker`, pa važe politike tabele `utisci`.
-- **Ručni upis naslova koji nemamo** (pretraga) ostaje; takva knjiga je „nije u fondu” i ulazi u izveštaj za nabavku.
+- **Ručni upis naslova koji nemamo** (pretraga) ostaje; takva knjiga ulazi u izveštaj za nabavku.
 - Pravila (prelaz stanja, napredak, ocena, utisak) su u `src/lib/polica-logika.js`, upiti u `src/lib/polica.js`.
-  `test:db` proverava pogled, napredak i rezervaciju; `test:rls` (faza 12) isto na pravoj bazi.
+  `test:db` proverava pogled i napredak; `test:rls` (faza 12) isto na pravoj bazi.
 
 ### Uputstvo za bibliotekare
 
 Ovo je kratko uputstvo za rad u aplikaciji. Tekst u aplikaciji je na ćirilici, pa su natpisi dugmadi i menija ovde navedeni onako kako ih vidite na ekranu. Prijavite se svojom kartom i PIN-om. Dole u meniju
-postoji stavka **Библиотека** (vide je samo bibliotekari i administratori). U njoj su tri alata:
-**Унос књига**, **Чланови** i **Резервације**.
+postoji stavka **Библиотека** (vide je samo bibliotekari i administratori). U njoj su dva alata:
+**Унос књига** i **Чланови**.
 
 **Kako se upisuje novi član**
 
@@ -251,18 +252,6 @@ postoji stavka **Библиотека** (vide je samo bibliotekari i administrat
 Na istom ekranu dodirnite **Деактивирај** (uz potvrdu) ili **Активирај**. Neaktivan član se ne može
 prijaviti i ne vidi ništa, ali njegovi podaci ostaju. Sebe ne možete da deaktivirate.
 
-**Kako se obrađuje rezervacija**
-
-1. **Библиотека → Резервације**. Podrazumevano se vide **otvorene** rezervacije (nova i spremna);
-   **Све** pokazuje i završene.
-2. Svaka rezervacija pokazuje knjigu (dodir otvara njenu stranicu), člana sa brojem karte i datum.
-3. Dodirnite stanje:
-   - **Нова**: član je rezervisao, vi još niste ništa uradili.
-   - **Спремна**: izdvojili ste knjigu i ona čeka člana. Član to vidi na stranici knjige.
-   - **Преузета**: član je uzeo knjigu. Rezervacija je zatvorena.
-   - **Отказана**: odustalo se (član ili vi).
-4. Aplikacija **ne vodi zaduženja**: ona se i dalje vode u COBISS-u. Rezervacija je samo poruka vama.
-
 **Za one koji održavaju aplikaciju**
 
 - PIN pravi server (`crypto.randomInt`, 6 cifara, može da počne nulom) i vraća ga **jednom** u odgovoru
@@ -278,6 +267,34 @@ prijaviti i ne vidi ništa, ali njegovi podaci ostaju. Sebe ne možete da deakti
   (administrator vidi sve), ali to nije zaštita u bazi.
 - `npm run test:api` proverava uloge, ograničenje, vodeću nulu i da PIN nije u logu ni u poruci greške;
   `test:db` migraciju 0018; `test:rls` (faza 13) isto na pravoj bazi.
+
+### Čitaoci: veze, preporuke, blokada
+
+Ekran **Čitaoci** (`/citaoci`) i profil povezanog čitaoca (`/citaoci/:id`) rade samo preko postojećih tabela i funkcija
+(`veze`, `blokade`, `preporuke`, `prijave`, `posalji_poziv`, `prihvati_poziv`) i dva nova pogleda iz migracije 0019.
+
+- **Veza je samo pozivom.** Član unosi šifru poziva drugog člana (razmaci i mala slova su u redu), drugi prihvata ili odbija.
+  Nema spiska članova ni pretrage članova. Nepostojeća šifra, sopstvena šifra i šifra člana koji je blokirao (ili je blokiran)
+  daju **istu** grešku u bazi (`P0001`), a ekran pokazuje jednu poruku.
+- **Drugom članu se vidi samo nadimak**, iz pogleda `moje_veze` i `moje_preporuke` (`security_invoker`, samo moje veze, bez
+  blokiranih). Ime, broj karte i šifra poziva drugog člana ne stižu u pregledač. `clanovi` i dalje vide samo sam član i bibliotekari.
+- **Pozivi.** Primljeni (Prihvati: `prihvati_poziv`, Odbij: DELETE reda), poslati (Povuci poziv: DELETE). Nadimak pošiljaoca se vidi
+  dok poziv čeka; kad ga nema, piše „Нови позив”. Nadimak primaoca se vidi pošiljaocu poziva na čekanju.
+- **Povezani.** Dodir otvara profil: njegova polica (Čita, Pročitano, Želi, sa ocenom ako je ima) i utisci „svi” i „povezani”
+  (pogled `utisci_sa_autorom`, spojler je zamagljen). Ništa se ne učitava dok veza nije prihvaćena; ako nema veze ili postoji blokada,
+  ekran pokazuje isto prazno stanje.
+- **Raskid** je običan DELETE reda u `veze` (bez obaveštenja drugoj strani). **Blokada** upisuje red u `blokade` pa briše vezu;
+  blokirani ne dobija nikakav signal (veza mu nestaje kao pri raskidu), a pozivi i preporuke od blokiranog nestaju iz pogleda.
+  Otblokiranja u interfejsu još nema (red u `blokade` može da obriše administrator u bazi).
+- **Prijava člana** (razlog do 300 znakova) ide bibliotekaru kao `prijave.tip = 'clan'`; prijavljeni je ne vidi.
+- **Preporuke.** Jedini oblik poruke je preporuka knjige uz napomenu do 280 znakova (granica je i u bazi). Šalje se sa profila
+  (knjiga sa moje police ili iz pretrage) i sa stranice knjige. Primalac bira: „Желим да прочитам” (polica, Želim, samo ako knjige
+  još nema na polici), „Прочитано је већ” (polica, Pročitano), „Није за мене” (samo sklanja). Sve tri obeležavaju preporuku kao
+  obrađenu (`procitana = true`); `skrivena` ostaje potez moderacije.
+- **Tačka na navigaciji** (stavka „Читаоци”): ima primljenih poziva na čekanju ili neobrađenih preporuka. Osvežava se pri promeni
+  ekrana i kad se prozor vrati u prvi plan.
+- Testovi: `test:api` (logika i pravila u izvornom kodu), `test:db` (pogledi, blokada, ista greška za šifru, ograničenja),
+  `test:rls` faza 14 (na pravoj bazi, pod stvarnim prijavama).
 
 ### Prvi administrator
 
@@ -333,12 +350,12 @@ nule ako ijedna provera padne.
 ### Migracije su puštene ručno
 
 Port 5432 je blokiran sa razvojne mreže, pa `supabase db push` ne radi. Migracije
-se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0018 treba zalepiti, tim redom). Zato je tabela
+se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0019 treba zalepiti, tim redom). Zato je tabela
 `supabase_migrations.schema_migrations` u bazi **prazna** i CLI misli da ništa
 nije primenjeno. Kad se ostvari veza, uskladiti:
 
 ```bash
-npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018
+npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019
 ```
 
 Do tada: izmena postojeće migracije u repozitorijumu **nije** u bazi dok se
