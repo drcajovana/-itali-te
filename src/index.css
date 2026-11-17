@@ -78,6 +78,17 @@ h4 {
   outline-offset: 2px;
 }
 
+/* Polje za pretragu: okvir se vidi na celoj „pilulu" (focus-within u komponenti), ne na samom polju.
+   Mora ovde, van slojeva, da bi pobedilo opšte pravilo :focus-visible iznad. */
+.polje-pretrage:focus-visible {
+  outline: none;
+}
+.polje-pretrage::-webkit-search-cancel-button,
+.polje-pretrage::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 /* Nijedna dodirna meta ispod 44px. Za polja za izbor (checkbox, radio) cilj dodira je
    cela labela (min-h-11 u komponentama), a ne sam kvadratić. */
 button,

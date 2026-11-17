@@ -10,7 +10,28 @@ const STATUSI = ["zelim", "citam", "procitano"];
 const T = tekst.pretraga;
 
 const polje = `${stil.polje} mt-1`;
-const izbor = `${stil.polje} w-auto`;
+
+// Izbor stanja police: tri jasna dugmeta u jednom redu (umesto padajuće liste).
+function IzborStanja({ status, onPromena }) {
+  return (
+    <div>
+      <p className="mb-1.5 text-sm font-medium text-mastilo-2">{T.polica.dodajKao}</p>
+      <div role="group" aria-label={T.polica.dodajKao} className="grid grid-cols-3 gap-1 rounded-full bg-pozadina p-1">
+        {STATUSI.map((s) => (
+          <button
+            key={s}
+            type="button"
+            aria-pressed={status === s}
+            onClick={() => onPromena(s)}
+            className="flex min-h-11 items-center justify-center rounded-full px-2 text-[14.5px] font-semibold text-mastilo-2 transition aria-pressed:bg-bordo aria-pressed:text-white"
+          >
+            {T.polica.kratko[s]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Jedan rezultat: iz naše baze (ima `id`, `u_fondu`) ili spoljni (Google Books,
 // link: `autori`, `izvor`).
@@ -78,7 +99,8 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
   const izGoogle = knjiga.izvor === "google_books";
 
   return (
-    <li className={`${stil.karta} flex gap-3`}>
+    <li className={stil.karta}>
+      <div className="flex gap-3">
       <Korica knjiga={knjiga} autor={autor} google={izGoogle ? { url: knjiga.url } : null} />
       <div className="min-w-0 flex-1">
         <h3 className="font-naslov text-[17px] font-bold leading-tight tracking-[-0.025em]">{knjiga.naslov}</h3>
@@ -108,27 +130,18 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
           </p>
         )}
 
+      </div>
+      </div>
+
+      <div className="mt-4">
         {!forma && (
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <label className="flex items-center gap-2 text-base">
-              <span className="sr-only sm:not-sr-only">{T.polica.dodajKao}</span>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className={izbor}
-              >
-                {STATUSI.map((s) => (
-                  <option key={s} value={s}>
-                    {T.polica[s]}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="space-y-3">
+            <IzborStanja status={status} onPromena={setStatus} />
             <button
               type="button"
               onClick={klikDodaj}
               disabled={saljem}
-              className={`${stil.veliko} sm:flex-1`}
+              className={`${stil.veliko} sm:w-full`}
             >
               {saljem ? tekst.opste.sacekajte : T.polica.dodaj}
             </button>
@@ -162,20 +175,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
                 />
               </div>
             ))}
-            <label className="flex items-center gap-2 text-base">
-              <span>{T.polica.dodajKao}</span>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className={izbor}
-              >
-                {STATUSI.map((s) => (
-                  <option key={s} value={s}>
-                    {T.polica[s]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <IzborStanja status={status} onPromena={setStatus} />
             {greskaForme && (
               <p role="alert" className="text-base font-medium text-bordo">
                 {greskaForme}

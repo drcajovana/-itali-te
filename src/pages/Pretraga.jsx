@@ -142,7 +142,7 @@ export default function Pretraga() {
         <label htmlFor="upit" className="sr-only">
           {T.polje}
         </label>
-        <div className="flex items-center gap-2.5 rounded-full bg-povrsina px-[18px] shadow-senka">
+        <div className="flex items-center gap-2.5 rounded-full bg-povrsina px-[18px] shadow-senka ring-2 ring-transparent transition focus-within:ring-bordo/25">
           <svg viewBox="0 0 24 24" className="size-[18px] flex-none fill-none stroke-mastilo-3 stroke-2" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
             <path d="M20 20l-3.5-3.5" />
@@ -157,7 +157,7 @@ export default function Pretraga() {
             placeholder={T.polje}
             value={upit}
             onChange={(e) => setUpit(e.target.value)}
-            className="min-w-0 flex-1 border-0 bg-transparent py-3 text-base text-mastilo placeholder:text-mastilo-3 focus:outline-none"
+            className="polje-pretrage min-w-0 flex-1 border-0 bg-transparent py-3 text-base text-mastilo placeholder:text-mastilo-3"
           />
         </div>
         <button type="submit" disabled={trazi} className={dugme}>

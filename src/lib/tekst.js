@@ -358,6 +358,7 @@ const cir = {
       citam: "Читам",
       procitano: "Прочитано",
       zelim: "Желим да прочитам",
+      kratko: { zelim: "Желим", citam: "Читам", procitano: "Прочитано" },
       dodaj: "Додај на полицу",
       dodato: "Додато на вашу полицу.",
       nijeDodato: "Није додато. Покушајте поново.",
