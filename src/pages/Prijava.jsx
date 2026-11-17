@@ -38,12 +38,7 @@ export default function Prijava() {
   return (
     <main className="mx-auto w-full max-w-[520px] px-5 pb-10 pt-8">
       <div className="flex items-center gap-3">
-        <div
-          aria-hidden="true"
-          className="flex size-[34px] flex-none items-center justify-center rounded-full border-[1.5px] border-zlato bg-bordo font-naslov text-[10px] font-bold tracking-tight text-zlato-svetlo"
-        >
-          {tekst.aplikacija.godina}
-        </div>
+        <img src="/logo-header.png" alt="" aria-hidden="true" width="40" height="40" className="size-10 flex-none" />
         <span className="font-naslov text-[19px] font-extrabold tracking-[-0.03em]">
           {NAZIV.slice(0, 4)}
           <span className="text-bordo">{NAZIV.slice(4)}</span>

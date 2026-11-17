@@ -1998,7 +1998,7 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
       provera("klijent ne zove Auth admin API i ne piše u clanovi nalog (pravi ih samo server): nema createUser/updateUserById i insert u clanovi", !/createUser|updateUserById|auth\.admin/.test(bezKom(citaj("src/lib/clanovi.js"))) && !/from\("clanovi"\)\s*\.insert/.test(bezKom(citaj("src/lib/clanovi.js"))));
       provera("klijent pravi člana i menja PIN samo preko /api/napravi-clana i /api/resetuj-pin", citaj("src/lib/clanovi.js").includes('"/api/napravi-clana"') && citaj("src/lib/clanovi.js").includes('"/api/resetuj-pin"'));
       provera("kartica za štampu: portal u <body>, na ekranu skrivena, pri štampi sakriva sve ostalo (@media print)", /createPortal\([\s\S]*document\.body/.test(citaj("src/components/PinPrikaz.jsx")) && /\.stampa-kartica\s*\{\s*display:\s*none/.test(citaj("src/index.css")) && /@media print[\s\S]*body > \*:not\(\.stampa-kartica\)[\s\S]*display:\s*none !important/.test(citaj("src/index.css")));
-      provera("kartica za štampu sadrži ustanovu, grb 1846, ime, broj karte, PIN i uputstvo za prijavu", ["aplikacija.ustanova", "aplikacija.godina", "clan.ime", "clan.broj_kartice", "{pin}", "kartica.uputstvo"].every((s) => citaj("src/components/PinPrikaz.jsx").includes(s)));
+      provera("kartica za štampu sadrži ustanovu, logo biblioteke, ime, broj karte, PIN i uputstvo za prijavu", ["aplikacija.ustanova", "/logo.png", "clan.ime", "clan.broj_kartice", "{pin}", "kartica.uputstvo"].every((s) => citaj("src/components/PinPrikaz.jsx").includes(s)));
     }
 
     // ── ćirilica (tekst aplikacije, pismo, ime, API poruke) ──
@@ -2086,7 +2086,7 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
       provera("index.css: font naslova je Onest, font teksta Inter", /--font-naslov:\s*"Onest"/.test(citaj("src/index.css")) && /--font-sans:\s*"Inter"/.test(citaj("src/index.css")) && !/Bricolage/.test(citaj("src/index.css").replace(/\/\*[\s\S]*?\*\//g, "")));
       const vite = citaj("vite.config.js");
       provera("vite.config.js: ime, kratko ime i opis PWA, kao i naslov stranice, dolaze iz tekst.js (ćirilica), jezik manifesta iz tekst.js", /name:\s*tekst\.aplikacija\.naziv/.test(vite) && /short_name:\s*tekst\.aplikacija\.naziv/.test(vite) && /description:\s*tekst\.aplikacija\.opis/.test(vite) && /lang:\s*tekst\.aplikacija\.jezik/.test(vite) && /replaceAll\("%NAZIV%", tekst\.aplikacija\.naziv\)/.test(vite) && /[Ѐ-ӿ]/.test(TK.aplikacija.naziv + TK.aplikacija.opis) && !/[Ѐ-ӿ]/.test(vite));
-      provera("kartica za štampu: ustanova, naslov kartice i uputstvo su iz tekst.js na ćirilici, grb 1846 ostaje", /[Ѐ-ӿ]/.test(TK.aplikacija.ustanova + TK.clanovi.kartica.naslov + TK.clanovi.kartica.uputstvo) && TK.clanovi.kartica.uputstvo.includes("{naziv}") && citaj("src/components/PinPrikaz.jsx").includes("aplikacija.godina"));
+      provera("kartica za štampu: ustanova, naslov kartice i uputstvo su iz tekst.js na ćirilici, logo biblioteke je slika", /[Ѐ-ӿ]/.test(TK.aplikacija.ustanova + TK.clanovi.kartica.naslov + TK.clanovi.kartica.uputstvo) && TK.clanovi.kartica.uputstvo.includes("{naziv}") && citaj("src/components/PinPrikaz.jsx").includes("/logo.png"));
     }
 
     // ── ekran „Читаоци" (čista logika, izvorni kod, migracija 0019) ──

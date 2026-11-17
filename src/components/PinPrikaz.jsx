@@ -11,9 +11,7 @@ function KarticaZaStampu({ clan, pin }) {
   return createPortal(
     <div className="stampa-kartica" aria-hidden="true">
       <div className="mx-auto w-[90mm] rounded-srednji border-2 border-bordo p-5 text-center">
-        <div className="mx-auto flex size-14 items-center justify-center rounded-full border-2 border-bordo font-naslov text-base font-bold text-bordo">
-          {tekst.aplikacija.godina}
-        </div>
+        <img src="/logo.png" alt="" width="64" height="64" className="mx-auto size-16" />
         <p className="mt-2 text-sm font-semibold">{tekst.aplikacija.ustanova}</p>
         <p className="mt-4 font-naslov text-lg font-bold text-bordo">{T.kartica.naslov}</p>
         <dl className="mt-3 space-y-2 text-left">
