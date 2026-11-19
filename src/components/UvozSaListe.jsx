@@ -92,7 +92,7 @@ export default function UvozSaListe({ zauzet, onIzabrano }) {
             {rezultat.pauzaSekundi > 0 && ` ${T.pauza.replace("{n}", String(rezultat.pauzaSekundi))}`}
           </p>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-wrap gap-2">
             <button type="button" disabled={zauzet} onClick={() => setIzabrani(linkovi.slice(0, NAJVISE_LINKOVA).map((l) => l.url))} className={stil.pilula}>
               {T.izaberiSve.replace("{n}", String(Math.min(NAJVISE_LINKOVA, linkovi.length)))}
             </button>

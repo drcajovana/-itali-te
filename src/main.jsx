@@ -2,7 +2,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
+import "./fonts.css";
 import "./index.css";
+import "./lib/pwa.js"; // hvata događaje (instalacija, veza, nova verzija) pre nego što se ekrani učitaju
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>

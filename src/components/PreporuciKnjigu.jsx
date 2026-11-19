@@ -142,7 +142,7 @@ export default function PreporuciKnjigu({ primalacId, nadimak, onZatvori }) {
         </p>
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={zauzet} className={stil.veliko}>
           {zauzet ? T.saljem : T.posalji}
         </button>

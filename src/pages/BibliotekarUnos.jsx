@@ -5,6 +5,7 @@ import { GreskaApija, porukaGreske } from "../lib/api.js";
 import { useAuth } from "../lib/auth-context.js";
 import { dodajPrimerke, izLinka, koricaIzLinka, nadjiDuplikate, postaviKoricu, sacuvajKnjigu } from "../lib/knjige.js";
 import { izborKorice, primeniKoricu, sacuvajPaKoricu, sacuvajSve as sacuvajSveRedom, tekstSazetka } from "../lib/korica-tok.js";
+import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 import { nasaFotografija } from "../lib/korica-slika.js";
 import { lokalnoNeispravan, obradiRedom, PAUZA_MS, pocetnaForma, razdvojiLinkove, sledecaZaObradu, urediUnos } from "../lib/unos-knjiga.js";
@@ -237,8 +238,8 @@ export default function BibliotekarUnos() {
 
   return (
     <>
-      <h1 className="text-3xl font-semibold text-bordo">{T.naslov}</h1>
-      <p className="mt-1 text-base">{T.uvod}</p>
+      <h1 className={`${stil.naslov} pt-2`}>{T.naslov}</h1>
+      <p className={stil.uvod}>{T.uvod}</p>
 
       <UvozSaListe zauzet={radi || cuvaSve} onIzabrano={izabranoSaListe} />
 
@@ -257,7 +258,7 @@ export default function BibliotekarUnos() {
           disabled={radi}
           className="block w-full rounded-srednji border border-linija bg-povrsina px-4 py-3 font-mono text-base focus:bg-povrsina focus:outline-2 focus:-outline-offset-1 focus:outline-bordo"
         />
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={radi || cuvaSve} className={dugme}>
             {radi ? T.citam : T.procitaj}
           </button>

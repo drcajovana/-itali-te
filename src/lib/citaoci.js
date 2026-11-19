@@ -80,6 +80,8 @@ export async function prijavi(prijavioId, tip, stavkaId, razlog) {
   const { error } = await supabase.from("prijave").insert({ prijavio_id: prijavioId, tip, stavka_id: stavkaId, razlog });
   if (error) {
     if (error.code === "23505") throw new GreskaApija("vec_prijavljeno");
+    // okidač iz 0021: stavka ne postoji, nije vidljiva prijaviocu ili nije njegova za prijavu
+    if (error.code === "22023") throw new GreskaApija("stavka_nedostupna");
     throw error;
   }
 }

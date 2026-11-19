@@ -99,7 +99,8 @@ try {
   const REZERVACIJE = fajlovi.filter((f) => /^0018_/.test(f));
   const CITAOCI = fajlovi.filter((f) => /^0019_/.test(f));
   const NABAVKA = fajlovi.filter((f) => /^0020_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x))) await pusti(f);
+  const MODERACIJA = fajlovi.filter((f) => /^0021_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -1193,6 +1194,189 @@ try {
   ok(f20?.prosecdef === true && (f20.proconfig ?? []).some((c) => c.startsWith("search_path=")) && f20.anon === false, "privatno.izvestaj_nabavke: SECURITY DEFINER sa search_path, nedostupna anon-u", f20);
   const opc20 = (await db.query("select reloptions from pg_class where relname = 'izvestaj_za_nabavku'")).rows[0];
   ok((opc20?.reloptions ?? []).includes("security_invoker=true"), "pogled izvestaj_za_nabavku je security_invoker", opc20);
+
+  // ───────── upis knjige sa odlukom (ekran za unos) ─────────
+  faza("Unos knjige: odluka nabavke se upisuje uz knjigu, pa knjiga nije među „Нове” u izveštaju");
+  const okidacOdluke = (await db.query("select tgtype from pg_trigger where tgname = 'knjige_odluka_zastita_bu'")).rows[0];
+  ok(okidacOdluke && (okidacOdluke.tgtype & 4) === 0 && (okidacOdluke.tgtype & 16) !== 0, "okidač knjige_odluka_zastita_bu važi samo pri izmeni (UPDATE), ne pri upisu (INSERT): zato klijent upisuje odluku i datum sam", okidacOdluke);
+  const UNOS_ODLUKA = `insert into public.knjige (naslov, autor, izdavac, isbn, zanrovi, opis, signatura, u_fondu, broj_primeraka, broj_slobodnih, izvor, uneo_id, odluka_nabavke, odluka_datum)
+                values ($1, 'Autor U', 'Izdavač U', null, '{}', null, null, $2, $3, $3, $4, $5, $6, $7) returning id, odluka_nabavke, odluka_datum, u_fondu`;
+  r = await kao("authenticated", BIB, UNOS_ODLUKA, ["U1 sačuvano kao nabavljamo", false, 0, "link", BIB, "nabavljamo", "2026-11-17T10:30:00Z"]);
+  const UKO1 = r.redovi?.[0]?.id;
+  ok(!r.greska && r.redovi[0]?.odluka_nabavke === "nabavljamo" && r.redovi[0]?.u_fondu === false && new Date(r.redovi[0]?.odluka_datum).toISOString() === "2026-11-17T10:30:00.000Z", "bibliotekar upisuje knjigu kao „Nabavljamo”: odluka i datum su u redu, u_fondu = false", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, UNOS_ODLUKA, ["U1 sačuvano kao imamo", true, 2, "fond", BIB, "imamo", "2026-11-17T10:31:00Z"]);
+  const UKO2 = r.redovi?.[0]?.id;
+  ok(!r.greska && r.redovi[0]?.odluka_nabavke === "imamo" && r.redovi[0]?.u_fondu === true, "bibliotekar upisuje knjigu kao „Imamo”: odluka 'imamo', u_fondu = true", r.greska?.message ?? r.redovi);
+  for (const k of [UKO1, UKO2]) await db.query("insert into polica (clan_id, knjiga_id, status) values ($1, $2, 'zelim')", [UA, k]);
+  r = await kao("authenticated", BIB, "select naslov, odluka, odluka_postavljena, odluka_datum from public.izvestaj_za_nabavku where naslov like 'U1 %' order by naslov");
+  ok(!r.greska && r.redovi.length === 2 && r.redovi.every((x) => x.odluka !== null && x.odluka_postavljena === true && x.odluka_datum !== null) && r.redovi.map((x) => x.odluka).join() === "imamo,nabavljamo", "u izveštaju obe knjige imaju postavljenu odluku i datum: nijedna nije među „Нове” (odluka nije prazna)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select count(*)::int as n from public.izvestaj_za_nabavku where naslov like 'U1 %' and odluka is null");
+  ok(r.redovi?.[0]?.n === 0, "filter „Нове” (bez odluke) ih ne pokazuje", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.knjige set odluka_nabavke = 'imamo' where id = $1 returning odluka_nabavke, odluka_datum, u_fondu", [UKO1]);
+  ok(!r.greska && r.redovi[0]?.odluka_nabavke === "imamo" && r.redovi[0]?.u_fondu === true && new Date(r.redovi[0]?.odluka_datum) > new Date("2026-11-17T10:30:00Z"), "kasnija izmena odluke radi okidač: novi datum (sat baze) i u_fondu = true", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, UNOS_ODLUKA, ["U1 čitalac upisuje sa odlukom", true, 5, "fond", UA, "imamo", "2026-11-17T10:00:00Z"]);
+  ok(r.greska?.message?.includes("row-level security") || (!r.greska && r.redovi[0]?.odluka_nabavke === null), "čitalac ne može da upiše knjigu sa odlukom (RLS ili poništeno okidačem iz 0020)", r.greska?.message ?? r.redovi);
+
+  // ───────── 0021: moderacija prijava ─────────
+  faza("0021: moderacija prijava (samo resena i beleska se menjaju, prijavljuje se samo ono što prijavilac vidi, dužine)");
+  const otisakPolitika21 = async () =>
+    JSON.stringify((await db.query(`select c.relname, p.polname, p.polcmd::text as cmd, pg_get_expr(p.polqual, p.polrelid) as q, pg_get_expr(p.polwithcheck, p.polrelid) as w
+                                      from pg_policy p join pg_class c on c.oid = p.polrelid where c.relname in ('prijave', 'preporuke', 'utisci', 'clanovi') order by 1, 2`)).rows);
+  const politikePre21 = await otisakPolitika21();
+
+  const UD = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"; // nije povezan ni sa kim
+  await db.query("insert into auth.users (id) values ($1)", [UD]);
+  await db.query("insert into clanovi (id, broj_kartice, ime, nadimak, uloga, aktivan) values ($1, 'UD1', 'Pravo Ime D', null, 'citalac', true)", [UD]);
+  const utisakId = async (clan, knjiga) => (await db.query("select id from public.utisci where clan_id = $1 and knjiga_id = $2", [clan, knjiga])).rows[0].id;
+  const U_B_JAVNI = await utisakId(UB, K1);
+  const U_B_SAMO_JA = await utisakId(UB, K3);
+  const U_B_SKRIVEN = await utisakId(UB, K4);
+  const U_A_SVOJ = await utisakId(UA, K1);
+  const U_B_PRIJATELJI = await utisakId(UB, K2);
+  const PREP_BA = (await db.query("insert into public.preporuke (posiljalac_id, primalac_id, knjiga_id, poruka) values ($1, $2, $3, 'B šalje A') returning id", [UB, UA, K1])).rows[0].id;
+  const PREP_BD = (await db.query("insert into public.preporuke (posiljalac_id, primalac_id, knjiga_id, poruka) values ($1, $2, $3, 'B šalje D, tajno') returning id", [UB, UD, K1])).rows[0].id;
+  await db.query("insert into public.utisci (clan_id, knjiga_id, ocena, tekst, vidljivost) values ($1, $2, 6, 'D javno', 'javno'), ($1, $3, 5, 'D prijatelji', 'prijatelji')", [UD, K1, K2]);
+  const U_D_JAVNI = await utisakId(UD, K1);
+  const U_D_PRIJATELJI = await utisakId(UD, K2);
+  const NEPOSTOJI = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const P21 = "insert into public.prijave (prijavio_id, tip, stavka_id, razlog) values ($1, $2, $3, $4) returning id, resena, resio_id, beleska, resena_datum";
+  const P21_PRE = "insert into public.prijave (prijavio_id, tip, stavka_id, razlog) values ($1, $2, $3, $4) returning id";
+
+  // pre migracije: rupe koje 0021 zatvara
+  r = await kao("authenticated", UA, P21_PRE, [UA, "utisak", NEPOSTOJI, "izmišljena stavka"]);
+  ok(!r.greska, "PRE 0021: član može da prijavi id koji ne postoji (rupa)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21_PRE, [UA, "preporuka", PREP_BD, "tuđa prepiska"]);
+  const PRE_TUDJA = r.redovi?.[0]?.id;
+  ok(!r.greska, "PRE 0021: član može da prijavi preporuku koja nije njegova (rupa)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select poruka from public.preporuke where id = $1", [PREP_BD]);
+  ok(r.redovi?.[0]?.poruka === "B šalje D, tajno", "PRE 0021: zbog toga bibliotekar čita tuđu prepisku (put do privatne preporuke)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.prijave set prijavio_id = $2, tip = 'clan', razlog = 'prepravljeno', kreirana = '2000-01-01' where id = $1 returning prijavio_id, tip, razlog", [PRE_TUDJA, UC]);
+  ok(!r.greska && r.redovi[0]?.prijavio_id === UC && r.redovi[0]?.razlog === "prepravljeno", "PRE 0021: bibliotekar može da prepravi ko je prijavio, šta i zašto (rupa)", r.greska?.message ?? r.redovi);
+  await db.query("delete from public.prijave where razlog in ('izmišljena stavka', 'prepravljeno')");
+
+  for (const f of MODERACIJA) await pusti(f);
+
+  ok((await otisakPolitika21()) === politikePre21, "0021: politike (RLS) na prijave, preporuke, utisci i clanovi su iste kao pre (nijedna dodata, izbrisana ni izmenjena)");
+  const k21 = fs.readFileSync(path.join(MIGRACIJE, MODERACIJA[0]), "utf8").replace(/^--.*$/gm, "");
+  ok(!/\b(create|drop|alter)\s+policy\b/i.test(k21) && !/create\s+table/i.test(k21), "0021 ne piše nijednu politiku i ne pravi tabele");
+  const kolPrijave = (await db.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'prijave' order by ordinal_position")).rows.map((x) => x.column_name);
+  ok(kolPrijave.includes("resena_datum"), "prijave imaju kolonu resena_datum", kolPrijave);
+
+  // upis: samo ono što prijavilac vidi
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_B_JAVNI, "Uvredljiv tekst"]);
+  const PRIJAVA_U = r.redovi?.[0]?.id;
+  ok(!r.greska && r.redovi.length === 1, "A prijavljuje javni utisak člana B", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_B_JAVNI, "Opet"]);
+  ok(r.greska?.code === "23505", "ista prijava istog utiska se ne podnosi dvaput", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_B_PRIJATELJI, "Povezani vide utisak 'prijatelji'"]);
+  ok(!r.greska, "A prijavljuje utisak „samo povezani” člana B (povezani su, pa ga vidi)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UD, P21, [UD, "utisak", U_B_PRIJATELJI, "Ne vidim ga"]);
+  ok(r.greska?.code === "22023", "D (nije povezan) ne može da prijavi utisak „samo povezani” (ne vidi ga)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_B_SAMO_JA, "Ne vidim ga"]);
+  ok(r.greska?.code === "22023", "utisak „samo ja” se ne može prijaviti (prijavilac ga ne vidi)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_B_SKRIVEN, "Već sakriven"]);
+  ok(r.greska?.code === "22023", "sakriven utisak se ne može prijaviti (prijavilac ga ne vidi)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_A_SVOJ, "Sopstveni"]);
+  ok(r.greska?.code === "22023", "sopstveni utisak se ne prijavljuje", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", NEPOSTOJI, "Izmišljen"]);
+  ok(r.greska?.code === "22023", "id koji ne postoji se ne može prijaviti", r.greska?.message ?? r.redovi);
+
+  r = await kao("authenticated", UA, P21, [UA, "preporuka", PREP_BA, "Neprimerena preporuka"]);
+  const PRIJAVA_P = r.redovi?.[0]?.id;
+  ok(!r.greska && r.redovi.length === 1, "A prijavljuje preporuku koju je primio", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "preporuka", PREP_BD, "Tuđa"]);
+  ok(r.greska?.code === "22023", "A ne može da prijavi preporuku koja je upućena drugom (nije njegova)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, P21, [UB, "preporuka", PREP_BA, "Sopstvena poslata"]);
+  ok(r.greska?.code === "22023", "pošiljalac ne prijavljuje sopstvenu poruku (prijavljuje je samo primalac)", r.greska?.message ?? r.redovi);
+
+  r = await kao("authenticated", UB, P21, [UB, "clan", UA, "Prijava povezanog člana"]);
+  ok(!r.greska && r.redovi.length === 1, "B prijavljuje člana A sa kojim je povezan", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UD, P21, [UD, "clan", UA, "Nepovezan"]);
+  ok(r.greska?.code === "22023", "D ne može da prijavi člana sa kojim nije povezan", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "clan", UA, "Sebe"]);
+  ok(r.greska?.code === "22023", "član ne prijavljuje sebe", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "clan", NEPOSTOJI, "Nema ga"]);
+  ok(r.greska?.code === "22023", "član koji ne postoji se ne može prijaviti", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UD, "clan", UB, "u tuđe ime"]);
+  ok(r.greska?.message?.includes("row-level security"), "prijava u tuđe ime i dalje odbija politika (okidač joj ne smeta)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "insert into public.prijave (prijavio_id, tip, stavka_id, razlog, resena, resio_id, beleska, resena_datum) values ($1, 'utisak', $2, 'Unapred rešeno', true, $3, 'beleška', now()) returning resena, resio_id, beleska, resena_datum", [UA, await utisakId(UC, K1), BIB]);
+  ok(!r.greska && r.redovi[0]?.resena === false && r.redovi[0]?.resio_id === null && r.redovi[0]?.beleska === null && r.redovi[0]?.resena_datum === null, "nova prijava je uvek nerešena (resena, resio_id, beleska i datum se ne mogu podneti unapred)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_D_PRIJATELJI, "Utisak D prijatelji"]);
+  ok(r.greska?.code === "22023", "utisak „samo povezani” člana D, koji nije povezan sa A, se ne može prijaviti", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_D_JAVNI, "x".repeat(301)]);
+  ok(r.greska?.message?.includes("prijave_razlog_duzina"), "razlog duži od 300 znakova se odbija u bazi", r.greska?.message ?? r.redovi);
+  r = await kao("service_role", null, P21, [UA, "utisak", NEPOSTOJI, "Servisna uloga je izuzeta"]);
+  ok(!r.greska, "servisna uloga je izuzeta od provere stavke", r.greska?.message ?? r.redovi);
+  await db.query("delete from public.prijave where razlog = 'Servisna uloga je izuzeta'");
+
+  // ko šta vidi
+  r = await kao("authenticated", UB, "select count(*)::int as n from public.prijave where prijavio_id <> $1", [UB]);
+  ok(r.redovi?.[0]?.n === 0, "prijavljeni član B ne vidi tuđe prijave (nema znaka da je prijavljen)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "select count(*)::int as n from public.prijave where prijavio_id <> $1", [UA]);
+  ok(r.redovi?.[0]?.n === 0, "član vidi samo sopstvene prijave", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select poruka from public.preporuke where id in ($1, $2) order by poruka", [PREP_BA, PREP_BD]);
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].poruka === "B šalje A", "bibliotekar vidi prijavljenu preporuku, ali ne i neprijavljenu iz iste prepiske", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "update public.prijave set resena = true where id = $1 returning id", [PRIJAVA_U]);
+  ok(!r.greska && r.redovi.length === 0, "prijavilac ne može da reši sopstvenu prijavu (nema politike za izmenu)", r.greska?.message ?? r.redovi);
+
+  // rešavanje
+  r = await kao("authenticated", BIB, `update public.prijave set resena = true, beleska = '  Upozoren član.  ', prijavio_id = $2, tip = 'clan', stavka_id = $2, razlog = 'prepravljeno', kreirana = '2000-01-01', resio_id = $3, resena_datum = '2000-01-01'
+                                        where id = $1 returning resena, beleska, resio_id, resena_datum, prijavio_id, tip, stavka_id, razlog, kreirana`, [PRIJAVA_U, UC, ADM]);
+  const rs = r.redovi?.[0];
+  ok(!r.greska && rs?.resena === true && rs.beleska === "Upozoren član." && rs.resio_id === BIB && new Date(rs.resena_datum).getFullYear() >= 2026, "bibliotekar rešava: beleška je očišćena, rešio je on (auth.uid()), vreme je sat baze", r.greska?.message ?? rs);
+  ok(rs?.prijavio_id === UA && rs.tip === "utisak" && rs.stavka_id === U_B_JAVNI && rs.razlog === "Uvredljiv tekst" && new Date(rs.kreirana).getFullYear() >= 2026, "u istoj izmeni ko je prijavio, šta, razlog i vreme prijave ostaju isti (okidač ih vraća)", rs);
+  const datum1 = rs?.resena_datum;
+  r = await kao("authenticated", ADM, "update public.prijave set beleska = 'Dopuna.', resio_id = $2, resena_datum = '2001-01-01' where id = $1 returning resena, beleska, resio_id, resena_datum", [PRIJAVA_U, ADM]);
+  ok(!r.greska && r.redovi[0]?.resena === true && r.redovi[0]?.beleska === "Dopuna." && r.redovi[0]?.resio_id === BIB && new Date(r.redovi[0]?.resena_datum).getTime() === new Date(datum1).getTime(), "već rešena prijava: beleška može da se dopuni, ali ko je rešio i kada se ne menja", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.prijave set resena = false where id = $1 returning resena, resio_id, resena_datum, beleska", [PRIJAVA_U]);
+  ok(!r.greska && r.redovi[0]?.resena === false && r.redovi[0]?.resio_id === null && r.redovi[0]?.resena_datum === null && r.redovi[0]?.beleska === "Dopuna.", "vraćanje među nerešene skida ko je rešio i datum; beleška ostaje", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", ADM, "update public.prijave set resena = true, beleska = '   ' where id = $1 returning resio_id, beleska", [PRIJAVA_U]);
+  ok(!r.greska && r.redovi[0]?.resio_id === ADM && r.redovi[0]?.beleska === null, "administrator rešava kao on sam; beleška od samih razmaka postaje prazna", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.prijave set beleska = $2 where id = $1 returning id", [PRIJAVA_U, "x".repeat(501)]);
+  ok(r.greska?.message?.includes("prijave_beleska_duzina"), "beleška duža od 500 znakova se odbija u bazi", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.prijave set beleska = $2 where id = $1 returning length(beleska)::int as n", [PRIJAVA_U, "x".repeat(500)]);
+  ok(!r.greska && r.redovi[0]?.n === 500, "beleška od tačno 500 znakova prolazi", r.greska?.message ?? r.redovi);
+  r = await kao("service_role", null, "update public.prijave set razlog = 'servisno', resio_id = $2 where id = $1 returning razlog, resio_id", [PRIJAVA_U, UA]);
+  ok(!r.greska && r.redovi[0]?.razlog === "servisno", "servisna uloga je izuzeta od zaštite izmene", r.greska?.message ?? r.redovi);
+
+  // radnje nad prijavljenim: sakrivanje utiska i preporuke
+  r = await kao("authenticated", BIB, "update public.utisci set skriven = true where id = $1 returning skriven", [U_B_JAVNI]);
+  ok(!r.greska && r.redovi[0]?.skriven === true, "bibliotekar sakriva prijavljeni utisak", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "select count(*)::int as n from public.utisci where id = $1", [U_B_JAVNI]);
+  ok(r.redovi?.[0]?.n === 0, "sakriven utisak više ne vidi drugi čitalac", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.utisci set skriven = false where id = $1 returning skriven", [U_B_JAVNI]);
+  ok(!r.greska && r.redovi[0]?.skriven === false, "bibliotekar vraća utisak", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, "update public.utisci set skriven = true where id = $1 returning skriven", [U_B_JAVNI]);
+  ok(!r.greska && r.redovi[0]?.skriven === false, "autor sam ne može da sakrije ni otkrije svoj utisak (postojeći okidač)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.preporuke set skrivena = true where id = $1 returning skrivena", [PREP_BA]);
+  ok(!r.greska && r.redovi[0]?.skrivena === true, "bibliotekar sakriva prijavljenu preporuku", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "select count(*)::int as n from public.moje_preporuke where id = $1", [PREP_BA]);
+  ok(r.redovi?.[0]?.n === 0, "sakrivena preporuka nestaje primaocu iz pogleda moje_preporuke", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select skrivena from public.preporuke where id = $1", [PREP_BA]);
+  ok(r.redovi?.[0]?.skrivena === true, "bibliotekar je i dalje vidi (prijava postoji), pa može da je vrati", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.preporuke set skrivena = false where id = $1 returning skrivena", [PREP_BA]);
+  ok(!r.greska && r.redovi[0]?.skrivena === false, "bibliotekar vraća preporuku", r.greska?.message ?? r.redovi);
+
+  // prijava preživi brisanje stavke (0004), pa ekran piše „više ne postoji”
+  await db.query("delete from public.preporuke where id = $1", [PREP_BA]);
+  r = await kao("authenticated", BIB, "select id from public.prijave where id = $1", [PRIJAVA_P]);
+  ok(r.redovi?.length === 1, "prijava ostaje i posle brisanja prijavljene preporuke", r.greska?.message ?? r.redovi);
+
+  // funkcije i idempotentnost
+  const f21 = (await db.query("select p.proname, p.prosecdef, has_function_privilege('anon', p.oid, 'execute') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'privatno' and p.proname in ('prijave_zastita', 'prijave_provera_bi') order by 1")).rows;
+  ok(f21.length === 2 && f21.every((f) => f.prosecdef === false && f.anon === false), "obe funkcije okidača su u šemi privatno, nisu SECURITY DEFINER (provera stavke radi sa pravima prijavioca, RLS važi) i nisu dostupne anon-u", f21);
+  const fn21 = async () =>
+    JSON.stringify([
+      (await db.query("select pg_get_constraintdef(oid) as d, convalidated from pg_constraint where conname in ('prijave_razlog_duzina', 'prijave_beleska_duzina') order by conname")).rows,
+      (await db.query("select tgname from pg_trigger where tgrelid = 'public.prijave'::regclass and not tgisinternal order by 1")).rows,
+      (await db.query("select indexdef from pg_indexes where schemaname = 'public' and indexname = 'prijave_resene_idx'")).rows,
+    ]);
+  const pre21 = await fn21();
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, MODERACIJA[0]), "utf8"));
+  ok((await fn21()) === pre21 && (await otisakPolitika21()) === politikePre21, "0021 je idempotentna: drugo puštanje ne duplira okidače, ograničenja ni indeks i ne menja politike", await fn21());
+  ok(JSON.parse(pre21)[1].map((t) => t.tgname).join() === "prijave_provera_bi,prijave_zastita_bu", "na prijavama su tačno dva okidača: prijave_provera_bi i prijave_zastita_bu", JSON.parse(pre21)[1]);
+  r = await kao("authenticated", UA, P21, [UA, "utisak", U_B_SAMO_JA, "posle drugog puštanja"]);
+  ok(r.greska?.code === "22023", "posle drugog puštanja provera stavke i dalje radi", r.greska?.message ?? r.redovi);
 
   // ───────── opšte ─────────
   faza("Opšta pravila");

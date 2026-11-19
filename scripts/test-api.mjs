@@ -1314,11 +1314,20 @@ faza("13. Unos bibliotekara linkovima: adrese, sekvencijalna obrada, kartica");
     u.ok && u.red.u_fondu === true && u.red.broj_primeraka === 3 && u.red.broj_slobodnih === 3 && u.red.signatura === "821.163.41-31" && u.red.izvor === "fond" &&
     u.red.isbn === "9780306406157" && u.red.zanrovi.join() === "roman,istorijski roman" && u.red.opis === "Opis koji je napisao bibliotekar." && u.red.uneo_id === BIBLIOTEKAR_ID, u);
   provera("red za „U fondu” ima tačno očekivana polja (nema ničeg „sa strane”)",
-    JSON.stringify(Object.keys(u.red).sort()) === JSON.stringify(["autor", "broj_primeraka", "broj_slobodnih", "godina", "isbn", "izdavac", "izvor", "naslov", "opis", "signatura", "u_fondu", "uneo_id", "zanrovi"]), Object.keys(u.red).sort());
+    JSON.stringify(Object.keys(u.red).sort()) === JSON.stringify(["autor", "broj_primeraka", "broj_slobodnih", "godina", "isbn", "izdavac", "izvor", "naslov", "odluka_datum", "odluka_nabavke", "opis", "signatura", "u_fondu", "uneo_id", "zanrovi"]), Object.keys(u.red).sort());
 
   u = unos.urediUnos({ ...FORMA, stanje: "nabavka", primerci: "7", signatura: "X-1" }, { uneoId: BIBLIOTEKAR_ID });
   provera("„Za nabavku”: u_fondu=false, 0 primeraka i 0 slobodnih, bez signature, izvor 'link' (i kad su primerci i signatura bili upisani)",
     u.ok && u.red.u_fondu === false && u.red.broj_primeraka === 0 && u.red.broj_slobodnih === 0 && u.red.signatura === null && u.red.izvor === "link", u.red);
+
+  provera("odluka nabavke se upisuje uz knjigu: „Imamo” → 'imamo' (u_fondu = true), „Nabavljamo” → 'nabavljamo' (u_fondu = false); datum je trenutak upisa", (() => {
+    const t = new Date("2026-11-17T10:30:00Z");
+    const a = unos.urediUnos(FORMA, { uneoId: BIBLIOTEKAR_ID, sada: t });
+    const b = unos.urediUnos({ ...FORMA, stanje: "nabavka" }, { uneoId: BIBLIOTEKAR_ID, sada: t });
+    return a.ok && b.ok && a.red.odluka_nabavke === "imamo" && a.red.u_fondu === true && b.red.odluka_nabavke === "nabavljamo" && b.red.u_fondu === false && a.red.odluka_datum === "2026-11-17T10:30:00.000Z" && b.red.odluka_datum === t.toISOString();
+  })());
+  provera("odluka se ne upisuje kad se ništa ne upisuje: „Samo nacrt” ne daje red, pa ni odluku", unos.urediUnos({ ...FORMA, stanje: "nacrt" }, { uneoId: BIBLIOTEKAR_ID }).ok === false);
+  provera("odluka u redu za upis je uvek u skladu sa u_fondu (isto što bi uradio okidač iz 0020 pri izmeni)", ["fond", "nabavka"].every((st) => { const x = unos.urediUnos({ ...FORMA, stanje: st }, { uneoId: BIBLIOTEKAR_ID }); return x.ok && (x.red.odluka_nabavke === "imamo") === x.red.u_fondu; }));
 
   for (const [naziv, izmena, polje, razlog] of [
     ["nema broja primeraka", { primerci: "" }, "primerci", "prazno"],
@@ -1578,7 +1587,7 @@ faza("14. Korica sa linka (api/korica-iz-linka.js): samo bibliotekar, slika se p
     const kod = readFileSync(new URL("../api/korica-iz-linka.js", import.meta.url), "utf8") + readFileSync(new URL("../api/_lib/slika.js", import.meta.url), "utf8");
     provera("korica-iz-linka ne menja veličinu slike na serveru i ne koristi biblioteke za slike", !/sharp|jimp|canvas|imagemagick|gm\(|resize/i.test(kod.replace(/\/\/.*$/gm, "")));
     const paket = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    provera("nema novih zavisnosti u package.json (isti skup kao pre ove izmene)", JSON.stringify(Object.keys(paket.dependencies).sort()) === JSON.stringify(["@supabase/supabase-js", "@tailwindcss/vite", "linkedom", "react", "react-dom", "react-router-dom", "tailwindcss"]), Object.keys(paket.dependencies));
+    provera("nema novih zavisnosti u package.json osim dva paketa fontova iz koraka 10 (@fontsource-variable/onest i /inter, fontovi iz projekta umesto sa Google-a)", JSON.stringify(Object.keys(paket.dependencies).sort()) === JSON.stringify(["@fontsource-variable/inter", "@fontsource-variable/onest", "@supabase/supabase-js", "@tailwindcss/vite", "linkedom", "react", "react-dom", "react-router-dom", "tailwindcss"]), Object.keys(paket.dependencies));
     const sql14 = readFileSync(new URL("../supabase/migrations/0014_korice_preuzeto.sql", import.meta.url), "utf8").replace(/^--.*$/gm, "");
     provera("migracija 0014: kolona korice_poreklo, izvor 'preuzeto', bucket 1.5 MB (1572864), okidač prati korice_poreklo",
       /add column if not exists korice_poreklo text/.test(sql14) && /'preuzeto'\)\)/.test(sql14) && /1572864/.test(sql14) && /update of korice_url, korice_izvor, korice_poreklo/.test(sql14));
@@ -2082,7 +2091,7 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
 
       // tehnički detalji
       const html = citaj("index.html").replace(/<!--[\s\S]*?-->/g, "");
-      provera("index.html: lang=\"sr\", Onest za naslove i Inter za tekst (bez Bricolage Grotesque, koji nema ćirilicu)", /<html lang="sr">/.test(html) && /family=Onest:wght@[0-9;]*500[0-9;]*700[0-9;]*800/.test(html) && /family=Inter:wght@/.test(html) && !/Bricolage/.test(html));
+      provera("index.html: lang=\"sr\", bez Bricolage Grotesque (nema ćirilicu) i bez ijednog linka ka Google-u (fontovi su iz projekta, vidi fazu PWA)", /<html lang="sr">/.test(html) && !/Bricolage/.test(html) && !/googleapis|gstatic/.test(html));
       provera("index.css: font naslova je Onest, font teksta Inter", /--font-naslov:\s*"Onest"/.test(citaj("src/index.css")) && /--font-sans:\s*"Inter"/.test(citaj("src/index.css")) && !/Bricolage/.test(citaj("src/index.css").replace(/\/\*[\s\S]*?\*\//g, "")));
       const vite = citaj("vite.config.js");
       provera("vite.config.js: ime, kratko ime i opis PWA, kao i naslov stranice, dolaze iz tekst.js (ćirilica), jezik manifesta iz tekst.js", /name:\s*tekst\.aplikacija\.naziv/.test(vite) && /short_name:\s*tekst\.aplikacija\.naziv/.test(vite) && /description:\s*tekst\.aplikacija\.opis/.test(vite) && /lang:\s*tekst\.aplikacija\.jezik/.test(vite) && /replaceAll\("%NAZIV%", tekst\.aplikacija\.naziv\)/.test(vite) && /[Ѐ-ӿ]/.test(TK.aplikacija.naziv + TK.aplikacija.opis) && !/[Ѐ-ӿ]/.test(vite));
@@ -2226,6 +2235,154 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
       provera("0020: funkcija izveštaja je SECURITY DEFINER sa search_path, proverava je_bibliotekar() i ne vraća ni jedno polje o članu; prava eksplicitna; notify pgrst", /function privatno\.izvestaj_nabavke\(\)[\s\S]*?security definer\s+set search_path = pg_catalog, public/.test(k20) && /where privatno\.je_bibliotekar\(\)/.test(k20) && !/\b(clan_id|nadimak|broj_kartice|sifra_poziva|izmenjeno)\b/.test(k20.slice(k20.indexOf("function privatno.izvestaj_nabavke"), k20.indexOf("create or replace view public.izvestaj_za_nabavku")).replace(/join public\.clanovi c on c\.id = p\.clan_id and c\.aktivan/, "")) && /revoke all on public\.izvestaj_za_nabavku from public, anon, authenticated/.test(k20) && /notify pgrst, 'reload schema'/.test(k20));
       provera("0020 deo B: bibliotekar ne menja administratora (42501), ne dodeljuje ulogu pri upisu; administrator i servisna uloga su izuzeti", /old\.uloga = 'administrator'[\s\S]*?errcode = '42501'/.test(k20) && /if privatno\.servisna_uloga\(\) then\s+return new;/.test(k20) && /if privatno\.je_administrator\(\) then\s+return new;/.test(k20) && /clanovi_insert_zastita_bi/.test(k20) && /new\.uloga is distinct from 'citalac'/.test(k20));
       provera("ekran Članovi više ne krije dugme kao jedinu zaštitu: README ne tvrdi da je zaštita administratora samo u interfejsu", !/nije zaštita u bazi/.test(citaj("README.md")) && !/zaštita je samo u interfejsu/i.test(citaj("README.md")));
+    }
+
+    // ── ekran „Пријаве" (čista logika, izvorni kod, migracija 0021) ──
+    {
+      const M = await import("../src/lib/prijave-logika.js");
+      const TK = (await import("../src/lib/tekst.js")).tekst;
+      const bezKom = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+      // beleška, šabloni, imena
+      provera("beleška bibliotekara: nije obavezna (prazno je null), razmaci se skidaju, najviše 500 znakova (500 prolazi, 501 ne)", M.NAJDUZA_BELESKA === 500 && M.urediBelesku("  ").vrednost === null && M.urediBelesku(undefined).ok && M.urediBelesku(" Upozoren ").vrednost === "Upozoren" && M.urediBelesku("x".repeat(500)).ok && M.urediBelesku("x".repeat(501)).razlog === "predugo");
+      provera("šablon iz tekst.js se popunjava funkcijom: naslov sa $& ostaje kakav jeste, nepoznato mesto ostaje nedirnuto", M.popuni("Утисак {ime} о „{naslov}”", { ime: "Ана", naslov: "Cena $& i $1" }) === "Утисак Ана о „Cena $& i $1”" && M.popuni("{a} {b}", { a: "x" }) === "x {b}" && M.popuni("{a}", { a: null }) === "");
+      provera("ime člana za osoblje je pravo ime; bez člana dolazi zamena", M.imeClana({ ime: " Ана Петровић " }, "Непознат члан") === "Ана Петровић" && M.imeClana(null, "Непознат члан") === "Непознат члан" && M.imeClana({ ime: "  " }, "?") === "?");
+      provera("filteri su Нерешене i Решене; granica liste je 50", M.FILTERI.join() === "otvorene,resene" && M.NAJVISE_PRIJAVA === 50 && TK.moderacija.filteri.otvorene === "Нерешене" && TK.moderacija.filteri.resene === "Решене");
+
+      // sklapanje prijava
+      const prijave = [
+        { id: "p1", prijavio_id: "c1", tip: "utisak", stavka_id: "u1", razlog: "Vređa", resena: false, resio_id: null, beleska: null, kreirana: "2026-11-01T10:00:00Z", resena_datum: null },
+        { id: "p2", prijavio_id: "c1", tip: "preporuka", stavka_id: "r1", razlog: null, resena: false, resio_id: null, beleska: null, kreirana: "2026-11-02T10:00:00Z", resena_datum: null },
+        { id: "p3", prijavio_id: "c2", tip: "clan", stavka_id: "c3", razlog: "Nadimak", resena: true, resio_id: "b1", beleska: "Upozoren", kreirana: "2026-10-02T10:00:00Z", resena_datum: "2026-10-03T10:00:00Z" },
+        { id: "p4", prijavio_id: "c2", tip: "utisak", stavka_id: "obrisan", razlog: "x", resena: false, resio_id: null, beleska: null, kreirana: "2026-11-03T10:00:00Z", resena_datum: null },
+        { id: "p5", prijavio_id: "nepoznat", tip: "clan", stavka_id: "nema", razlog: "y", resena: false, resio_id: null, beleska: null, kreirana: "2026-11-04T10:00:00Z", resena_datum: null },
+      ];
+      const clanovi = new Map([
+        ["c1", { id: "c1", ime: "Ана Петровић", nadimak: "Ана П.", broj_kartice: "0000001", uloga: "citalac", aktivan: true }],
+        ["c2", { id: "c2", ime: "Марко Јовић", nadimak: null, broj_kartice: "0000002", uloga: "citalac", aktivan: true }],
+        ["c3", { id: "c3", ime: "Нина Ристић", nadimak: "Нина", broj_kartice: "0000003", uloga: "citalac", aktivan: false }],
+        ["b1", { id: "b1", ime: "Јелена Лазић", nadimak: null, broj_kartice: "0000009", uloga: "bibliotekar", aktivan: true }],
+      ]);
+      const sklopljeno = M.sastaviPrijave(prijave, {
+        clanovi,
+        utisci: new Map([["u1", { id: "u1", clan_id: "c2", knjiga_id: "k1", ocena: 3, tekst: "Loše", vidljivost: "javno", spojler: true, skriven: true }]]),
+        preporuke: new Map([["r1", { id: "r1", posiljalac_id: "c2", primalac_id: "c1", knjiga_id: "k1", poruka: "Čitaj", skrivena: false }]]),
+        knjige: new Map([["k1", { id: "k1", naslov: "Prokleta avlija", autor: "Иво Андрић" }]]),
+      });
+      const [a, b, c, d, e] = sklopljeno;
+      provera("utisak: prikaz ima autora utiska, knjigu, ocenu, tekst, vidljivost, spojler i da je sakriven; prijavilac je pravo ime", a.stavka.postoji && a.stavka.autor.ime === "Марко Јовић" && a.stavka.knjiga.naslov === "Prokleta avlija" && a.stavka.ocena === 3 && a.stavka.tekst === "Loše" && a.stavka.vidljivost === "javno" && a.stavka.spojler === true && a.stavka.skriven === true && a.prijavilac.ime === "Ана Петровић" && a.razlog === "Vređa", a);
+      provera("preporuka: prikaz ima pošiljaoca, primaoca, knjigu i poruku; prazan razlog je null", b.stavka.postoji && b.stavka.posiljalac.ime === "Марко Јовић" && b.stavka.primalac.ime === "Ана Петровић" && b.stavka.knjiga.id === "k1" && b.stavka.poruka === "Čitaj" && b.stavka.skrivena === false && b.razlog === null, b);
+      provera("član: prikaz ima ime, broj karte, ulogu, nadimak i aktivnost; rešena prijava nosi ko je rešio, datum i belešku", c.stavka.postoji && c.stavka.clan.broj_kartice === "0000003" && c.stavka.clan.aktivan === false && c.stavka.clan.nadimak === "Нина" && c.resena === true && c.resio.ime === "Јелена Лазић" && c.resena_datum === "2026-10-03T10:00:00Z" && c.beleska === "Upozoren", c);
+      provera("stavka koja više ne postoji (obrisan utisak, nepoznat član) nije greška: postoji je false, prijava se i dalje prikazuje; nepoznat prijavilac je null", d.stavka.postoji === false && e.stavka.postoji === false && e.prijavilac === null && d.razlog === "x" && sklopljeno.length === 5);
+      provera("redovi ne nose ništa što ekran ne prikazuje (nema lozinke, PIN-a ni šifre poziva); član ima samo id, ime, nadimak, broj karte, ulogu i aktivnost", JSON.stringify(Object.keys(c.stavka.clan).sort()) === JSON.stringify(["aktivan", "broj_kartice", "id", "ime", "nadimak", "uloga"]) && M.sastaviPrijave(null).length === 0);
+      const ids = M.potrebniIdovi(prijave);
+      provera("koje id-eve treba učitati: članovi (prijavioci, onaj ko je rešio, prijavljeni članovi), utisci i preporuke, bez duplikata", ids.clanovi.slice().sort().join() === "b1,c1,c2,c3,nema,nepoznat" && ids.utisci.sort().join() === "obrisan,u1" && ids.preporuke.join() === "r1", ids);
+
+      // upiti i prava
+      const kodPrijave = bezKom(citaj("src/lib/prijave.js"));
+      provera("prijave.js: običan klijent (nikad service_role), nijedan upit ne vraća lozinku, PIN ni šifru poziva; čita samo prijave, utiske, preporuke, članove i knjige", !/service_role|SERVICE_ROLE/.test(kodPrijave) && !/\b(sifra_poziva|pin|lozinka)\b/i.test(kodPrijave) && [...kodPrijave.matchAll(/from\("(\w+)"\)/g)].every((m) => ["prijave", "utisci", "preporuke", "clanovi", "knjige"].includes(m[1])));
+      provera("prijave.js: izmene su samo resena i beleska na prijavi, skriven na utisku i skrivena na preporuci; prazan odgovor je greška (red ne postoji ili nema prava)", /resena: true, beleska/.test(kodPrijave) && /resena: false/.test(kodPrijave) && /\{ skriven \}/.test(kodPrijave) && /\{ skrivena \}/.test(kodPrijave) && /if \(!data\?\.length\) throw new GreskaApija\("nije_sacuvano"\)/.test(kodPrijave));
+      provera("prijave.js: nerešene idu od najstarije, rešene od najnovije rešene; traži se jedna više od granice", /order\("resena_datum", \{ ascending: false \}\)/.test(kodPrijave) && /order\("kreirana", \{ ascending: true \}\)/.test(kodPrijave) && /limit\(NAJVISE_PRIJAVA \+ 1\)/.test(kodPrijave));
+      provera("prijave.js: ko je rešio i kada ne šalje klijent (to postavlja okidač); klijent ne upisuje resio_id ni resena_datum", !/resio_id:|resena_datum:/.test(kodPrijave.replace(/KOLONE_PRIJAVE[^;]*;/, "")));
+      provera("citaoci.js: greška 22023 (stavka se ne može prijaviti) postaje jedan kod, a 23505 (već prijavljeno) ostaje poseban", /code === "22023"\) throw new GreskaApija\("stavka_nedostupna"\)/.test(citaj("src/lib/citaoci.js")) && /code === "23505"\) throw new GreskaApija\("vec_prijavljeno"\)/.test(citaj("src/lib/citaoci.js")));
+
+      // ekran
+      const kodEkrana = bezKom(citaj("src/pages/BibliotekarPrijave.jsx"));
+      provera("ekran Пријаве: svako dugme ima stil iz stil.js ili min-h-11, bez hex boja, localStorage i ćirilice u kodu (sav tekst je u tekst.js)", kodEkrana.split("<button").slice(1).every((d) => /className=\{(?:stil\.|.\$\{stil\.)/.test(d.split("</button>")[0]) || /min-h-1[1-9]/.test(d.split("</button>")[0])) && !/#[0-9a-fA-F]{3,8}\b/.test(kodEkrana) && !/localStorage|sessionStorage|indexedDB|document\.cookie/.test(kodEkrana) && !/[Ѐ-ӿ]/.test(kodEkrana));
+      provera("ekran Пријаве: bibliotekar ne deaktivira nikoga mimo prava (mozeDaUpravlja, ne sebe), deaktivacija traži potvrdu; sakrivanje i rešavanje ne traže brisanje ničega", /mozeDaUpravlja\(ja\.uloga, clan\.uloga\)/.test(kodEkrana) && /clan\.id !== ja\.id/.test(kodEkrana) && /clan\.aktivan \? setPita\(true\)/.test(kodEkrana) && !/\.delete\(\)|obrisi/i.test(kodEkrana + kodPrijave));
+      provera("ekran Пријаве: red se uklanja iz liste tek posle uspeha upisa, a Okvir se obaveštava (broj nerešenih)", /await resiPrijavu\(p\.id, b\.vrednost\);\s*javiPromenuPrijava\(\);\s*ukloni/.test(kodEkrana) && /await vratiPrijavu\(p\.id\);\s*javiPromenuPrijava\(\);\s*ukloni/.test(kodEkrana));
+      provera("ruta /bibliotekar/prijave je unutar RutaZaBibliotekare, a na /bibliotekar je četvrti alat sa brojem nerešenih", (() => { const x = citaj("src/App.jsx"); return x.indexOf('path="/bibliotekar/prijave"') > x.indexOf("<RutaZaBibliotekare />") && x.includes("<BibliotekarPrijave />"); })() && /kljuc: "prijave"/.test(citaj("src/pages/BibliotekarPocetna.jsx")) && /ucitajBrojOtvorenih/.test(citaj("src/pages/BibliotekarPocetna.jsx")) && ["unos", "clanovi", "nabavka", "prijave"].every((k) => typeof TK.osoblje[k].naslov === "string"));
+      provera("tačka na stavci „Библиотека” samo za osoblje i samo dok ima nerešenih; tekst za čitače ekrana postoji", /s\.kljuc === "biblioteka" && otvorenePrijave > 0/.test(citaj("src/components/Okvir.jsx")) && /if \(osoblje\)\s*\{\s*ucitajBrojOtvorenih/.test(citaj("src/components/Okvir.jsx")) && TK.meni.obavestenjePrijave === "Има нерешених пријава");
+
+      // dugme „Пријави" kod čitalaca
+      const kodDugmeta = bezKom(citaj("src/components/PrijaviStavku.jsx"));
+      provera("PrijaviStavku: razlog je obavezan i do 300 znakova, greške 23505 i 22023 imaju svaka svoju poruku, posle slanja dugme nestaje (ne šalje se dvaput)", /urediRazlog\(razlog\)/.test(kodDugmeta) && /maxLength=\{NAJDUZI_RAZLOG\}/.test(kodDugmeta) && /vec_prijavljeno/.test(kodDugmeta) && /stavka_nedostupna/.test(kodDugmeta) && /if \(ishod\?\.gotovo\)/.test(kodDugmeta) && !/localStorage|sessionStorage/.test(kodDugmeta) && !/[Ѐ-ӿ]/.test(kodDugmeta));
+      provera("dugme „Пријави” je na tuđem utisku (tip utisak) i na primljenoj preporuci (tip preporuka), a ne na mom utisku", /<PrijaviStavku tip="utisak" stavkaId=\{u\.id\} \/>/.test(citaj("src/components/Utisci.jsx")) && (() => { const k = citaj("src/components/Utisci.jsx"); const i = k.indexOf("<PrijaviStavku"); return i > k.indexOf("function TudjiUtisak") && i < k.indexOf("export default function Utisci"); })() && /<PrijaviStavku tip="preporuka" stavkaId=\{p\.id\} \/>/.test(citaj("src/pages/Citaoci.jsx")));
+
+      // svi natpisi postoje
+      const nedostaje = [];
+      for (const [p, alias, put] of [["src/pages/BibliotekarPrijave.jsx", "T", "moderacija"], ["src/components/PrijaviStavku.jsx", "T", "prijavaStavke"]]) {
+        for (const m of bezKom(citaj(p)).matchAll(new RegExp("\\b" + alias + "\\.([A-Za-z_]+(?:\\.[A-Za-z_]+)*)", "g"))) {
+          const v = (put + "." + m[1].replace(/\.(replace|length|trim)$/, "")).split(".").reduce((o, k) => o?.[k], TK);
+          if (typeof v !== "string" && !(typeof v === "object" && v !== null)) nedostaje.push(p + ": " + alias + "." + m[1]);
+        }
+      }
+      for (const m of bezKom(citaj("src/pages/BibliotekarPrijave.jsx")).matchAll(/tekst\.([A-Za-z]+(?:\.[A-Za-z]+)+)/g)) if (typeof m[1].split(".").reduce((o, k) => o?.[k], TK) === "undefined") nedostaje.push("tekst." + m[1]);
+      provera("svi natpisi ekrana Пријаве i dugmeta „Пријави” postoje u tekst.js", nedostaje.length === 0 && Object.keys(TK.moderacija.vrste).join() === "utisak,preporuka,clan" && ["utisak", "preporuka", "clan"].every((k) => typeof TK.moderacija.nePostoji[k] === "string"), nedostaje);
+
+      // migracija 0021
+      const m21 = citaj("supabase/migrations/0021_moderacija_prijava.sql");
+      const k21 = m21.replace(/^\s*--.*$/gm, "");
+      provera("0021 dolazi odmah posle 0020 (migracije idu redom, bez rupa)", (() => { const f = readdirSync(new URL("../supabase/migrations/", import.meta.url)).filter((x) => /^\d{4}_/.test(x)).sort(); return f.indexOf("0021_moderacija_prijava.sql") === f.indexOf("0020_nabavka_i_zastita_administratora.sql") + 1 && f.every((x, i) => Number(x.slice(0, 4)) === i + 1); })());
+      provera("0021 ne dodaje, ne briše ni ne menja nijednu politiku i ne pravi tabele; sve zaštite idu kroz okidače", !/\b(create|drop|alter)\s+policy\b/i.test(k21) && !/create\s+table/i.test(k21) && /create trigger prijave_zastita_bu\s+before update/.test(k21) && /create trigger prijave_provera_bi\s+before insert/.test(k21));
+      provera("0021: kolona i ograničenja su idempotentni (if not exists, drop constraint if exists), a ograničenja NOT VALID ne diraju stare redove", /add column if not exists resena_datum/.test(k21) && (k21.match(/drop constraint if exists prijave_(razlog|beleska)_duzina/g) ?? []).length === 2 && (k21.match(/not valid;/g) ?? []).length === 2 && /char_length\(razlog\) <= 300/.test(k21) && /char_length\(beleska\) <= 500/.test(k21));
+      provera("0021: provera stavke NIJE SECURITY DEFINER (radi sa pravima prijavioca, pa RLS određuje šta „vidi”); utisak nije moj, preporuku sam primio, član je povezan sa mnom", !/security definer/i.test(k21) && /u\.clan_id <> new\.prijavio_id/.test(k21) && /p\.primalac_id = new\.prijavio_id/.test(k21) && /privatno\.su_povezani\(new\.prijavio_id, new\.stavka_id\)/.test(k21) && (k21.match(/errcode = '22023'/g) ?? []).length === 3);
+      provera("0021: prijava u tuđe ime i dalje odbija politika (okidač je propušta), servisna uloga je izuzeta; ko je rešio i kada postavlja baza (auth.uid(), now())", /new\.prijavio_id is distinct from auth\.uid\(\)\s+then\s+return new;/.test(k21) && (k21.match(/if privatno\.servisna_uloga\(\) then\s+return new;/g) ?? []).length === 2 && /new\.resio_id\s+:= auth\.uid\(\);/.test(k21) && /new\.resena_datum := now\(\);/.test(k21));
+      provera("0021: prava eksplicitna (revoke od public i anon, grant authenticated i service_role) i notify pgrst", /revoke all on all functions in schema privatno from public, anon/.test(k21) && /grant execute on all functions in schema privatno to authenticated, service_role/.test(k21) && /notify pgrst, 'reload schema'/.test(k21));
+    }
+
+    // ── PWA do kraja (korak 10): fontovi iz projekta, Service Worker, nova verzija, veza, instalacija, manifest ──
+    {
+      const P = await import("../src/lib/pwa-logika.js");
+      const TK = (await import("../src/lib/tekst.js")).tekst;
+      const bezKom = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      const postoji = (p) => { try { readFileSync(new URL("../" + p, import.meta.url)); return true; } catch { return false; } };
+      const pngMere = (p) => { const b = readFileSync(new URL("../" + p, import.meta.url)); return b.readUInt32BE(16) + "x" + b.readUInt32BE(20); };
+
+      // fontovi iz projekta
+      const css = citaj("src/fonts.css");
+      const lica = css.split("@font-face").slice(1);
+      provera("fontovi: Onest i Inter, po četiri podskupa (cyrillic, cyrillic-ext, latin, latin-ext), promenljiva težina 100–900, font-display: swap", lica.length === 8 && ["Onest", "Inter"].every((f) => ["cyrillic-ext", "cyrillic", "latin-ext", "latin"].every((p) => lica.some((l) => l.includes('font-family: "' + f + '"') && l.includes(f.toLowerCase() + "-" + p + "-wght-normal.woff2")))) && lica.every((l) => /font-weight: 100 900;/.test(l) && /font-display: swap;/.test(l) && /unicode-range: U\+/.test(l)));
+      provera("fontovi: svaka datoteka iz fonts.css postoji u node_modules (paketi @fontsource-variable/onest i /inter), a paketi su u package.json", [...css.matchAll(/url\("([^"]+)"\)/g)].every((m) => postoji("src/" + m[1])) && /"@fontsource-variable\/onest"/.test(citaj("package.json")) && /"@fontsource-variable\/inter"/.test(citaj("package.json")));
+      provera("fontovi: ćirilica koju aplikacija koristi (uključujući Ђ, Ј, Љ, Њ, Ћ, Џ) pada u raspon podskupa cyrillic", (() => { const r = /unicode-range: ([^;]+);/.exec(lica.find((l) => l.includes("onest-cyrillic-wght-normal")))[1]; return r.includes("U+0400-045F"); })());
+      const rec = (citaj("index.html") + citaj("src/index.css") + citaj("src/main.jsx") + citaj("vite.config.js") + css);
+      provera("nijedan zahtev ka Google-u za fontove: ni index.html, ni CSS, ni vite.config.js ne pominju fonts.googleapis.com ni fonts.gstatic.com", !/fonts\.googleapis\.com|fonts\.gstatic\.com/.test(rec));
+      provera("fonts.css se učitava u main.jsx pre index.css; index.css i dalje koristi imena Onest i Inter", citaj("src/main.jsx").indexOf('import "./fonts.css"') > -1 && citaj("src/main.jsx").indexOf('import "./fonts.css"') < citaj("src/main.jsx").indexOf('import "./index.css"') && /--font-naslov:\s*"Onest"/.test(citaj("src/index.css")) && /--font-sans:\s*"Inter"/.test(citaj("src/index.css")));
+
+      // Service Worker (vite.config.js)
+      const vite = citaj("vite.config.js");
+      const viteKod = vite.replace(/^\s*\/\/.*$/gm, ""); // samo redovi-komentari: globovi u konfiguraciji sadrže /*
+      provera("Service Worker: registerType je \"prompt\" (nova verzija se ne primenjuje tiho), a ljuska se čuva pri instalaciji", /registerType: "prompt"/.test(viteKod) && !/autoUpdate/.test(viteKod) && /globPatterns: \[[^\]]*\bhtml\b/.test(viteKod) && /globPatterns: \[[^\]]*\bjs\b/.test(viteKod) && /woff2/.test(viteKod) && /navigateFallback: "\/index\.html"/.test(viteKod));
+      provera("Service Worker: nema runtimeCaching-a (API i Supabase uvek na mrežu, nikad iz keša), /api je van navigateFallback, nema POST/fetch/respondWith rukovaoca u konfiguraciji ni u pwa.js", /runtimeCaching: \[\]/.test(viteKod) && /navigateFallbackDenylist: \[\/\^\\\/api\\\//.test(viteKod) && !/urlPattern|handler:|registerRoute|method:\s*"POST"|importScripts/.test(viteKod) && !/respondWith|\bfetch\(/.test(bezKom(citaj("src/lib/pwa.js"))) && !/injectManifest|strategies:\s*"injectManifest"/.test(viteKod));
+
+      // nova verzija
+      const kodPwa = bezKom(citaj("src/lib/pwa.js"));
+      provera("nova verzija: pwa.js registruje Service Worker preko virtual:pwa-register, javlja onNeedRefresh, a primenjuje je tek na poziv primeniNovuVerziju (registerSW(true))", /from "virtual:pwa-register"/.test(kodPwa) && /onNeedRefresh: \(\) => postavi\(\{ novaVerzija: true \}\)/.test(kodPwa) && /export const primeniNovuVerziju = \(\) => osveziSW\?\.\(true\)/.test(kodPwa));
+      provera("nova verzija: proverava se jednom na sat i kad se prozor vrati u prvi plan", P.PROVERA_VERZIJE_MS === 3600000 && /setInterval\(proveri, PROVERA_VERZIJE_MS\)/.test(kodPwa) && /visibilitychange/.test(kodPwa));
+      const traka = bezKom(citaj("src/components/TrakeLjuske.jsx"));
+      provera("traka „Нова верзија је спремна — Освежи”: tekst iz tekst.js, dugme poziva primeniNovuVerziju, najmanje 44 px, role=status", TK.verzija.spremna === "Нова верзија је спремна" && TK.verzija.osvezi === "Освежи" && /onClick=\{primeniNovuVerziju\}/.test(traka) && /min-h-11/.test(traka) && /role="status"/.test(traka) && /tekst\.verzija\.spremna/.test(traka) && /tekst\.verzija\.osvezi/.test(traka));
+      provera("trake su u App.jsx unutar AuthProvider, ali van Routes (vide se i na prijavi)", (() => { const a = citaj("src/App.jsx"); return a.indexOf("<TrakeLjuske />") > a.indexOf("<AuthProvider>") && a.indexOf("<TrakeLjuske />") < a.indexOf("<Routes>"); })());
+
+      // veza
+      provera("traka bez veze: „Нема везе са интернетом” iz tekst.js, prati događaje online i offline, počinje od navigator.onLine; samo navigator.onLine === false znači bez veze", TK.mreza.nemaVeze === "Нема везе са интернетом" && /addEventListener\("offline", \(\) => postavi\(\{ bezVeze: true \}\)\)/.test(kodPwa) && /addEventListener\("online", \(\) => postavi\(\{ bezVeze: false \}\)\)/.test(kodPwa) && /jeBezVeze\(navigator\.onLine\)/.test(kodPwa) && P.jeBezVeze(false) === true && P.jeBezVeze(true) === false && P.jeBezVeze(undefined) === false && /tekst\.mreza\.nemaVeze/.test(traka) && /\{bezVeze && \(/.test(traka));
+
+      // instalacija
+      provera("prepoznavanje iPhone-a i iPada (i iPadOS koji se predstavlja kao Mac); običan Mac, Android i Windows nisu iOS", P.jeIOS({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" }) && P.jeIOS({ userAgent: "Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X)" }) && P.jeIOS({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platforma: "MacIntel", tackeDodira: 5 }) && !P.jeIOS({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platforma: "MacIntel", tackeDodira: 0 }) && !P.jeIOS({ userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/120", platforma: "Linux armv8l", tackeDodira: 5 }) && !P.jeIOS({}));
+      provera("već instalirana aplikacija (display-mode: standalone ili navigator.standalone) ne dobija karticu", P.jeInstalirana({ standaloneMedija: true }) && P.jeInstalirana({ standaloneSafari: true }) && !P.jeInstalirana({}) && P.nacinInstalacije({ instalirana: true, imaPrompt: true, ios: true }) === "nista");
+      provera("način instalacije: dugme kad je pregledač javio beforeinstallprompt (Chrome/Android), uputstvo na iPhone-u, inače ništa", P.nacinInstalacije({ instalirana: false, imaPrompt: true, ios: false }) === "dugme" && P.nacinInstalacije({ instalirana: false, imaPrompt: false, ios: true }) === "uputstvo" && P.nacinInstalacije({ instalirana: false, imaPrompt: false, ios: false }) === "nista");
+      provera("beforeinstallprompt se hvata u pwa.js (učitava se u main.jsx, pre Profila), preventDefault, pamti događaj i poziva prompt() tek na dugme; appinstalled sklanja karticu", /addEventListener\("beforeinstallprompt"/.test(kodPwa) && /e\.preventDefault\(\)/.test(kodPwa) && /await d\.prompt\(\)/.test(kodPwa) && /addEventListener\("appinstalled"/.test(kodPwa) && /import "\.\/lib\/pwa\.js"/.test(citaj("src/main.jsx")));
+      const kartica = bezKom(citaj("src/components/KarticaInstalacije.jsx"));
+      provera("kartica na Profilu: dugme „Инсталирај апликацију” za Chrome/Android, uputstvo „Подели → Додај на почетни екран” za iPhone, stil iz stil.js, bez teksta u kodu", TK.instalacija.dugme === "Инсталирај апликацију" && /Подели/.test(TK.instalacija.ios) && /Додај на почетни екран/.test(TK.instalacija.ios) && /className=\{stil\.veliko\}/.test(kartica) && /nacin === "dugme"/.test(kartica) && /nacin === "uputstvo"/.test(kartica) && !/[Ѐ-ӿ]/.test(kartica) && /<KarticaInstalacije \/>/.test(citaj("src/pages/Profil.jsx")));
+
+      // manifest
+      const mi = /manifest:\s*\{([\s\S]*?)\n {6}\},\n {6}workbox/.exec(vite)?.[1] ?? "";
+      provera("manifest: name, short_name, description i jezik iz tekst.js; start_url \"/\", scope \"/\", id \"/\", display standalone; boje pozadine i teme su boja aplikacije (#f4efe5)", /name:\s*tekst\.aplikacija\.naziv/.test(mi) && /short_name:\s*tekst\.aplikacija\.naziv/.test(mi) && /start_url: "\/"/.test(mi) && /scope: "\/"/.test(mi) && /id: "\/"/.test(mi) && /display: "standalone"/.test(mi) && /background_color: "#f4efe5"/.test(mi) && /theme_color: "#f4efe5"/.test(mi) && /<meta name="theme-color" content="#f4efe5" \/>/.test(citaj("index.html")) && /--color-pozadina:\s*#f4efe5/.test(citaj("src/index.css")));
+      provera("manifest: ikone 192×192, 512×512 i maskable 512×512 postoje i imaju tačne mere; apple-touch-icon 180×180", [["public/icons/icon-192.png", "192x192", "any"], ["public/icons/icon-512.png", "512x512", "any"], ["public/icons/icon-maskable-512.png", "512x512", "maskable"]].every(([p, mere, svrha]) => postoji(p) && pngMere(p) === mere && mi.includes("/" + p.replace("public/", "")) && mi.includes('sizes: "' + mere + '"') && new RegExp(p.split("/").pop().replace(".", "\\.") + '[^}]*purpose: "' + svrha + '"').test(mi)) && pngMere("public/apple-touch-icon.png") === "180x180");
+      provera("index.html: meta za instalaciju na iPhone-u (apple-mobile-web-app-capable, naslov iz tekst.js) i theme-color", /apple-mobile-web-app-capable/.test(citaj("index.html")) && /apple-mobile-web-app-title" content="%NAZIV%"/.test(citaj("index.html")) && /replaceAll\("%NAZIV%"/.test(vite));
+
+      // tekstovi i stil
+      const sviKljucevi = [];
+      for (const [p, ime] of [["src/components/TrakeLjuske.jsx", "tekst"], ["src/components/KarticaInstalacije.jsx", "T"]]) {
+        for (const m of bezKom(citaj(p)).replace(/^(?:import .*|const T = .*)$/gm, "").matchAll(/\b(?:tekst|T)\.([A-Za-z]+(?:\.[A-Za-z]+)*)/g)) {
+          const put = (ime === "T" ? "instalacija." : "") + m[1];
+          if (typeof put.split(".").reduce((o, k) => o?.[k], TK) !== "string") sviKljucevi.push(p + ": " + put);
+        }
+      }
+      provera("svi natpisi PWA traka i kartice postoje u tekst.js", sviKljucevi.length === 0, sviKljucevi);
+      for (const p of ["src/components/TrakeLjuske.jsx", "src/components/KarticaInstalacije.jsx", "src/lib/pwa.js", "src/lib/pwa-logika.js"]) {
+        const kod = bezKom(citaj(p));
+        provera(p + ": bez hex boja, localStorage i kolačića (instalacija i verzija se ne pamte)", !/#[0-9a-fA-F]{3,8}\b/.test(kod) && !/localStorage|sessionStorage|indexedDB|document\.cookie/.test(kod));
+      }
     }
   } finally {
     Object.assign(console, izvornik);

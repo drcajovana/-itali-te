@@ -22,7 +22,7 @@ export default function ZasticenaRuta() {
       <main className="mx-auto max-w-[520px] p-6">
         <h1 className="font-naslov text-2xl font-bold text-bordo">{tekst.zasticeno.profilGreska}</h1>
         <p className="mt-2 text-base">{tekst.zasticeno.profilGreskaPomoc}</p>
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <div className="mt-6 flex flex-wrap gap-3">
           <button type="button" onClick={osveziClana} className={stil.veliko}>
             {tekst.zasticeno.ponovo}
           </button>

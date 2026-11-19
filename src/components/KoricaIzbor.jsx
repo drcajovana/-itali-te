@@ -157,7 +157,7 @@ export default function KoricaIzbor({
       {mozeUklanjanje && korica && potvrda && (
         <div role="group" aria-label={T.ukloniPitanje} className="space-y-2 rounded-srednji border border-bordo p-3">
           <p className="text-base font-semibold">{T.ukloniPitanje}</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-wrap gap-2">
             <button type="button" disabled={onemoguceno} onClick={ukloni} className={`${dugme} bg-bordo text-white`}>
               {T.ukloniDa}
             </button>

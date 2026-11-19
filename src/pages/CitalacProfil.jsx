@@ -208,7 +208,7 @@ function Profil({ id }) {
         {radnja === "raskini" && (
           <div role="group" aria-label={T.raskiniPitanje.replace("{nadimak}", nadimak)} className="space-y-2 rounded-srednji border border-bordo p-3">
             <p className="text-sm font-semibold">{T.raskiniPitanje.replace("{nadimak}", nadimak)}</p>
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-wrap gap-2">
               <button type="button" disabled={zauzet} onClick={raskini} className={stil.veliko}>
                 {T.raskiniDa}
               </button>
@@ -221,7 +221,7 @@ function Profil({ id }) {
         {radnja === "blokiraj" && (
           <div role="group" aria-label={T.blokirajPitanje.replace("{nadimak}", nadimak)} className="space-y-2 rounded-srednji border border-bordo p-3">
             <p className="text-sm font-semibold">{T.blokirajPitanje.replace("{nadimak}", nadimak)}</p>
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-wrap gap-2">
               <button type="button" disabled={zauzet} onClick={blokirajClana} className={stil.veliko}>
                 {T.blokirajDa}
               </button>
@@ -238,7 +238,7 @@ function Profil({ id }) {
               {T.razlog}
             </label>
             <textarea id="razlog-prijave" rows={3} maxLength={300} value={razlog} onChange={(e) => setRazlog(e.target.value)} className={`${stil.polje} min-h-20`} />
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-wrap gap-2">
               <button type="submit" disabled={zauzet} className={stil.veliko}>
                 {T.prijaviPosalji}
               </button>

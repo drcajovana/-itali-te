@@ -51,7 +51,7 @@ export default function PinPrikaz({ nov, clan, pin, onZatvori }) {
       </p>
       <p className="mt-2 text-sm">{T.pin.upozorenje}</p>
 
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+      <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" onClick={() => window.print()} className={stil.veliko}>
           {T.pin.stampaj}
         </button>

@@ -38,8 +38,9 @@ Novi natpis se piše odmah na ćirilici u `tekst.js`; ne ugrađivati tekst (ni l
 `npm run test:api` proverava da u `tekst.js` nema latinice izvan zaštićenih izraza i da ostali
 fajlovi nemaju ni ćirilicu ni latinične rečenice.
 
-**Fontovi:** naslovi `Onest`, tekst `Inter`, oba sa podskupovima cyrillic i cyrillic-ext
-(Google Fonts ih šalje sam). Bricolage Grotesque iz prototipa nema ćirilicu i ne koristi se.
+**Fontovi:** naslovi `Onest`, tekst `Inter`, oba **iz projekta** (`src/fonts.css`, paketi `@fontsource-variable/onest`
+i `/inter`; promenljiva težina; samo podskupovi cyrillic, cyrillic-ext, latin, latin-ext). Nikakvih zahteva ka Google-u
+(ni `index.html`, ni CSS ne smeju da pominju fonts.googleapis.com). Bricolage Grotesque iz prototipa nema ćirilicu i ne koristi se.
 
 **Pretraga i ime pismom-neutralni:** knjige se traže u bazi (`trazi_knjige` → `privatno.norm_tekst`),
 koja izjednačava ćirilicu i latinicu, pa klijent ne poredi tekst sam. Gde baza ne normalizuje
@@ -243,9 +244,27 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 - **Odluka** (`knjige.odluka_nabavke`: `imamo`, `nabavljamo`, `ne_nabavljamo`, null) i datum su jedino mesto gde se kaže da li
   biblioteka ima knjigu (nema COBISS-a). Datum postavlja okidač; „imamo" postavlja `u_fondu = true`, ostale odluke
   `u_fondu = false`. Odluku menja samo bibliotekar (postojeća politika `knjige_update_bibliotekar`); član koji sam
-  upiše naslov ne može da je postavi.
+  upiše naslov ne može da je postavi. **Okidač radi samo pri izmeni (UPDATE), ne pri upisu (INSERT)**: ekran za unos zato
+  sam upisuje `odluka_nabavke` (`imamo`/`nabavljamo` po stanju kartice) i `odluka_datum` uz knjigu (`urediUnos`), pa sačuvana
+  knjiga nije među „Нове"; `u_fondu` je već u skladu sa odlukom. Datum pri upisu je sat bibliotekara.
 - CSV (`nabavka-logika.js`): UTF-8 sa BOM-om, `sep=;`, polja u navodnicima, tekst koji liči na formulu dobija apostrof,
   ISBN se piše kao `="…"`.
+
+## Prijave (/bibliotekar/prijave)
+
+- **Osoblje vidi samo prijavljeno.** Preporuku čita bibliotekar jedino dok postoji prijava na nju (`preporuke_prijavljene_select`,
+  0005); ekran nikad ne traži preporuke koje nisu u nekoj prijavi i ne dodaje spisak „sve preporuke". Ne širiti ovo pravo.
+- **Prijavljuje se samo ono što prijavilac vidi** (0021, okidač `prijave_provera_bi`, namerno NIJE SECURITY DEFINER da RLS
+  prijavioca određuje šta „vidi"): tuđi utisak, preporuka koju je prijavilac primio, ili član sa kojim je povezan. Bez toga je prijava
+  bila put do tuđe prepiske. Okidač propušta prijavu u tuđe ime (to odbija politika) i servisnu ulogu.
+- **Bibliotekar menja samo `resena` i `beleska`** (okidač `prijave_zastita_bu`); ko je rešio (`resio_id`) i kada (`resena_datum`)
+  postavlja baza (`auth.uid()`, `now()`), nikad klijent. Ne slati ta polja iz `src/lib/prijave.js`.
+- **Ništa se ne briše.** Radnje su sakrivanje i vraćanje utiska (`utisci.skriven`) i preporuke (`preporuke.skrivena`) i
+  deaktivacija člana (ista pravila kao na ekranu Članovi, administratora štiti baza). Prijava preživi brisanje stavke (nema
+  stranog ključa), pa ekran piše „više ne postoji".
+- **Ni prijavljeni ni prijavilac ne saznaju ishod.** Prijavljeni nema politiku za čitanje prijava. Nema obaveštenja ni „statusa
+  prijave" za članove.
+- Tačka na stavci „Библиотека" (Okvir) i broj na početnom ekranu osoblja dolaze iz brojanja nerešenih (`ucitajBrojOtvorenih`).
 
 ## API funkcije (api/)
 
@@ -313,6 +332,17 @@ Tajne (`SUPABASE_SERVICE_ROLE_KEY`, Infobip ključ) nikad ne smeju da dobiju
 serverless funkcije.
 
 Service Worker **nikad ne presreće POST zahteve**.
+
+## PWA ljuska
+
+- `vite.config.js`: `registerType: "prompt"`, `generateSW`, precache samo statičkih fajlova (html, js, css, slike, fontovi, manifest),
+  `navigateFallback: "/index.html"` sa `/api` van njega. **Nema `runtimeCaching`**: Supabase i `/api` pozivi uvek idu na mrežu,
+  nikad iz keša. Ne dodavati keširanje podataka; polica i utisci moraju da budu svežu iz baze.
+- `src/lib/pwa.js` (uvozi se u `main.jsx`, da ne propadne `beforeinstallprompt`) drži jedno malo spoljno skladište: nova verzija,
+  veza, instalacija. Nova verzija se primenjuje **tek na dodir „Освежи"** (traka `TrakeLjuske`), nikad tiho usred rada.
+- Traka „Нема везе са интернетом" prati `navigator.onLine` (približno); greške učitavanja i dalje imaju poruke na ekranima.
+- Instalacija: `KarticaInstalacije` na Profilu (dugme preko `beforeinstallprompt`; iPhone: uputstvo „Подели → Додај на почетни екран").
+- `theme_color` i `background_color` su boja aplikacije (`#f4efe5`), jer je zaglavlje bež.
 
 ## Interfejs
 

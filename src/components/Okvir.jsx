@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth-context.js";
 import { brojObavestenja } from "../lib/citaoci-logika.js";
 import { ucitajObavestenja } from "../lib/citaoci.js";
+import { ucitajBrojOtvorenih } from "../lib/prijave.js";
 import { tekst } from "../lib/tekst.js";
 import { jeBibliotekar } from "../lib/uloge.js";
 
@@ -56,15 +57,24 @@ export default function Okvir() {
   const { clan } = useAuth();
   const { pathname } = useLocation();
   const [obavestenja, setObavestenja] = useState(0);
+  const [otvorenePrijave, setOtvorenePrijave] = useState(0);
+  const osoblje = jeBibliotekar(clan?.uloga);
 
   // Tačka na stavci „Читаоци": novi poziv ili neobrađena preporuka. Osvežava se pri promeni ekrana,
   // kad se prozor vrati u prvi plan i kad ekran Читаоци javi promenu. Greška je tiha (tačka samo izostane).
+  // Osoblje dobija i tačku na stavci „Библиотека" dok ima nerešenih prijava (isti okidači osvežavanja).
   useEffect(() => {
     let otkazano = false;
-    const osvezi = () =>
+    const osvezi = () => {
       ucitajObavestenja()
         .then((o) => !otkazano && setObavestenja(brojObavestenja(o.pozivi, o.preporuke)))
         .catch(() => {});
+      if (osoblje) {
+        ucitajBrojOtvorenih()
+          .then((n) => !otkazano && setOtvorenePrijave(n))
+          .catch(() => {});
+      }
+    };
     osvezi();
     window.addEventListener("citaoci-promena", osvezi);
     window.addEventListener("focus", osvezi);
@@ -73,7 +83,7 @@ export default function Okvir() {
       window.removeEventListener("citaoci-promena", osvezi);
       window.removeEventListener("focus", osvezi);
     };
-  }, [pathname]);
+  }, [pathname, osoblje]);
 
   return (
     <div className="mx-auto w-full max-w-[520px]">
@@ -120,6 +130,12 @@ export default function Okvir() {
                 <>
                   <span aria-hidden="true" className="absolute right-1.5 top-0 size-2.5 rounded-full bg-bordo ring-2 ring-povrsina" />
                   <span className="sr-only">{tekst.meni.obavestenje}</span>
+                </>
+              )}
+              {s.kljuc === "biblioteka" && otvorenePrijave > 0 && (
+                <>
+                  <span aria-hidden="true" className="absolute right-1.5 top-0 size-2.5 rounded-full bg-bordo ring-2 ring-povrsina" />
+                  <span className="sr-only">{tekst.meni.obavestenjePrijave}</span>
                 </>
               )}
             </span>

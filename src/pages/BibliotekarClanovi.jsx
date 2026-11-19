@@ -139,7 +139,7 @@ export default function BibliotekarClanovi() {
               {greskaForme}
             </p>
           )}
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-wrap gap-2">
             <button type="submit" disabled={zauzet} className={stil.veliko}>
               {zauzet ? T.forma.pravim : T.forma.napravi}
             </button>
@@ -206,7 +206,7 @@ export default function BibliotekarClanovi() {
                 {pita === "pin" && (
                   <div role="group" aria-label={T.pinPitanje.replace("{ime}", c.ime)} className="mt-3 space-y-2 rounded-srednji border border-bordo p-3">
                     <p className="text-sm font-semibold">{T.pinPitanje.replace("{ime}", c.ime)}</p>
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex flex-wrap gap-2">
                       <button type="button" disabled={zauzet} onClick={() => noviPin(c)} className={stil.veliko}>
                         {T.pinDa}
                       </button>
@@ -219,7 +219,7 @@ export default function BibliotekarClanovi() {
                 {pita === "deaktiviraj" && (
                   <div role="group" aria-label={T.deaktivirajPitanje.replace("{ime}", c.ime)} className="mt-3 space-y-2 rounded-srednji border border-bordo p-3">
                     <p className="text-sm font-semibold">{T.deaktivirajPitanje.replace("{ime}", c.ime)}</p>
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex flex-wrap gap-2">
                       <button type="button" disabled={zauzet} onClick={() => promeniAktivnost(c)} className={stil.veliko}>
                         {T.deaktivirajDa}
                       </button>

@@ -49,6 +49,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
   const [status, setStatus] = useState("zelim");
   const [saljem, setSaljem] = useState(false);
   const [ishod, setIshod] = useState(null); // { poruka, greska }
+  const [dodato, setDodato] = useState(false); // knjiga je već na polici: kartica pokazuje to, a dugme postaje „Promeni stanje"
   const [forma, setForma] = useState(null); // otvorena forma za potvrdu: { naslov, autor, izdavac, godina, isbn }
   const [greskaForme, setGreskaForme] = useState(null);
 
@@ -58,6 +59,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
     try {
       await onDodaj(zaDodavanje, status);
       setForma(null);
+      setDodato(true);
       setIshod({ poruka: T.polica.dodato });
     } catch (e) {
       console.error("dodavanje na policu:", e);
@@ -105,7 +107,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
       <div className="min-w-0 flex-1">
         <h3 className="font-naslov text-[17px] font-bold leading-tight tracking-[-0.025em]">{knjiga.naslov}</h3>
         <p className="mt-0.5 text-[13.5px] text-mastilo-2">{autor || T.knjiga.bezAutora}</p>
-        {izdavac && <p className="text-xs text-mastilo-2">{izdavac}</p>}
+        {izdavac && <p className="text-xs text-mastilo-2 first-letter:uppercase">{izdavac}</p>}
 
         {izBaze && (
           <div className="mt-1">
@@ -136,14 +138,17 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
       <div className="mt-4">
         {!forma && (
           <div className="space-y-3">
+            {dodato && ishod && !ishod.greska && (
+              <p role="status" className="flex items-center gap-2 rounded-srednji bg-bordo-svetla px-3 py-2 text-sm font-semibold text-bordo">
+                <svg viewBox="0 0 24 24" className="size-[18px] flex-none fill-none stroke-current stroke-[2.2]" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+                {ishod.poruka}
+              </p>
+            )}
             <IzborStanja status={status} onPromena={setStatus} />
-            <button
-              type="button"
-              onClick={klikDodaj}
-              disabled={saljem}
-              className={`${stil.veliko} sm:w-full`}
-            >
-              {saljem ? tekst.opste.sacekajte : T.polica.dodaj}
+            <button type="button" onClick={klikDodaj} disabled={saljem} className={`${dodato ? stil.okvirno : stil.veliko} sm:w-full`}>
+              {saljem ? tekst.opste.sacekajte : dodato ? T.polica.promeni : T.polica.dodaj}
             </button>
           </div>
         )}
@@ -181,7 +186,7 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
                 {greskaForme}
               </p>
             )}
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-wrap gap-2">
               <button type="submit" disabled={saljem} className={stil.veliko}>
                 {saljem ? tekst.opste.sacekajte : T.potvrda.potvrdi}
               </button>
@@ -197,8 +202,8 @@ export default function RezultatKnjige({ knjiga, onDodaj }) {
           </form>
         )}
 
-        {ishod && (
-          <p role="status" className={`mt-2 text-base font-medium ${ishod.greska ? "text-bordo" : ""}`}>
+        {ishod && (ishod.greska || !dodato) && (
+          <p role={ishod.greska ? "alert" : "status"} className={`mt-2 text-base font-medium ${ishod.greska ? "text-bordo" : ""}`}>
             {ishod.poruka}
           </p>
         )}

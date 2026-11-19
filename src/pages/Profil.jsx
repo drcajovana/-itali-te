@@ -1,4 +1,5 @@
 import { useState } from "react";
+import KarticaInstalacije from "../components/KarticaInstalacije.jsx";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../lib/auth-context.js";
 import { stil } from "../lib/stil.js";
@@ -88,6 +89,8 @@ export default function Profil() {
           {saljem ? tekst.opste.sacekajte : tekst.profil.sacuvaj}
         </button>
       </form>
+
+      <KarticaInstalacije />
 
       <button type="button" onClick={odjavi} className={`${stil.okvirno} mt-5`}>
         {tekst.meni.odjava}

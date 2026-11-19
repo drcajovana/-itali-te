@@ -77,8 +77,13 @@ function urediZanrove(tekst) {
 // Vraća { ok: true, podaci, red } ili { ok: false, polje, razlog }.
 //
 // Opis dolazi ISKLJUČIVO od bibliotekara (polje je u formi prazno): nikad se ne uzima
-// sa sajta. Izvor knjige: 'fond' za „U fondu", 'link' za „Za nabavku".
-export function urediUnos(unos, { uneoId = null } = {}) {
+// sa sajta. Izvor knjige: 'fond' za „Imamo" (u fondu), 'link' za „Nabavljamo".
+//
+// Odluka nabavke (0020) se upisuje ZAJEDNO sa knjigom: „Imamo" → 'imamo', „Nabavljamo" → 'nabavljamo', pa knjiga
+// u izveštaju za nabavku nije među „Нове". Okidač iz 0020 radi samo pri izmeni (UPDATE), ne pri upisu (INSERT),
+// pa i datum odluke dolazi odavde (sat bibliotekara); pri kasnijoj izmeni odluke datum postavlja okidač.
+// u_fondu je već u skladu sa odlukom (imamo = true, nabavljamo = false), kao što bi ga uskladio okidač.
+export function urediUnos(unos, { uneoId = null, sada = new Date() } = {}) {
   const osnova = urediPotvrdu(unos);
   if (!osnova.ok) return osnova;
 
@@ -118,6 +123,8 @@ export function urediUnos(unos, { uneoId = null } = {}) {
     broj_slobodnih: primerci, // novi primerci su slobodni; zaduženja vodi COBISS
     izvor: stanje === "fond" ? "fond" : "link",
     uneo_id: uneoId,
+    odluka_nabavke: stanje === "fond" ? "imamo" : "nabavljamo",
+    odluka_datum: sada.toISOString(),
   };
   return { ok: true, podaci: osnova.podaci, red };
 }

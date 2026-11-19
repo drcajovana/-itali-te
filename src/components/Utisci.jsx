@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PrijaviStavku from "./PrijaviStavku.jsx";
 import { useAuth } from "../lib/auth-context.js";
 import { formaUtiska, NAJDUZI_UTISAK, VIDLJIVOSTI } from "../lib/polica-logika.js";
 import { obrisiUtisak, sacuvajUtisak, ucitajMojUtisak, ucitajTudjeUtiske } from "../lib/polica.js";
@@ -47,6 +48,9 @@ function TudjiUtisak({ u }) {
           {T.tudji.sakrijSpojler}
         </button>
       )}
+      <div className="mt-1">
+        <PrijaviStavku tip="utisak" stavkaId={u.id} />
+      </div>
     </li>
   );
 }
@@ -147,7 +151,7 @@ export default function Utisci({ knjigaId, naPromenjeno }) {
             {moj.skriven && <p className="text-sm font-medium text-bordo">{T.sakrivenMoj}</p>}
             {moj.tekst && <p className="whitespace-pre-line border-l-2 border-bordo-svetla pl-3 text-sm leading-[1.55]">{moj.tekst}</p>}
             {!potvrda ? (
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={zauzet} onClick={() => setUredjuje(true)} className={stil.okvirno}>
                   {T.izmeni}
                 </button>
@@ -158,7 +162,7 @@ export default function Utisci({ knjigaId, naPromenjeno }) {
             ) : (
               <div role="group" aria-label={T.obrisiPitanje} className="space-y-2 rounded-srednji border border-bordo p-3">
                 <p className="text-base font-semibold">{T.obrisiPitanje}</p>
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="flex flex-wrap gap-2">
                   <button type="button" disabled={zauzet} onClick={obrisi} className={stil.veliko}>
                     {T.obrisiDa}
                   </button>
@@ -233,7 +237,7 @@ export default function Utisci({ knjigaId, naPromenjeno }) {
               {T.spojler}
             </label>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-wrap gap-2">
               <button type="submit" disabled={zauzet} className={stil.veliko}>
                 {zauzet ? T.cuvam : T.sacuvaj}
               </button>

@@ -15,16 +15,21 @@ export default defineConfig({
         html.replaceAll("%NAZIV%", tekst.aplikacija.naziv),
     },
     VitePWA({
-      registerType: "autoUpdate",
+      // „prompt": nova verzija čeka dok korisnik ne dodirne dugme na traci (src/lib/pwa.js), umesto da se
+      // tiho primeni ili da zastareli keš ostane neprimetan.
+      registerType: "prompt",
       manifest: {
         name: tekst.aplikacija.naziv,
         short_name: tekst.aplikacija.naziv,
         description: tekst.aplikacija.opis,
         lang: tekst.aplikacija.jezik,
+        id: "/",
         start_url: "/",
+        scope: "/",
         display: "standalone",
+        orientation: "portrait",
         background_color: "#f4efe5",
-        theme_color: "#4d0000",
+        theme_color: "#f4efe5", // boja zaglavlja aplikacije (pozadina), da traka statusa ne seče ekran
         icons: [
           { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
           { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
@@ -33,10 +38,14 @@ export default defineConfig({
       },
       workbox: {
         // Plan, tačka 4: Service Worker NIKAD ne presreće POST zahteve.
-        // Keširamo samo GET, i to samo statičke fajlove aplikacije.
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        // Ljuska (html, js, css, slike, fontovi) se čuva pri instalaciji, pa se aplikacija pokreće bez mreže; ekrani
+        // koji traže podatke tada pokazuju poruku o vezi (TrakeLjuske i greške ekrana). Nikakvog runtimeCaching-a
+        // nema: Supabase i /api pozivi uvek idu na mrežu, a POST ne hvata nijedna ruta.
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2,webmanifest}"],
+        navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [],
+        cleanupOutdatedCaches: true,
       },
     }),
   ],

@@ -41,7 +41,7 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
             <p className="text-base text-mastilo-2">
               {k.u_fondu ? T.duplikat.stanjeFond.replace("{primeraka}", primeraka(k.broj_primeraka)) : T.duplikat.stanjeNije}
             </p>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <div className="mt-2 flex flex-wrap gap-2">
               <a
                 href={adresaZaOtvaranje(k)}
                 target="_blank"
@@ -55,7 +55,7 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
                   type="button"
                   disabled={saljem || !primerci}
                   onClick={() => onDodajPrimerke(k)}
-                  className={`${stil.pilulaPuna} flex-none disabled:opacity-50`}
+                  className={`${stil.pilulaPuna} disabled:opacity-50`}
                 >
                   {T.duplikat.dodajPrimerke.replace("{primeraka}", primerci ? primeraka(primerci) : T.duplikat.primerkeBezBroja)}
                 </button>
@@ -166,10 +166,17 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
       )}
 
       {imaFormu && (
-        <div className="mt-3 flex gap-3">
-          <Korica knjiga={{ naslov: forma.naslov, isbn: uIsbn13(forma.isbn) }} autor={forma.autor} />
-          <div className="min-w-0 flex-1 space-y-3">
-            {status === "delimicno" && <p className="text-base font-medium">{T.delimicnoPomoc}</p>}
+        <div className="mt-3 space-y-3">
+          {/* korica i naslov su zaglavlje kartice; polja ispod zauzimaju celu širinu (ne samo uski stub pored korice) */}
+          <div className="flex items-start gap-3">
+            <Korica knjiga={{ naslov: forma.naslov, isbn: uIsbn13(forma.isbn) }} autor={forma.autor} />
+            <div className="min-w-0 flex-1">
+              <p className="break-words font-naslov text-[17px] font-bold leading-tight tracking-[-0.02em]">{forma.naslov}</p>
+              {forma.autor && <p className="mt-0.5 break-words text-sm text-mastilo-2">{forma.autor}</p>}
+              {status === "delimicno" && <p className="mt-2 text-sm font-medium">{T.delimicnoPomoc}</p>}
+            </div>
+          </div>
+          <div className="min-w-0 space-y-3">
             {[
               ["naslov", T.kartica.naslov, 300],
               ["autor", T.kartica.autori, 200],
@@ -204,7 +211,7 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
 
             <fieldset>
               <legend className="text-base font-medium">{T.kartica.stanje}</legend>
-              <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:gap-6">
+              <div className="mt-1 flex flex-wrap gap-x-6 gap-y-1">
                 {[
                   ["fond", T.kartica.imamo],
                   ["nabavka", T.kartica.nabavljamo],
@@ -228,7 +235,7 @@ export default function KarticaUnosa({ stavka, onPromeni, onSacuvaj, onDodajPrim
             {forma.stanje === "nacrt" && <p className="text-sm text-mastilo-2">{T.kartica.nacrtNapomena}</p>}
 
             {forma.stanje === "fond" && (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-3">
                 <div>
                   <label htmlFor={`${id}-primerci`} className="text-base font-medium">
                     {T.kartica.primerci}

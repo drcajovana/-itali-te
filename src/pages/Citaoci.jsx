@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Avatar from "../components/Avatar.jsx";
 import Korica from "../components/Korica.jsx";
+import PrijaviStavku from "../components/PrijaviStavku.jsx";
 import { GreskaApija } from "../lib/api.js";
 import { useAuth } from "../lib/auth-context.js";
 import { grupisiVeze, prikaznoIme, urediSifru } from "../lib/citaoci-logika.js";
@@ -257,6 +258,7 @@ export default function Citaoci() {
                   {T.preporuke.nijeZaMene}
                 </button>
               </div>
+              <PrijaviStavku tip="preporuka" stavkaId={p.id} />
             </div>
           </li>
         ))}

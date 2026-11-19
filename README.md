@@ -22,7 +22,9 @@ Aplikacija još nema ekrane.
 | 7. Čitaoci | ✅ `/citaoci` (moja šifra, poziv, pozivi na čekanju, preporuke za mene, povezani) i `/citaoci/:id` (polica, utisci, preporuka, raskid, blokada, prijava), tačka na navigaciji, preporuka sa stranice knjige. Vidi „Čitaoci: veze, preporuke, blokada”. **Treba migracija 0019** |
 | 8. Nabavka i zaštita administratora | ✅ `/bibliotekar/nabavka` (knjige koje čitaoci žele, samo brojevi, odluka „Имамо / Набављамо / Не набављамо”, filteri, pretraga, CSV); u bazi bibliotekar više ne dira administratora. Vidi „Uputstvo za bibliotekare”. **Treba migracija 0020** |
 | 9. Uvoz sa stranice izdavača | ✅ u unosu knjiga: adresa stranice SA SPISKOM, izvlači se najviše 50 linkova ka knjigama (`api/iz-liste.js`), bibliotekar štiklira (najviše 20), izabrani idu kroz postojeću obradu. Poštuje robots.txt. **Nije proveravano na pravim sajtovima.** Bez migracije |
-| 10–11. | ⬜ |
+| 9a. Moderacija prijava | ✅ `/bibliotekar/prijave` (nerešene i rešene prijave utisaka, preporuka i članova; sakrivanje utiska i preporuke, deaktivacija člana, rešavanje sa beleškom), tačka na stavci „Библиотека” i broj na početnom ekranu osoblja; dugme „Пријави” na tuđem utisku i na primljenoj preporuci. Vidi „Uputstvo za bibliotekare”. **Treba migracija 0021** |
+| 10. PWA do kraja | ✅ fontovi iz projekta (bez Google-a), Service Worker sa trakom „Нова верзија је спремна — Освежи”, traka „Нема везе са интернетом”, dugme „Инсталирај апликацију” na Profilu (na iPhone-u uputstvo). Bez migracije. **Nije proveravano na pravom telefonu ni offline** |
+| 11. | ⬜ |
 
 ## Pokretanje
 
@@ -58,6 +60,7 @@ Migracije se puštaju redom, brojevima:
 | `0018_rezervacije_statusi.sql` | **(puštena, ali ništa je ne koristi: aplikacija nema rezervacije)** stanja rezervacije `nova`, `spremna`, `preuzeta`, `otkazana` (stara `obradjena` postaje `preuzeta`); jedinstveni indeks „jedna otvorena rezervacija po članu i knjizi” važi za `nova` i `spremna`. Politike se ne menjaju; idempotentna |
 | `0019_citaoci_nadimci_preporuke.sql` | pogledi `moje_veze` i `moje_preporuke` (samo moje, samo nadimak druge strane, bez blokiranih), `privatno.ima_blokade()`, prijava člana (`prijave.tip = 'clan'`), napomena preporuke do 280 znakova i jedna neobrađena preporuka iste knjige po paru. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0020_nabavka_i_zastita_administratora.sql` | `knjige.odluka_nabavke` i `odluka_datum` (datum postavlja okidač; „imamo” = `u_fondu`), pogled `izvestaj_za_nabavku` nad `privatno.izvestaj_nabavke()` (samo agregat, samo bibliotekar), i okidači koji bibliotekaru zabranjuju da menja administratora ili dodeljuje ulogu. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
+| `0021_moderacija_prijava.sql` | kolona `prijave.resena_datum`; okidač `prijave_zastita_bu` (bibliotekar menja samo `resena` i `beleska`, ko je rešio i kada postavlja baza), okidač `prijave_provera_bi` (prijaviti se može samo utisak koji prijavilac vidi i nije njegov, preporuka koju je primio, ili povezan član), dužine razloga (300) i beleške (500). Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 
 Redosled nije proizvoljan: `0003` i `0005` se oslanjaju na
 `privatno.su_povezani()` iz `0002`, a politika na `preporuke` gleda u `prijave`,
@@ -289,10 +292,27 @@ biblioteka ima knjigu.
    **Све** (tu su i „Не набављамо”). Uz svako dugme piše koliko knjiga ima. Polje ispod traži po naslovu ili
    autoru, i latinicom i ćirilicom.
 3. Svakoj knjizi dodirnite odluku: **Имамо** (knjiga je u fondu), **Набављамо**, **Не набављамо** ili
-   **Без одлуке**. Odluka se odmah čuva, a ispod piše od kog je datuma. Knjiga koju ste pri unosu upisali kao
-   „U fondu” već vodi „Имамо”.
+   **Без одлуке**. Odluka se odmah čuva, a ispod piše od kog je datuma. Knjiga koju sačuvate na ekranu za unos kao
+   „Имамо” ili „Набављамо” odmah dobija tu odluku (i datum), pa nije među „Нове”.
 4. **Преузми као табелу** preuzima CSV fajl (otvara se u Excelu, ćirilica je u redu) sa knjigama iz
    trenutnog prikaza: naslov, autor, izdavač, ISBN, broj čitalaca koji žele i odluka.
+
+**Kako se rešavaju prijave**
+
+Članovi prijavljuju tuđi utisak, primljenu preporuku ili povezanog čitaoca (dugme **Пријави** uz razlog do 300
+znakova). **Библиотека → Пријаве** pokazuje šta je prijavljeno; stavka **Библиотека** u donjem meniju ima tačku dok
+ima nerešenih prijava, a na početnom ekranu osoblja piše koliko ih je.
+
+1. Dugmad na vrhu biraju prikaz: **Нерешене** (najstarija prva) i **Решене** (najnovije rešena prva).
+2. Svaka prijava pokazuje ko je prijavio (pravo ime, vi ste osoblje), razlog i samu stavku: utisak sa ocenom i
+   tekstom, preporuku sa porukom, ili člana (ime, broj karte, uloga, nadimak). Preporuku vidite **samo** ako je
+   prijavljena; ostala prepiska vam nije dostupna. Ako je stavka u međuvremenu obrisana, piše da više ne postoji.
+3. Nad stavkom možete: **Сакриј утисак** / **Врати утисак** (sakriven utisak niko ne vidi osim vas i autora),
+   **Сакриј препоруку** / **Врати препоруку** (primalac je više ne vidi), ili **Деактивирај члана** (uz potvrdu;
+   administratora ne može da deaktivira bibliotekar). Ništa se ne briše.
+4. **Означи као решено** otvara polje za belešku (nije obavezna, do 500 znakova, vide je samo bibliotekari) i
+   prijava prelazi u **Решене**. Tamo piše ko ju je rešio i kada, a **Врати међу нерешене** je vraća.
+5. Ni prijavljeni član ni onaj ko je prijavio ne dobijaju nikakvo obaveštenje o tome šta ste uradili.
 
 **Za one koji održavaju aplikaciju**
 
@@ -310,7 +330,7 @@ biblioteka ima knjigu.
   ulogom različitom od `citalac`; brisanje je samo administratoru. Administrator i servisna uloga sme sve.
   Ekran svejedno nudi dugme samo za čitaoce (administrator vidi sve), da korisnik ne nailazi na grešku.
 - `npm run test:api` proverava uloge, ograničenje, vodeću nulu i da PIN nije u logu ni u poruci greške;
-  `test:db` migracije 0018 do 0020; `test:rls` (faze 13 do 15) isto na pravoj bazi.
+  `test:db` migracije 0018 do 0021; `test:rls` (faze 13 do 16) isto na pravoj bazi.
 
 ### Čitaoci: veze, preporuke, blokada
 
@@ -394,12 +414,12 @@ nule ako ijedna provera padne.
 ### Migracije su puštene ručno
 
 Port 5432 je blokiran sa razvojne mreže, pa `supabase db push` ne radi. Migracije
-se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0020 treba zalepiti, tim redom). Zato je tabela
+se lepe u SQL Editor, redom (0001 do 0012 su tamo; 0013 do 0021 treba zalepiti, tim redom). Zato je tabela
 `supabase_migrations.schema_migrations` u bazi **prazna** i CLI misli da ništa
 nije primenjeno. Kad se ostvari veza, uskladiti:
 
 ```bash
-npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020
+npx supabase migration repair --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021
 ```
 
 Do tada: izmena postojeće migracije u repozitorijumu **nije** u bazi dok se
@@ -438,7 +458,8 @@ ispravnoj bazi. Istoriju fajla pokazuje `git log --follow supabase/migrations/<f
 
 React 19 + Vite 8, Tailwind 4, Supabase (Postgres, Auth, Storage), Vercel.
 PWA preko `vite-plugin-pwa` — Service Worker nikad ne presreće POST zahteve
-(plan, tačka 4).
+(plan, tačka 4). Fontovi Onest i Inter dolaze iz projekta (`src/fonts.css`, paketi `@fontsource-variable/*`), ne sa Google-a.
+Nova verzija se javlja trakom i primenjuje tek na dodir; API i Supabase pozivi nikad ne idu iz keša.
 
 Sav tekst interfejsa je u [`src/lib/tekst.js`](src/lib/tekst.js) (ćirilica, ekavica;
 ključevi i nazivi u kodu ostaju latinični). Dokumentacija (ovaj fajl i CLAUDE.md) ostaje na latinici.

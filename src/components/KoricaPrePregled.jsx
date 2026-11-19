@@ -84,7 +84,7 @@ export default function KoricaPrePregled({ naslov, predlog, izbor, slika, onIzbo
       </div>
 
       <input ref={ulaz} type="file" accept="image/*" onChange={naIzbor} tabIndex={-1} aria-hidden="true" className="sr-only" />
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => ulaz.current?.click()} disabled={radi} className={`${dugme} border border-bordo text-bordo`}>
           {radi ? T.radi : T.drugaSlika}
         </button>

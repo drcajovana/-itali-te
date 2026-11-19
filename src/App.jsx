@@ -1,10 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import AuthProvider from "./components/AuthProvider.jsx";
+import TrakeLjuske from "./components/TrakeLjuske.jsx";
 import RutaZaBibliotekare from "./components/RutaZaBibliotekare.jsx";
 import ZasticenaRuta from "./components/ZasticenaRuta.jsx";
 import BibliotekarClanovi from "./pages/BibliotekarClanovi.jsx";
 import BibliotekarNabavka from "./pages/BibliotekarNabavka.jsx";
 import BibliotekarPocetna from "./pages/BibliotekarPocetna.jsx";
+import BibliotekarPrijave from "./pages/BibliotekarPrijave.jsx";
 import BibliotekarUnos from "./pages/BibliotekarUnos.jsx";
 import Knjiga from "./pages/Knjiga.jsx";
 import Citaoci from "./pages/Citaoci.jsx";
@@ -17,6 +19,7 @@ import Profil from "./pages/Profil.jsx";
 export default function App() {
   return (
     <AuthProvider>
+      <TrakeLjuske />
       <Routes>
         <Route path="/prijava" element={<Prijava />} />
         <Route element={<ZasticenaRuta />}>
@@ -31,6 +34,7 @@ export default function App() {
             <Route path="/bibliotekar/unos" element={<BibliotekarUnos />} />
             <Route path="/bibliotekar/clanovi" element={<BibliotekarClanovi />} />
             <Route path="/bibliotekar/nabavka" element={<BibliotekarNabavka />} />
+            <Route path="/bibliotekar/prijave" element={<BibliotekarPrijave />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -2,7 +2,7 @@
 // teme (src/index.css), nikakve nove vrednosti. Sve kontrole su najmanje 44 px (min-h-11 ili više).
 // Komponente pišu className={stil.x}, da se isti oblik ne prepisuje na dvadeset mesta.
 
-const dodir = "flex items-center justify-center transition active:scale-[.985] disabled:opacity-60";
+const dodir = "flex items-center justify-center text-center transition active:scale-[.985] disabled:opacity-60";
 
 export const stil = {
   // velika dugmad (prototip: .veliko): puna bordo, „tiho" na površini, „okvirno" sa linijom

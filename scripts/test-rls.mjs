@@ -1292,12 +1292,20 @@ async function main() {
   });
 
   // prijava člana
-  await provera("E prijavljuje člana D (tip 'clan'); ista prijava dvaput se odbija; D prijave ne vidi; bibliotekar vidi", async () => {
+  await provera("prijava člana (0021): dok postoji blokada E→D, E ne može da prijavi D (prijava samo dok su povezani); prijava stranca se odbija", async () => {
+    const blok = await E.db.from("prijave").insert({ prijavio_id: E.id, tip: "clan", stavka_id: D.id, razlog: "posle blokade" }).select("id");
+    const stranac = await F.db.from("prijave").insert({ prijavio_id: F.id, tip: "clan", stavka_id: D.id, razlog: "nisu povezani" }).select("id");
+    return blok.error?.code === "22023" && stranac.error?.code === "22023" ? true : `blokirana strana: ${blok.error?.code ?? "prošlo"}; stranac: ${stranac.error?.code ?? "prošlo"}`;
+  });
+  await provera("E prijavljuje člana D (tip 'clan') dok su povezani; ista prijava dvaput se odbija; D prijave ne vidi; bibliotekar vidi", async () => {
+    // Prijava je moguća samo dok su povezani: blokada se privremeno skida (servisnim ključem), pa vraća.
+    const skini = await S.from("blokade").delete().eq("blokirao_id", E.id).eq("blokirani_id", D.id);
     const a = await E.db.from("prijave").insert({ prijavio_id: E.id, tip: "clan", stavka_id: D.id, razlog: "RLS test prijava člana" }).select("id");
     const b = await E.db.from("prijave").insert({ prijavio_id: E.id, tip: "clan", stavka_id: D.id, razlog: "opet" }).select("id");
     const d = await D.db.from("prijave").select("*");
     const bib = await BIB.db.from("prijave").select("*").eq("tip", "clan").eq("stavka_id", D.id);
-    return !a.error && b.error?.code === "23505" && tacno(d, 0, "D") === true && !bib.error && bib.data.length === 1 ? true : `${opis(a)}; ponovo: ${b.error?.code ?? "prošlo"}; ${opis(d)}; ${opis(bib)}`;
+    const vrati = await S.from("blokade").insert({ blokirao_id: E.id, blokirani_id: D.id });
+    return !skini.error && !vrati.error && !a.error && b.error?.code === "23505" && tacno(d, 0, "D") === true && !bib.error && bib.data.length === 1 ? true : `${opis(a)}; ponovo: ${b.error?.code ?? "prošlo"}; ${opis(d)}; ${opis(bib)}; skini: ${skini.error?.message ?? "ok"}; vrati: ${vrati.error?.message ?? "ok"}`;
   });
   await provera("prijava u tuđe ime i prijava nepoznatog tipa se odbijaju", async () => {
     const tudje = await F.db.from("prijave").insert({ prijavio_id: E.id, tip: "clan", stavka_id: D.id, razlog: "u tuđe ime" }).select("id");
@@ -1450,6 +1458,106 @@ async function main() {
   await provera("čitalac i dalje menja samo svoj nadimak (uloga i aktivnost ostaju)", async () => {
     const r = await P.db.from("clanovi").update({ nadimak: `RLS-nad-P-${RUN}`, uloga: "administrator", aktivan: false }).eq("id", P.id).select("nadimak, uloga, aktivan");
     return !r.error && r.data[0]?.uloga === "citalac" && r.data[0].aktivan === true && r.data[0].nadimak === `RLS-nad-P-${RUN}` ? true : opis(r);
+  });
+
+  faza("16. Moderacija prijava: prijavljuje se samo vidljivo, bibliotekar menja samo resena i beleska (migracija 0021)");
+  const G = await napraviClana("mg", "citalac");
+  const H = await napraviClana("mh", "citalac");
+  const J = await napraviClana("mj", "citalac"); // nije povezan ni sa kim
+  const KM = await napraviKnjigu("MOD-K");
+  await ubaci("veze", { pozivalac_id: G.id, pozvani_id: H.id, status: "prihvacena" });
+  const utH = await ubaci("utisci", { clan_id: H.id, knjiga_id: KM.id, ocena: 4, tekst: N("MOD H javni"), vidljivost: "javno" });
+  const KM2 = await napraviKnjigu("MOD-K2");
+  const utHsamoJa = await ubaci("utisci", { clan_id: H.id, knjiga_id: KM2.id, ocena: 5, tekst: N("MOD H samo ja"), vidljivost: "samo_ja" });
+  const utG = await ubaci("utisci", { clan_id: G.id, knjiga_id: KM.id, ocena: 9, tekst: N("MOD G svoj"), vidljivost: "javno" });
+  const prepHG = await ubaci("preporuke", { posiljalac_id: H.id, primalac_id: G.id, knjiga_id: KM.id, poruka: N("MOD H šalje G") });
+  const prepHJ = await ubaci("preporuke", { posiljalac_id: H.id, primalac_id: J.id, knjiga_id: KM.id, poruka: N("MOD H šalje J, tajno") });
+  const NEMA = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const prijavi21 = (c, tip, stavka, razlog = N("razlog")) => c.db.from("prijave").insert({ prijavio_id: c.id, tip, stavka_id: stavka, razlog }).select("id, resena, resio_id, beleska, resena_datum");
+
+  let prijavaU = null;
+  await provera("G prijavljuje javni utisak člana H", async () => {
+    const r = await prijavi21(G, "utisak", utH.id);
+    prijavaU = r.data?.[0]?.id;
+    return !r.error && prijavaU ? true : opis(r);
+  });
+  await provera("ista prijava se ne podnosi dvaput (23505)", async () => {
+    const r = await prijavi21(G, "utisak", utH.id);
+    return r.error?.code === "23505" ? true : opis(r);
+  });
+  await provera("ne mogu da se prijave: utisak „samo ja”, sopstveni utisak, id koji ne postoji (22023)", async () => {
+    const a = await prijavi21(G, "utisak", utHsamoJa.id);
+    const b = await prijavi21(G, "utisak", utG.id);
+    const c = await prijavi21(G, "utisak", NEMA);
+    return a.error?.code === "22023" && b.error?.code === "22023" && c.error?.code === "22023" ? true : `${a.error?.code}/${b.error?.code}/${c.error?.code}`;
+  });
+  await provera("G prijavljuje preporuku koju je primio; tuđu preporuku (H→J) ne može, a pošiljalac ne prijavljuje svoju", async () => {
+    const a = await prijavi21(G, "preporuka", prepHG.id);
+    const b = await prijavi21(G, "preporuka", prepHJ.id);
+    const c = await prijavi21(H, "preporuka", prepHG.id);
+    return !a.error && b.error?.code === "22023" && c.error?.code === "22023" ? true : `${opis(a)}/${b.error?.code}/${c.error?.code}`;
+  });
+  await provera("prijava člana: povezan se prijavljuje, nepovezan (J) i sebe ne", async () => {
+    const a = await prijavi21(G, "clan", H.id);
+    const b = await prijavi21(J, "clan", H.id);
+    const c = await prijavi21(G, "clan", G.id);
+    return !a.error && b.error?.code === "22023" && c.error?.code === "22023" ? true : `${opis(a)}/${b.error?.code}/${c.error?.code}`;
+  });
+  await provera("nova prijava je uvek nerešena (resena, resio_id, beleska i datum ne mogu da se podnesu unapred)", async () => {
+    const r = await G.db.from("prijave").insert({ prijavio_id: G.id, tip: "utisak", stavka_id: utHsamoJa.id, razlog: N("x"), resena: true, resio_id: BIB.id, beleska: "b" }).select("resena");
+    // utisak „samo ja” nije vidljiv G-u, pa se odbija; proverava se na vidljivom utisku drugog člana
+    const k = await ubaci("utisci", { clan_id: J.id, knjiga_id: KM.id, ocena: 2, tekst: N("MOD J javni"), vidljivost: "javno" });
+    const p = await G.db.from("prijave").insert({ prijavio_id: G.id, tip: "utisak", stavka_id: k.id, razlog: N("x"), resena: true, resio_id: BIB.id, beleska: "b" }).select("resena, resio_id, beleska, resena_datum");
+    return r.error?.code === "22023" && !p.error && p.data[0]?.resena === false && p.data[0].resio_id === null && p.data[0].beleska === null && p.data[0].resena_datum === null ? true : `${opis(r)} / ${opis(p)}`;
+  });
+  await provera("prijava u tuđe ime se odbija (RLS), razlog duži od 300 znakova se odbija (23514)", async () => {
+    const a = await G.db.from("prijave").insert({ prijavio_id: H.id, tip: "clan", stavka_id: G.id, razlog: N("tuđe ime") }).select("id");
+    const k = await ubaci("utisci", { clan_id: H.id, knjiga_id: (await napraviKnjigu("MOD-K3")).id, ocena: 3, tekst: N("MOD H drugi"), vidljivost: "javno" });
+    const b = await G.db.from("prijave").insert({ prijavio_id: G.id, tip: "utisak", stavka_id: k.id, razlog: "x".repeat(301) }).select("id");
+    return a.error && a.error.code !== "22023" && b.error?.code === "23514" ? true : `${potpisGreske(a)} / ${b.error?.code}`;
+  });
+  await provera("prijavljeni H ne vidi prijave (nema znaka da je prijavljen); G vidi samo svoje", async () => {
+    const h = await H.db.from("prijave").select("id");
+    const g = await G.db.from("prijave").select("id, prijavio_id");
+    return tacno(h, 0, "H") === true && !g.error && g.data.every((p) => p.prijavio_id === G.id) ? true : `${opis(h)} / ${opis(g)}`;
+  });
+  await provera("bibliotekar vidi prijavljenu preporuku (H→G), a neprijavljenu (H→J) ne", async () => {
+    const a = await BIB.db.from("preporuke").select("id").eq("id", prepHG.id);
+    const b = await BIB.db.from("preporuke").select("id").eq("id", prepHJ.id);
+    return tacno(a, 1, "prijavljena") === true && tacno(b, 0, "neprijavljena") === true ? true : `${opis(a)} / ${opis(b)}`;
+  });
+  await provera("G ne može da reši sopstvenu prijavu (nema politike za izmenu): stanje ostaje", async () => {
+    const r = await pokusaj(G.db.from("prijave").update({ resena: true }).eq("id", prijavaU).select());
+    const s2 = await stanje("prijave", prijavaU);
+    return r.pogodjeno === 0 && s2.resena === false ? true : `pogođeno ${r.pogodjeno}; resena=${s2.resena}`;
+  });
+  await provera("bibliotekar rešava: beleška očišćena, ko je rešio i kada postavlja baza; u istoj izmeni ne može da prepravi ko je prijavio, šta i zašto", async () => {
+    const pre = await stanje("prijave", prijavaU);
+    const r = await BIB.db.from("prijave").update({ resena: true, beleska: "  Upozoren.  ", prijavio_id: J.id, tip: "clan", stavka_id: J.id, razlog: "prepravljeno", resio_id: J.id, resena_datum: "2000-01-01T00:00:00Z" }).eq("id", prijavaU).select("*");
+    const x = r.data?.[0];
+    return !r.error && x?.resena === true && x.beleska === "Upozoren." && x.resio_id === BIB.id && !String(x.resena_datum).startsWith("2000") && x.prijavio_id === pre.prijavio_id && x.tip === pre.tip && x.stavka_id === pre.stavka_id && x.razlog === pre.razlog ? true : `${opis(r)} ${JSON.stringify(x)}`;
+  });
+  await provera("vraćanje među nerešene skida ko je rešio i datum, beleška ostaje; beleška duža od 500 znakova se odbija (23514)", async () => {
+    const a = await BIB.db.from("prijave").update({ resena: false }).eq("id", prijavaU).select("resena, resio_id, resena_datum, beleska");
+    const b = await BIB.db.from("prijave").update({ beleska: "x".repeat(501) }).eq("id", prijavaU).select("id");
+    return !a.error && a.data[0]?.resena === false && a.data[0].resio_id === null && a.data[0].resena_datum === null && a.data[0].beleska === "Upozoren." && b.error?.code === "23514" ? true : `${opis(a)} / ${b.error?.code}`;
+  });
+  await provera("bibliotekar sakriva i vraća prijavljeni utisak; autor sam ne može; drugi čitalac sakriven utisak ne vidi", async () => {
+    const a = await BIB.db.from("utisci").update({ skriven: true }).eq("id", utH.id).select("skriven");
+    const g = await vidi(G.db, "utisci", (q) => q.eq("id", utH.id));
+    const b = await BIB.db.from("utisci").update({ skriven: false }).eq("id", utH.id).select("skriven");
+    const c = await H.db.from("utisci").update({ skriven: true }).eq("id", utH.id).select("skriven");
+    return !a.error && a.data[0]?.skriven === true && tacno(g, 0, "G vidi sakriven") === true && b.data?.[0]?.skriven === false && c.data?.[0]?.skriven === false ? true : `${opis(a)} / ${opis(g)} / ${opis(b)} / ${opis(c)}`;
+  });
+  await provera("bibliotekar sakriva i vraća prijavljenu preporuku; primalac je tada ne vidi u pogledu moje_preporuke", async () => {
+    const a = await BIB.db.from("preporuke").update({ skrivena: true }).eq("id", prepHG.id).select("skrivena");
+    const g = await G.db.from("moje_preporuke").select("id").eq("id", prepHG.id);
+    const b = await BIB.db.from("preporuke").update({ skrivena: false }).eq("id", prepHG.id).select("skrivena");
+    return !a.error && a.data[0]?.skrivena === true && tacno(g, 0, "G vidi sakrivenu") === true && b.data?.[0]?.skrivena === false ? true : `${opis(a)} / ${opis(g)} / ${opis(b)}`;
+  });
+  await provera("anon ne vidi nijednu prijavu", async () => {
+    const r = await anon.from("prijave").select("id").limit(1);
+    return r.error || (r.data ?? []).length === 0 ? true : "anon je dobio redove";
   });
 
 }
