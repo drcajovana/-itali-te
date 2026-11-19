@@ -10,6 +10,14 @@ export async function ucitajZbirKnjiga() {
   return data?.[0] ?? null;
 }
 
+// Spisak izdavača (kljuc, naziv, broj) po ostalim aktivnim filterima (pretraga, izvor, odluka), ne po izabranom izdavaču.
+export async function ucitajIzdavace({ upit = "", izvor = "", odluka = "" } = {}) {
+  const p = parametriPregleda({ upit, izvor, odluka });
+  const { data, error } = await supabase.rpc("pregled_knjiga_izdavaci", { p_upit: p.p_upit, p_izvor: p.p_izvor, p_odluka: p.p_odluka });
+  if (error) throw error;
+  return data ?? [];
+}
+
 // Jedna stranica liste (najviše 50). Svaki red nosi `ukupno`: koliko knjiga odgovara filteru, na svim stranicama.
 export async function ucitajStranuKnjiga(filteri) {
   const { data, error } = await supabase.rpc("pregled_knjiga", parametriPregleda(filteri));

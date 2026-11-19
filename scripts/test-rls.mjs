@@ -1672,6 +1672,51 @@ async function main() {
     return nistaNeVidi(await vidi(Z1.db, "polica", (q) => q.eq("clan_id", Z2.id)), "Z1→polica Z2");
   });
 
+  faza("20. Filter po izdavaču: samo bibliotekar, brojevi se poklapaju sa direktnim brojanjem (migracija 0025)");
+  const U1 = await napraviClana("iz1", "citalac");
+  const varijante = [["Laguna", "A"], ["LAGUNA ", "B"], ["Лагуна", "C"], ["Vulkan", "D"], [null, "E"], ["  ", "F"]];
+  for (const [izd, oz] of varijante) {
+    await napraviKnjigu("IZD-" + oz, { izdavac: izd, izvor: "clan", u_fondu: false, broj_primeraka: 0, broj_slobodnih: 0 });
+  }
+  const upitIzd = N("IZD-");
+  await provera("običan član dobija prazno: i spisak izdavača i lista (bez greške)", async () => {
+    const a = await U1.db.rpc("pregled_knjiga_izdavaci", { p_upit: upitIzd });
+    const b = await U1.db.rpc("pregled_knjiga", { p_upit: upitIzd, p_izdavac: "laguna" });
+    return !a.error && a.data.length === 0 && !b.error && b.data.length === 0 ? true : `${opis(a)} / ${opis(b)}`;
+  });
+  await provera("anon nema pravo ni na jednu od dve funkcije", async () => {
+    const a = await anon.rpc("pregled_knjiga_izdavaci");
+    const b = await anon.rpc("pregled_knjiga", { p_izdavac: "laguna" });
+    return nedostupna(a) && nedostupna(b) ? true : `${potpisGreske(a)} / ${potpisGreske(b)}`;
+  });
+  await provera("bibliotekar: spisak izdavača spaja varijante pisanja i poklapa se sa direktnim brojanjem preko servisnog ključa (Laguna 3, Vulkan 1, bez 2)", async () => {
+    const a = await BIB.db.rpc("pregled_knjiga_izdavaci", { p_upit: upitIzd });
+    const direktno = await S.from("knjige").select("id, izdavac").like("naslov", upitIzd + "%");
+    const laguna = (direktno.data ?? []).filter((x) => ["laguna", "лагуна"].includes(String(x.izdavac ?? "").trim().toLowerCase())).length;
+    const vulkan = (direktno.data ?? []).filter((x) => String(x.izdavac ?? "").trim().toLowerCase() === "vulkan").length;
+    const bez = (direktno.data ?? []).filter((x) => !String(x.izdavac ?? "").trim()).length;
+    const m = Object.fromEntries((a.data ?? []).map((x) => [x.kljuc, x.broj]));
+    return !a.error && m.laguna === laguna && laguna === 3 && m.vulkan === vulkan && vulkan === 1 && m.__bez__ === bez && bez === 2 && a.data.at(-1).kljuc === "__bez__" ? true : `${opis(a)} ${JSON.stringify(a.data)} direktno=${laguna}/${vulkan}/${bez}`;
+  });
+  await provera("bibliotekar: filter po izdavaču vraća sve knjige iz grupe i „__bez__” sve bez izdavača, a broj se poklapa sa spiskom", async () => {
+    const l = await BIB.db.rpc("pregled_knjiga", { p_upit: upitIzd, p_izdavac: "laguna", p_najvise: 50 });
+    const b = await BIB.db.rpc("pregled_knjiga", { p_upit: upitIzd, p_izdavac: "__bez__", p_najvise: 50 });
+    const x = await BIB.db.rpc("pregled_knjiga", { p_upit: upitIzd, p_izdavac: "nepostojeci", p_najvise: 50 });
+    return !l.error && l.data.length === 3 && l.data.every((r) => Number(r.ukupno) === 3) && !b.error && b.data.length === 2 && !x.error && x.data.length === 0 ? true : `${opis(l)} / ${opis(b)} / ${opis(x)}`;
+  });
+  await provera("ni u jednom polju odgovora nema člana (id, ime, broj karte, šifra poziva)", async () => {
+    const a = await BIB.db.rpc("pregled_knjiga_izdavaci", { p_upit: upitIzd });
+    const l = await BIB.db.rpc("pregled_knjiga", { p_upit: upitIzd, p_izdavac: "laguna" });
+    const tekst = JSON.stringify([a.data, l.data]);
+    const kolone = Object.keys(a.data?.[0] ?? {}).sort().join();
+    return ![U1].some((c) => tekst.includes(c.id) || tekst.includes(c.sifra)) && !tekst.includes("RLS Test ") && kolone === "broj,kljuc,naziv" ? true : `kolone: ${kolone}`;
+  });
+  await provera("nepoznat izvor ili odluka u spisku izdavača je greška 22023", async () => {
+    const a = await BIB.db.rpc("pregled_knjiga_izdavaci", { p_izvor: "drugo" });
+    const b = await BIB.db.rpc("pregled_knjiga_izdavaci", { p_odluka: "mozda" });
+    return a.error?.code === "22023" && b.error?.code === "22023" ? true : `${a.error?.code} / ${b.error?.code}`;
+  });
+
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────

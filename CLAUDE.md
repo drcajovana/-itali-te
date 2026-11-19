@@ -262,6 +262,9 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   dolaze od bibliotekara/servisa; ekran zato piše „Додао члан" samo za `clan`.
 - Odluka je efektivna (isto kao izveštaj za nabavku): `u_fondu` bez odluke je „imamo". Spojeni duplikati se ne računaju u ukupno.
 - Nepoznata vrednost filtera ili redosleda je greška 22023 u bazi; klijent je ne šalje (`parametriPregleda`).
+- **Izdavač** (0025): ključ je `privatno.norm_tekst(btrim(izdavac))`, a prikaz je najčešći zapis u grupi (nad svim matičnim knjigama). Spisak izdavača prati pretragu,
+  izvor i odluku, ne i izabranog izdavača. Pretraga, izvor i odluka su na JEDNOM mestu (`privatno.pregled_knjige_filter`); spisak i lista ga dele, pa se ne razilaze.
+  `p_izdavac` je ključ, a `__bez__` znači bez izdavača. Filteri ekrana žive u adresi (`?q=&izvor=&odluka=&izdavac=&redosled=`).
 
 ## Utisak sa pulta (/bibliotekar/utisak)
 

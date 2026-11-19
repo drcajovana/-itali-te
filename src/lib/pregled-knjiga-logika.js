@@ -9,10 +9,13 @@ export const NAJVISE_PO_STRANI = 50;
 export const IZVORI = ["fond", "link", "google_books", "clan"];
 export const ODLUKE = ["imamo", "nabavljamo", "ne_nabavljamo", "bez"];
 export const REDOSLEDI = ["najnovije", "citaoca", "naslov"];
+// Posebna vrednost filtera po izdavaču: knjige bez izdavača (isto kao u public.pregled_knjiga, migracija 0025).
+export const BEZ_IZDAVACA = "__bez__";
 
 // Filteri iz ekrana → parametri RPC-a (prazno = bez filtera).
-export function parametriPregleda({ upit = "", izvor = "", odluka = "", redosled = "najnovije", pomeraj = 0 } = {}) {
+export function parametriPregleda({ upit = "", izvor = "", odluka = "", izdavac = "", redosled = "najnovije", pomeraj = 0 } = {}) {
   return {
+    p_izdavac: String(izdavac ?? "").trim() || null,
     p_upit: String(upit).trim() || null,
     p_izvor: IZVORI.includes(izvor) ? izvor : null,
     p_odluka: ODLUKE.includes(odluka) ? odluka : null,
@@ -23,7 +26,48 @@ export function parametriPregleda({ upit = "", izvor = "", odluka = "", redosled
 }
 
 // Ključ filtera: kad se promeni, lista počinje iznova (stranice se ne mešaju).
-export const kljucFiltera = (f) => JSON.stringify([String(f.upit ?? "").trim(), f.izvor ?? "", f.odluka ?? "", f.redosled ?? "najnovije"]);
+export const kljucFiltera = (f) => JSON.stringify([String(f.upit ?? "").trim(), f.izvor ?? "", f.odluka ?? "", f.izdavac ?? "", f.redosled ?? "najnovije"]);
+
+// Filteri u adresi (URL parametri), da se izbor sačuva pri osvežavanju i povratku na ekran. Samo vrednosti koje nisu
+// podrazumevane se upisuju; nepoznata vrednost izvora, odluke ili redosleda u adresi se ignoriše (ne šalje se bazi).
+export const PARAMETRI_ADRESE = { upit: "q", izvor: "izvor", odluka: "odluka", izdavac: "izdavac", redosled: "redosled" };
+
+export function filteriIzAdrese(params) {
+  const uzmi = (k) => params?.get?.(PARAMETRI_ADRESE[k]) ?? "";
+  const izvor = uzmi("izvor");
+  const odluka = uzmi("odluka");
+  const redosled = uzmi("redosled");
+  return {
+    upit: uzmi("upit").slice(0, 100),
+    izvor: IZVORI.includes(izvor) ? izvor : "",
+    odluka: ODLUKE.includes(odluka) ? odluka : "",
+    izdavac: uzmi("izdavac").slice(0, 200),
+    redosled: REDOSLEDI.includes(redosled) ? redosled : "najnovije",
+  };
+}
+
+// Filteri → URLSearchParams (samo ono što nije podrazumevano).
+export function filteriUAdresu(f) {
+  const p = new URLSearchParams();
+  const upit = String(f.upit ?? "").trim();
+  if (upit) p.set(PARAMETRI_ADRESE.upit, upit);
+  if (IZVORI.includes(f.izvor)) p.set(PARAMETRI_ADRESE.izvor, f.izvor);
+  if (ODLUKE.includes(f.odluka)) p.set(PARAMETRI_ADRESE.odluka, f.odluka);
+  if (f.izdavac) p.set(PARAMETRI_ADRESE.izdavac, f.izdavac);
+  if (REDOSLEDI.includes(f.redosled) && f.redosled !== "najnovije") p.set(PARAMETRI_ADRESE.redosled, f.redosled);
+  return p;
+}
+
+// Spisak izdavača iz baze (kljuc, naziv, broj) → opcije za padajući izbor: „Лагуна (42)", „Без издавача (3)".
+// Redosled je već određen u bazi (broj opadajuće, pa naziv, „bez" poslednje). Ako je izabrani izdavač ispao iz spiska jer ga
+// ostali filteri ne pogađaju, ostaje kao opcija sa brojem 0, da izbor ne nestane tiho.
+export function opcijeIzdavaca(redovi, izabran, tekstovi) {
+  // zamena funkcijom: naziv izdavača sa znakom $ ostaje kakav jeste
+  const natpis = (naziv, n) => tekstovi.stavka.replace(/{(naziv|n)}/g, (_, k) => (k === "naziv" ? naziv : String(n)));
+  const opcije = (redovi ?? []).map((x) => ({ kljuc: x.kljuc, natpis: natpis(x.kljuc === BEZ_IZDAVACA ? tekstovi.bez : (x.naziv ?? x.kljuc), x.broj) }));
+  if (izabran && !opcije.some((o) => o.kljuc === izabran)) opcije.push({ kljuc: izabran, natpis: natpis(izabran === BEZ_IZDAVACA ? tekstovi.bez : izabran, 0) });
+  return opcije;
+}
 
 // Da li ima još redova posle učitanih (ukupno je broj svih koji odgovaraju filteru, iz svakog reda).
 export const imaJos = (ucitano, ukupno) => Number(ukupno) > ucitano;

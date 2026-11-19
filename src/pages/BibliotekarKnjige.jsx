@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Korica from "../components/Korica.jsx";
 import { datumIzVremena } from "../lib/osoblje-logika.js";
 import { formatDatum } from "../lib/polica-logika.js";
-import { IZVORI, ODLUKE, REDOSLEDI, grupeZbira, imaJos, kljucFiltera } from "../lib/pregled-knjiga-logika.js";
-import { ucitajStranuKnjiga, ucitajZbirKnjiga } from "../lib/pregled-knjiga.js";
+import { IZVORI, ODLUKE, REDOSLEDI, filteriIzAdrese, filteriUAdresu, grupeZbira, imaJos, kljucFiltera, opcijeIzdavaca } from "../lib/pregled-knjiga-logika.js";
+import { ucitajIzdavace, ucitajStranuKnjiga, ucitajZbirKnjiga } from "../lib/pregled-knjiga.js";
 import { popuni } from "../lib/prijave-logika.js";
 import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
@@ -49,21 +50,24 @@ function RedKnjige({ k }) {
 // administratore (RutaZaBibliotekare je udobnost; funkcije iz 0024 vraćaju prazno svima ostalima). Ekran ne dobija nikakav trag
 // do člana: nema unosioca, nema imena, nema onoga ko je knjigu stavio na policu.
 export default function BibliotekarKnjige() {
-  const [upit, setUpit] = useState("");
-  const [trazi, setTrazi] = useState("");
-  const [izvor, setIzvor] = useState("");
-  const [odluka, setOdluka] = useState("");
-  const [redosled, setRedosled] = useState("najnovije");
+  // Filteri žive u adresi (?q=&izvor=&odluka=&izdavac=&redosled=), pa se izbor čuva pri osvežavanju i povratku na ekran.
+  // Svaka promena filtera menja adresu bez novog zapisa u istoriji, a lista počinje iznova od prve strane (ključ filtera).
+  const [params, setParams] = useSearchParams();
+  const { upit: trazi, izvor, odluka, izdavac, redosled } = filteriIzAdrese(params);
+  const postavi = (izmena) => setParams(filteriUAdresu({ upit: trazi, izvor, odluka, izdavac, redosled, ...izmena }), { replace: true });
+  // Polje za pretragu ima svoj tekst; u adresu ide tek kad se kucanje zaustavi.
+  const [upit, setUpit] = useState(trazi);
+  const [izdavaci, setIzdavaci] = useState({ kljuc: null, redovi: [] });
   const [zbir, setZbir] = useState({ ucitano: false, podaci: null, greska: false });
   // Rezultat pamti za koji je filter učitan; dok se ne poklopi sa izabranim, ekran javlja da učitava.
   const [lista, setLista] = useState({ kljuc: null, redovi: [], ukupno: 0, greska: false });
   const [jos, setJos] = useState(false);
 
-  // Pretraga se šalje tek kad se kucanje zaustavi.
   useEffect(() => {
-    const t = setTimeout(() => setTrazi(upit), 300);
+    if (upit.trim() === trazi) return;
+    const t = setTimeout(() => setParams(filteriUAdresu({ upit, izvor, odluka, izdavac, redosled }), { replace: true }), 300);
     return () => clearTimeout(t);
-  }, [upit]);
+  }, [upit, trazi, izvor, odluka, izdavac, redosled, setParams]);
 
   useEffect(() => {
     let otkazano = false;
@@ -78,21 +82,37 @@ export default function BibliotekarKnjige() {
     };
   }, []);
 
-  const filteri = { upit: trazi, izvor, odluka, redosled };
+  const filteri = { upit: trazi, izvor, odluka, izdavac, redosled };
   const kljuc = kljucFiltera(filteri);
 
   useEffect(() => {
     let otkazano = false;
-    ucitajStranuKnjiga({ upit: trazi, izvor, odluka, redosled })
-      .then(({ redovi, ukupno }) => !otkazano && setLista({ kljuc: kljucFiltera({ upit: trazi, izvor, odluka, redosled }), redovi, ukupno, greska: false }))
+    const k = kljucFiltera({ upit: trazi, izvor, odluka, izdavac, redosled });
+    ucitajStranuKnjiga({ upit: trazi, izvor, odluka, izdavac, redosled })
+      .then(({ redovi, ukupno }) => !otkazano && setLista({ kljuc: k, redovi, ukupno, greska: false }))
       .catch((e) => {
         console.error("lista knjiga:", e?.code ?? e?.message);
-        if (!otkazano) setLista({ kljuc: kljucFiltera({ upit: trazi, izvor, odluka, redosled }), redovi: [], ukupno: 0, greska: true });
+        if (!otkazano) setLista({ kljuc: k, redovi: [], ukupno: 0, greska: true });
       });
     return () => {
       otkazano = true;
     };
-  }, [trazi, izvor, odluka, redosled]);
+  }, [trazi, izvor, odluka, izdavac, redosled]);
+
+  // Spisak izdavača prati pretragu, izvor i odluku (ne i izabranog izdavača), pa brojevi odgovaraju onome što bi se dobilo.
+  useEffect(() => {
+    let otkazano = false;
+    const k = JSON.stringify([trazi, izvor, odluka]);
+    ucitajIzdavace({ upit: trazi, izvor, odluka })
+      .then((redovi) => !otkazano && setIzdavaci({ kljuc: k, redovi }))
+      .catch((e) => {
+        console.error("izdavači:", e?.code ?? e?.message);
+        if (!otkazano) setIzdavaci({ kljuc: k, redovi: [] });
+      });
+    return () => {
+      otkazano = true;
+    };
+  }, [trazi, izvor, odluka]);
 
   async function ucitajJos() {
     if (jos) return;
@@ -109,6 +129,7 @@ export default function BibliotekarKnjige() {
 
   const ucitava = lista.kljuc !== kljuc;
   const g = grupeZbira(zbir.podaci);
+  const opcijeIzd = opcijeIzdavaca(izdavaci.redovi, izdavac, T.izdavac);
 
   return (
     <>
@@ -157,7 +178,7 @@ export default function BibliotekarKnjige() {
         <p className="text-sm font-medium text-mastilo-2">{T.filterIzvor}</p>
         <div role="group" aria-label={T.filterIzvor} className="mt-1.5 flex flex-wrap gap-2">
           {["", ...IZVORI].map((v) => (
-            <button key={v || "sve"} type="button" aria-pressed={izvor === v} onClick={() => setIzvor(v)} className={stil.cip}>
+            <button key={v || "sve"} type="button" aria-pressed={izvor === v} onClick={() => postavi({ izvor: v })} className={stil.cip}>
               {v ? T.izvoriKratko[v] : T.sve}
             </button>
           ))}
@@ -168,7 +189,7 @@ export default function BibliotekarKnjige() {
         <p className="text-sm font-medium text-mastilo-2">{T.filterOdluka}</p>
         <div role="group" aria-label={T.filterOdluka} className="mt-1.5 flex flex-wrap gap-2">
           {["", ...ODLUKE].map((v) => (
-            <button key={v || "sve"} type="button" aria-pressed={odluka === v} onClick={() => setOdluka(v)} className={stil.cip}>
+            <button key={v || "sve"} type="button" aria-pressed={odluka === v} onClick={() => postavi({ odluka: v })} className={stil.cip}>
               {v ? T.odluke[v] : T.sve}
             </button>
           ))}
@@ -176,10 +197,24 @@ export default function BibliotekarKnjige() {
       </div>
 
       <div className="mt-4">
+        <label htmlFor="pregled-izdavac" className="text-sm font-medium text-mastilo-2">
+          {T.filterIzdavac}
+        </label>
+        <select id="pregled-izdavac" value={izdavac} onChange={(e) => postavi({ izdavac: e.target.value })} className={`${stil.polje} mt-1.5`}>
+          <option value="">{T.sviIzdavaci}</option>
+          {opcijeIzd.map((o) => (
+            <option key={o.kljuc} value={o.kljuc}>
+              {o.natpis}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mt-4">
         <p className="text-sm font-medium text-mastilo-2">{T.redosled}</p>
         <div role="group" aria-label={T.redosled} className="mt-1.5 flex flex-wrap gap-2">
           {REDOSLEDI.map((v) => (
-            <button key={v} type="button" aria-pressed={redosled === v} onClick={() => setRedosled(v)} className={stil.cip}>
+            <button key={v} type="button" aria-pressed={redosled === v} onClick={() => postavi({ redosled: v })} className={stil.cip}>
               {T.redosledi[v]}
             </button>
           ))}
