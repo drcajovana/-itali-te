@@ -52,6 +52,9 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  /* Mesto za traku za skrolovanje se rezerviše uvek: kratka stranica (bez trake) i duga (sa trakom) imaju istu širinu
+     sadržaja, pa se pri prelasku između kartica ne pomera levo-desno. Na telefonu (traka preko sadržaja) nema efekta. */
+  scrollbar-gutter: stable;
 }
 
 body {

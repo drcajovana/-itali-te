@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Avatar from "../components/Avatar.jsx";
 import Korica from "../components/Korica.jsx";
 import PrijaviStavku from "../components/PrijaviStavku.jsx";
+import Skeleton from "../components/Skeleton.jsx";
 import SpisakBlokiranih from "../components/SpisakBlokiranih.jsx";
 import { GreskaApija } from "../lib/api.js";
 import { useAuth } from "../lib/auth-context.js";
@@ -176,7 +177,7 @@ export default function Citaoci() {
           {T.greska}
         </p>
       )}
-      {stanje.ucitava && <p className="mt-4 text-base text-mastilo-2">{T.ucitava}</p>}
+      {stanje.ucitava && <Skeleton blokova={2} visina="h-24" />}
 
       {primljeni.length > 0 && (
         <section aria-label={T.pozivi.primljeni}>

@@ -107,13 +107,13 @@ export default function Okvir() {
         </Link>
       </header>
 
-      <main className="px-5 pb-28 pt-2">
+      <main className="px-5 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-2">
         <Outlet />
       </main>
 
       <nav
         aria-label={tekst.meni.oznaka}
-        className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-[520px] border-t border-linija bg-povrsina/90 px-2 pb-3 pt-1.5 backdrop-blur-md"
+        className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-[520px] border-t border-linija bg-povrsina/90 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-md"
       >
         {(jeBibliotekar(clan?.uloga) ? [...STAVKE, STAVKA_OSOBLJA] : STAVKE).map((s) => (
           <NavLink

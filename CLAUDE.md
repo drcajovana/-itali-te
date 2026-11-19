@@ -359,6 +359,14 @@ serverless funkcije.
 
 Service Worker **nikad ne presreće POST zahteve**.
 
+## Miran prelaz između ekrana
+
+- `html { scrollbar-gutter: stable }` (index.css): bez toga kratka stranica (bez trake za skrolovanje) i duga (sa trakom) imaju različitu širinu sadržaja, pa se
+  pri prelasku između kartica sve pomera levo-desno. Ne uklanjati.
+- `PovratakNaVrh` vraća skrol na vrh samo pri promeni putanje (ne za POP/„nazad", ne za filtere u adresi). Okvir je izgled sa Outlet-om i ostaje montiran.
+- Ekrani sa podacima drže `Skeleton` (blokovi stalne visine) umesto reda „Учитавам…". Naslov svake kartice ima `pt-2`. Značke u navigaciji su apsolutno
+  pozicionirane. Dozvoljena je samo providnost (animate-pulse); nikakvo translate/slide, a prefers-reduced-motion gasi sve.
+
 ## PWA ljuska
 
 - `vite.config.js`: `registerType: "prompt"`, `generateSW`, precache samo statičkih fajlova (html, js, css, slike, fontovi, manifest),

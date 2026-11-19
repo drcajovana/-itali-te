@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import AuthProvider from "./components/AuthProvider.jsx";
+import PovratakNaVrh from "./components/PovratakNaVrh.jsx";
 import TrakeLjuske from "./components/TrakeLjuske.jsx";
 import RutaZaBibliotekare from "./components/RutaZaBibliotekare.jsx";
 import ZasticenaRuta from "./components/ZasticenaRuta.jsx";
@@ -22,6 +23,7 @@ import Profil from "./pages/Profil.jsx";
 export default function App() {
   return (
     <AuthProvider>
+      <PovratakNaVrh />
       <TrakeLjuske />
       <Routes>
         <Route path="/prijava" element={<Prijava />} />

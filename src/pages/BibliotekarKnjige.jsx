@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Korica from "../components/Korica.jsx";
+import Skeleton from "../components/Skeleton.jsx";
 import { datumIzVremena } from "../lib/osoblje-logika.js";
 import { formatDatum } from "../lib/polica-logika.js";
 import { IZVORI, ODLUKE, REDOSLEDI, filteriIzAdrese, filteriUAdresu, grupeZbira, imaJos, kljucFiltera, opcijeIzdavaca } from "../lib/pregled-knjiga-logika.js";
@@ -137,7 +138,7 @@ export default function BibliotekarKnjige() {
       <p className={stil.uvod}>{T.uvod}</p>
 
       <section className={`${stil.karta} mt-4`} aria-label={T.ukupno}>
-        {!zbir.ucitano && <p className="text-sm text-mastilo-2">{T.ucitava}</p>}
+        {!zbir.ucitano && <Skeleton blokova={1} visina="h-[318px]" razmak="" />}
         {zbir.greska && (
           <p role="alert" className="text-sm font-medium text-bordo">
             {T.zbirGreska}
@@ -222,7 +223,7 @@ export default function BibliotekarKnjige() {
       </div>
 
       <section className="mt-5" aria-label={T.naslov}>
-        {ucitava && <p className="text-base text-mastilo-2">{T.ucitava}</p>}
+        {ucitava && <Skeleton blokova={3} visina="h-36" razmak="" />}
         {!ucitava && lista.greska && (
           <p role="alert" className="text-base font-medium text-bordo">
             {T.greska}

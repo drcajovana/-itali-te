@@ -50,7 +50,7 @@ export default function Profil() {
 
   return (
     <>
-      <h1 className={stil.naslov}>{tekst.profil.naslov}</h1>
+      <h1 className={`${stil.naslov} pt-2`}>{tekst.profil.naslov}</h1>
 
       <dl className={`${stil.karta} mt-4 py-1`}>
         <Red naziv={tekst.profil.ime}>{clan.ime}</Red>

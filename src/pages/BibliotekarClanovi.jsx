@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Skeleton from "../components/Skeleton.jsx";
 import PinPrikaz from "../components/PinPrikaz.jsx";
 import { useAuth } from "../lib/auth-context.js";
 import { ocistiIme, proveriBrojKarte } from "../lib/clan-unos.js";
@@ -180,7 +181,7 @@ export default function BibliotekarClanovi() {
       )}
 
       <section className="mt-4" aria-label={T.naslov}>
-        {stanje.ucitava && <p className="text-base text-mastilo-2">{T.ucitava}</p>}
+        {stanje.ucitava && <Skeleton blokova={4} visina="h-24" razmak="" />}
         {stanje.greska && (
           <p role="alert" className="text-base font-medium text-bordo">
             {T.greska}

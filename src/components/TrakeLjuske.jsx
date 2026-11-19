@@ -10,7 +10,7 @@ export default function TrakeLjuske() {
   if (!bezVeze && !novaVerzija) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-[88px] z-50 mx-auto flex max-w-[520px] flex-col gap-2 px-4">
+    <div className="fixed inset-x-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-50 mx-auto flex max-w-[520px] flex-col gap-2 px-4">
       {bezVeze && (
         <p role="status" className="rounded-srednji bg-mastilo px-4 py-3 text-sm text-white shadow-senka">
           <span className="block font-semibold">{tekst.mreza.nemaVeze}</span>

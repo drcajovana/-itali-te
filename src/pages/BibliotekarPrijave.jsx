@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import Skeleton from "../components/Skeleton.jsx";
 import { useAuth } from "../lib/auth-context.js";
 import { postaviAktivnost } from "../lib/clanovi.js";
 import { mozeDaUpravlja, datumIzVremena } from "../lib/osoblje-logika.js";
@@ -279,7 +280,7 @@ export default function BibliotekarPrijave() {
       )}
 
       <section className="mt-4" aria-label={T.filteri[filter]}>
-        {ucitava && <p className="text-base text-mastilo-2">{T.ucitava}</p>}
+        {ucitava && <Skeleton blokova={2} visina="h-52" razmak="" />}
         {!ucitava && stanje.greska && (
           <p role="alert" className="text-base font-medium text-bordo">
             {T.greska}

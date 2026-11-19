@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import Skeleton from "../components/Skeleton.jsx";
 import Korica from "../components/Korica.jsx";
 import PlocicaKnjige from "../components/PlocicaKnjige.jsx";
 import TrakaNapretka from "../components/TrakaNapretka.jsx";
@@ -49,7 +50,7 @@ export default function Pocetna() {
       </h1>
       {!ucitava && !greska && redovi.length > 0 && <p className={stil.uvod}>{T.uvod[oblikBroja(uToku)].replace("{n}", String(uToku))}</p>}
 
-      {ucitava && <p className="mt-6 text-base text-mastilo-2">{T.ucitava}</p>}
+      {ucitava && <Skeleton blokova={2} visina="h-36" razmak="mt-6" />}
 
       {greska && (
         <div role="alert" className={`${stil.karta} mt-6 space-y-3`}>

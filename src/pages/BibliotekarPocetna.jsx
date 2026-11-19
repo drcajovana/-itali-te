@@ -39,7 +39,7 @@ export default function BibliotekarPocetna() {
         {STAVKE.map((s) => (
           <li key={s.kljuc}>
             <Link to={s.putanja} className={`${stil.karta} block min-h-14 transition active:scale-[.985]`}>
-              <span className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="flex min-h-[26px] flex-wrap items-baseline justify-between gap-2">
                 <span className="font-naslov text-[17px] font-bold tracking-tight text-bordo">{T[s.kljuc].naslov}</span>
                 {s.kljuc === "prijave" && otvorene > 0 && <span className={stil.izvorFond}>{popuni(T.otvorene, { n: otvorene })}</span>}
               </span>

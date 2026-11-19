@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import Skeleton from "../components/Skeleton.jsx";
 import Korica from "../components/Korica.jsx";
 import { brojeviPoFilteru, FILTERI, filtrirajNabavku, imeFajlaNabavke, izvestajUCsv, ODLUKE, poredjajNabavku, saNovomOdlukom } from "../lib/nabavka-logika.js";
 import { postaviOdluku, ucitajNabavku } from "../lib/nabavka.js";
@@ -101,7 +102,7 @@ export default function BibliotekarNabavka() {
       )}
 
       <section className="mt-4" aria-label={T.naslov}>
-        {stanje.ucitava && <p className="text-base text-mastilo-2">{T.ucitava}</p>}
+        {stanje.ucitava && <Skeleton blokova={3} visina="h-36" razmak="" />}
         {stanje.greska && (
           <p role="alert" className="text-base font-medium text-bordo">
             {T.greska}
