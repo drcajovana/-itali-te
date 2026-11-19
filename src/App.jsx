@@ -4,6 +4,7 @@ import TrakeLjuske from "./components/TrakeLjuske.jsx";
 import RutaZaBibliotekare from "./components/RutaZaBibliotekare.jsx";
 import ZasticenaRuta from "./components/ZasticenaRuta.jsx";
 import BibliotekarClanovi from "./pages/BibliotekarClanovi.jsx";
+import BibliotekarKnjige from "./pages/BibliotekarKnjige.jsx";
 import BibliotekarNabavka from "./pages/BibliotekarNabavka.jsx";
 import BibliotekarPocetna from "./pages/BibliotekarPocetna.jsx";
 import BibliotekarPrijave from "./pages/BibliotekarPrijave.jsx";
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="/bibliotekar/unos" element={<BibliotekarUnos />} />
             <Route path="/bibliotekar/clanovi" element={<BibliotekarClanovi />} />
             <Route path="/bibliotekar/nabavka" element={<BibliotekarNabavka />} />
+            <Route path="/bibliotekar/knjige" element={<BibliotekarKnjige />} />
             <Route path="/bibliotekar/prijave" element={<BibliotekarPrijave />} />
             <Route path="/bibliotekar/utisak" element={<BibliotekarUtisak />} />
           </Route>

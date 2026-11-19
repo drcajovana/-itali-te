@@ -1618,6 +1618,60 @@ async function main() {
     return !d.error && d.data.length === 1 && tacno(l, 0, "spisak") === true && tacno(v, 0, "veze") === true ? true : `${opis(d)} / ${opis(l)} / ${opis(v)}`;
   });
 
+  faza("19. Pregled svih knjiga: samo bibliotekar, samo zbirni brojevi (migracija 0024)");
+  const Z1 = await napraviClana("kz1", "citalac");
+  const Z2 = await napraviClana("kz2", "citalac");
+  const Z3 = await napraviClana("kz3", "citalac");
+  const KZ = await napraviKnjigu("PREGLED-K", { izvor: "clan", u_fondu: false, broj_primeraka: 0, broj_slobodnih: 0 });
+  await ubaci("polica", { clan_id: Z1.id, knjiga_id: KZ.id, status: "zelim" });
+  await ubaci("polica", { clan_id: Z2.id, knjiga_id: KZ.id, status: "procitano" });
+  await ubaci("polica", { clan_id: Z3.id, knjiga_id: KZ.id, status: "citam" });
+  await S.from("clanovi").update({ aktivan: false }).eq("id", Z3.id);
+  const brojI = async (f) => {
+    const r = await f(S.from("knjige").select("id", { count: "exact", head: true }).is("spojena_sa_id", null));
+    if (r.error) throw new Error("brojanje: " + r.error.message);
+    return r.count;
+  };
+  await provera("običan član ne dobija ništa: zbir i lista su prazni (ni redova, ni brojeva)", async () => {
+    const z = await Z1.db.rpc("pregled_knjiga_zbir");
+    const l = await Z1.db.rpc("pregled_knjiga");
+    return !z.error && z.data.length === 0 && !l.error && l.data.length === 0 ? true : `${opis(z)} / ${opis(l)}`;
+  });
+  await provera("anon ne sme da pozove nijednu funkciju", async () => {
+    const z = await anon.rpc("pregled_knjiga_zbir");
+    const l = await anon.rpc("pregled_knjiga");
+    return nedostupna(z) && nedostupna(l) ? true : `${potpisGreske(z)} / ${potpisGreske(l)}`;
+  });
+  await provera("bibliotekar: zbir se poklapa sa direktnim brojanjem (ukupno, izvori, odluke se sabiraju)", async () => {
+    const z = await BIB.db.rpc("pregled_knjiga_zbir");
+    const x = z.data?.[0];
+    const ukupno = await brojI((q) => q);
+    const fond = await brojI((q) => q.eq("izvor", "fond"));
+    const clan = await brojI((q) => q.eq("izvor", "clan"));
+    const nabavljamo = await brojI((q) => q.eq("odluka_nabavke", "nabavljamo"));
+    return !z.error && x && x.ukupno === ukupno && x.fond === fond && x.clan === clan && x.nabavljamo === nabavljamo && x.fond + x.link + x.google_books + x.clan === x.ukupno && x.imamo + x.nabavljamo + x.ne_nabavljamo + x.bez_odluke === x.ukupno ? true : `${opis(z)} ${JSON.stringify([x, ukupno, fond, clan, nabavljamo])}`;
+  });
+  await provera("bibliotekar: lista nosi broj čitalaca knjige koji se poklapa sa direktnim brojanjem (dva aktivna člana, neaktivni se ne računa)", async () => {
+    const l = await BIB.db.rpc("pregled_knjiga", { p_upit: N("PREGLED-K"), p_najvise: 5 });
+    const direktno = await S.from("polica").select("clan_id, clanovi!inner(aktivan)", { count: "exact" }).eq("knjiga_id", KZ.id).eq("clanovi.aktivan", true);
+    return !l.error && l.data.length === 1 && l.data[0].id === KZ.id && l.data[0].citaoca === 2 && direktno.count === 2 ? true : `${opis(l)} ${JSON.stringify(l.data?.[0])} direktno=${direktno.count}`;
+  });
+  await provera("ni u jednom polju odgovora nema člana (id, ime, broj karte, šifra poziva) ni vremena na polici; kolone su tačno one iz migracije", async () => {
+    const l = await BIB.db.rpc("pregled_knjiga", { p_upit: N("PREGLED-K"), p_najvise: 5 });
+    const tekst = JSON.stringify(l.data ?? []);
+    const kolone = Object.keys(l.data?.[0] ?? {}).sort().join(",");
+    const bez = ![Z1, Z2, Z3].some((c) => tekst.includes(c.id) || tekst.includes(c.sifra)) && !tekst.includes("RLS Test ") && !tekst.includes("RLSTEST-");
+    return bez && kolone === "autor,citaoca,godina,id,isbn,izdavac,izvor,korice_izvor,korice_url,kreirana,naslov,odluka,ukupno" ? true : `kolone: ${kolone}`;
+  });
+  await provera("nepoznat filter je greška 22023; straničenje i filter izvora rade", async () => {
+    const a = await BIB.db.rpc("pregled_knjiga", { p_izvor: "drugo" });
+    const b = await BIB.db.rpc("pregled_knjiga", { p_izvor: "clan", p_najvise: 2 });
+    return a.error?.code === "22023" && !b.error && b.data.length <= 2 && b.data.every((x) => x.izvor === "clan") ? true : `${a.error?.code} / ${opis(b)}`;
+  });
+  await provera("polica se i dalje štiti: Z1 ne vidi policu Z2 (pregled nije put do nje)", async () => {
+    return nistaNeVidi(await vidi(Z1.db, "polica", (q) => q.eq("clan_id", Z2.id)), "Z1→polica Z2");
+  });
+
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────

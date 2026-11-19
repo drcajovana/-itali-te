@@ -27,6 +27,7 @@ Aplikacija još nema ekrane.
 | 12. Pravila korišćenja | ✅ `/pravila` (javno, i pre prijave; link na prijavi i na profilu). **Tekst je nacrt koji mora da odobri biblioteka**; šta stoji i odakle se zna: [`docs/pravila.md`](docs/pravila.md). Bez migracije |
 | 13. Utisak sa pulta | ✅ `/bibliotekar/utisak` (bibliotekar upisuje utisak u ime člana: član, knjiga, ocena/tekst, vidljivost koju bira uz člana, potvrda); član vidi napomenu uz svoj utisak i može da ga izmeni ili obriše. **Treba migracija 0022** |
 | 14. Odblokiranje | ✅ na ekranu „Читаоци” odeljak „Блокирани читаоци” sa dugmetom „Одблокирај” (uz potvrdu). Veza se ne vraća sama; blokirani ne saznaje ni za blokadu ni za odblokiranje. **Treba migracija 0023** (pogled `moje_blokade`) |
+| 15. Све књиге | ✅ `/bibliotekar/knjige`: ukupan broj knjiga, raščlanjen po izvoru unosa i po odluci nabavke, i lista svih knjiga sa brojem čitalaca na polici (pretraga, filteri, sortiranje, „Учитај још”). Samo zbirni brojevi, nikad član. **Treba migracija 0024** |
 | 11. Objava | ⬜ spisak za izvođenje je u [`docs/objava.md`](docs/objava.md): baza, Vercel, sadržaj, bibliotekari, prvi krug. Nije u kodu: pravila korišćenja i obaveštenje o obradi podataka, saglasnost za mlađe od 15 godina. U kodu: `noindex` i sigurnosna zaglavlja u `vercel.json` |
 
 ## Pokretanje
@@ -63,6 +64,7 @@ Migracije se puštaju redom, brojevima:
 | `0018_rezervacije_statusi.sql` | **(puštena, ali ništa je ne koristi: aplikacija nema rezervacije)** stanja rezervacije `nova`, `spremna`, `preuzeta`, `otkazana` (stara `obradjena` postaje `preuzeta`); jedinstveni indeks „jedna otvorena rezervacija po članu i knjizi” važi za `nova` i `spremna`. Politike se ne menjaju; idempotentna |
 | `0019_citaoci_nadimci_preporuke.sql` | pogledi `moje_veze` i `moje_preporuke` (samo moje, samo nadimak druge strane, bez blokiranih), `privatno.ima_blokade()`, prijava člana (`prijave.tip = 'clan'`), napomena preporuke do 280 znakova i jedna neobrađena preporuka iste knjige po paru. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0020_nabavka_i_zastita_administratora.sql` | `knjige.odluka_nabavke` i `odluka_datum` (datum postavlja okidač; „imamo” = `u_fondu`), pogled `izvestaj_za_nabavku` nad `privatno.izvestaj_nabavke()` (samo agregat, samo bibliotekar), i okidači koji bibliotekaru zabranjuju da menja administratora ili dodeljuje ulogu. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
+| `0024_pregled_knjiga.sql` | funkcije `public.pregled_knjiga_zbir()` i `public.pregled_knjiga(...)` (SECURITY DEFINER, samo bibliotekar, prazno svima ostalima): zbirni brojevi i lista knjiga sa brojem čitalaca na polici, bez ikakvog traga do člana (nema `uneo_id`, imena, id-eva). Nema novih politika; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0023_moje_blokade.sql` | pogled `moje_blokade` (security_invoker): samo blokade koje sam ja napravio, sa nadimkom blokiranog. Nema novih politika (brisanje svoje blokade je već dozvoljeno, 0002); idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0022_potpis_utiska_sa_pulta.sql` | okidači `utisci_potpis_bi` i `utisci_potpis_bu`: potpis bibliotekara (`uneo_bibliotekar_id`) se ne može lažirati, utisak se ne upisuje neaktivnom članu (22023), autor koji promeni ocenu ili tekst preuzima utisak (potpis se poništava). Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0021_moderacija_prijava.sql` | kolona `prijave.resena_datum`; okidač `prijave_zastita_bu` (bibliotekar menja samo `resena` i `beleska`, ko je rešio i kada postavlja baza), okidač `prijave_provera_bi` (prijaviti se može samo utisak koji prijavilac vidi i nije njegov, preporuka koju je primio, ili povezan član), dužine razloga (300) i beleške (500). Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
@@ -302,6 +304,15 @@ biblioteka ima knjigu.
 4. **Преузми као табелу** preuzima CSV fajl (otvara se u Excelu, ćirilica je u redu) sa knjigama iz
    trenutnog prikaza: naslov, autor, izdavač, ISBN, broj čitalaca koji žele i odluka.
 
+**Kako se čita „Све књиге”**
+
+**Библиотека → Све књиге** pokazuje stanje baze knjiga.
+
+1. Na vrhu je ukupan broj knjiga, pa ispod po izvoru (**Фонд библиотеке**, **Унос са линка**, **Google Books**, **Додао члан**) i po odluci nabavke (**Имамо**, **Набављамо**, **Не набављамо**, **Без одлуке**). Računaju se matične knjige; spojeni duplikati su posebno. Knjiga koja je u fondu, a nema postavljenu odluku, vodi se kao „Имамо”.
+2. Ispod je lista sa koricom, naslovom, autorom, izdavačem, godinom, ISBN-om, izvorom, datumom unosa i **brojem čitalaca koji knjigu imaju na polici** (samo broj; računaju se aktivni članovi, bilo koje stanje police).
+3. Pretraga radi po naslovu, autoru i ISBN-u (i latinicom i ćirilicom, sa kvačicama i bez). Dugmad biraju izvor i odluku, i redosled: najnovije prvo, najviše čitalaca, po naslovu. Lista se učitava po 50 (**Учитај још**).
+4. Ovde se **ne vidi ko je knjigu uneo ni ko je stavio na policu**, ni po imenu ni po broju karte; samo brojevi.
+
 **Kako se upisuje utisak sa pulta**
 
 Za člana koji ne koristi telefon: **Библиотека → Утисак са пулта**.
@@ -345,7 +356,7 @@ ima nerešenih prijava, a na početnom ekranu osoblja piše koliko ih je.
   ulogom različitom od `citalac`; brisanje je samo administratoru. Administrator i servisna uloga sme sve.
   Ekran svejedno nudi dugme samo za čitaoce (administrator vidi sve), da korisnik ne nailazi na grešku.
 - `npm run test:api` proverava uloge, ograničenje, vodeću nulu i da PIN nije u logu ni u poruci greške;
-  `test:db` migracije 0018 do 0023; `test:rls` (faze 13 do 18) isto na pravoj bazi.
+  `test:db` migracije 0018 do 0024; `test:rls` (faze 13 do 19) isto na pravoj bazi.
 
 ### Čitaoci: veze, preporuke, blokada
 

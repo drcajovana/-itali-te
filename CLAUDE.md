@@ -253,6 +253,16 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 - CSV (`nabavka-logika.js`): UTF-8 sa BOM-om, `sep=;`, polja u navodnicima, tekst koji liči na formulu dobija apostrof,
   ISBN se piše kao `="…"`.
 
+## Све књиге (/bibliotekar/knjige)
+
+- Ekran čita **samo** dve funkcije iz 0024 (`pregled_knjiga_zbir`, `pregled_knjiga`): knjige i zbirni brojevi. Nikad tabele `polica` i `clanovi`,
+  nikad `knjige.uneo_id`. Bibliotekar po politici sme da čita celu policu red po red (sa id-evima članova); zato se zbir računa u bazi i
+  klijent nikad ne dobija nijedan red police. Ne dodavati kolonu koja vodi do člana (unosilac, ko je stavio, vreme na polici).
+- `izvor` je stvarna kolona (`fond`, `link`, `google_books`, `clan`). Okidač `knjige_unos_clana` članu uvek upiše `clan`, pa `google_books` i `link`
+  dolaze od bibliotekara/servisa; ekran zato piše „Додао члан" samo za `clan`.
+- Odluka je efektivna (isto kao izveštaj za nabavku): `u_fondu` bez odluke je „imamo". Spojeni duplikati se ne računaju u ukupno.
+- Nepoznata vrednost filtera ili redosleda je greška 22023 u bazi; klijent je ne šalje (`parametriPregleda`).
+
 ## Utisak sa pulta (/bibliotekar/utisak)
 
 - Bibliotekar upisuje utisak U IME člana (običan klijent, RLS `utisci_insert` uz `uneo_bibliotekar_id = auth.uid()`). **Potpis čuva okidač**
