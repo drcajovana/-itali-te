@@ -8,11 +8,13 @@ import BibliotekarNabavka from "./pages/BibliotekarNabavka.jsx";
 import BibliotekarPocetna from "./pages/BibliotekarPocetna.jsx";
 import BibliotekarPrijave from "./pages/BibliotekarPrijave.jsx";
 import BibliotekarUnos from "./pages/BibliotekarUnos.jsx";
+import BibliotekarUtisak from "./pages/BibliotekarUtisak.jsx";
 import Knjiga from "./pages/Knjiga.jsx";
 import Citaoci from "./pages/Citaoci.jsx";
 import CitalacProfil from "./pages/CitalacProfil.jsx";
 import Pocetna from "./pages/Pocetna.jsx";
 import Prijava from "./pages/Prijava.jsx";
+import Pravila from "./pages/Pravila.jsx";
 import Pretraga from "./pages/Pretraga.jsx";
 import Profil from "./pages/Profil.jsx";
 
@@ -22,6 +24,7 @@ export default function App() {
       <TrakeLjuske />
       <Routes>
         <Route path="/prijava" element={<Prijava />} />
+        <Route path="/pravila" element={<Pravila />} />
         <Route element={<ZasticenaRuta />}>
           <Route path="/" element={<Pocetna />} />
           <Route path="/pretraga" element={<Pretraga />} />
@@ -35,6 +38,7 @@ export default function App() {
             <Route path="/bibliotekar/clanovi" element={<BibliotekarClanovi />} />
             <Route path="/bibliotekar/nabavka" element={<BibliotekarNabavka />} />
             <Route path="/bibliotekar/prijave" element={<BibliotekarPrijave />} />
+            <Route path="/bibliotekar/utisak" element={<BibliotekarUtisak />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

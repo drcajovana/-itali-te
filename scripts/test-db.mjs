@@ -100,7 +100,9 @@ try {
   const CITAOCI = fajlovi.filter((f) => /^0019_/.test(f));
   const NABAVKA = fajlovi.filter((f) => /^0020_/.test(f));
   const MODERACIJA = fajlovi.filter((f) => /^0021_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x))) await pusti(f);
+  const POTPIS = fajlovi.filter((f) => /^0022_/.test(f));
+  const BLOKADE = fajlovi.filter((f) => /^0023_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x) && !POTPIS.includes(x) && !BLOKADE.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -1377,6 +1379,123 @@ try {
   ok(JSON.parse(pre21)[1].map((t) => t.tgname).join() === "prijave_provera_bi,prijave_zastita_bu", "na prijavama su tačno dva okidača: prijave_provera_bi i prijave_zastita_bu", JSON.parse(pre21)[1]);
   r = await kao("authenticated", UA, P21, [UA, "utisak", U_B_SAMO_JA, "posle drugog puštanja"]);
   ok(r.greska?.code === "22023", "posle drugog puštanja provera stavke i dalje radi", r.greska?.message ?? r.redovi);
+
+  // ───────── 0022: utisak sa pulta ─────────
+  faza("0022: utisak sa pulta (potpis bibliotekara se ne može lažirati, neaktivnom članu se ne upisuje, autor koji menja reči preuzima utisak)");
+  const otisakPolitika22 = async () =>
+    JSON.stringify((await db.query("select c.relname, p.polname, p.polcmd::text as cmd, pg_get_expr(p.polqual, p.polrelid) as q, pg_get_expr(p.polwithcheck, p.polrelid) as w from pg_policy p join pg_class c on c.oid = p.polrelid where c.relname in ('utisci', 'clanovi') order by 1, 2")).rows);
+  const politikePre22 = await otisakPolitika22();
+  const KP1 = await nova("P22 jedan");
+  const KP2 = await nova("P22 dva");
+  const KP3 = await nova("P22 tri");
+  const KP4 = await nova("P22 četiri");
+  const UT22 = "insert into public.utisci (clan_id, knjiga_id, ocena, tekst, vidljivost, uneo_bibliotekar_id) values ($1, $2, 7, $3, $4, $5) returning id, uneo_bibliotekar_id, clan_id";
+
+  // pre migracije: rupe
+  r = await kao("authenticated", UA, UT22, [UA, KP1, "A lažira potpis", "javno", ADM]);
+  ok(!r.greska && r.redovi[0]?.uneo_bibliotekar_id === ADM, "PRE 0022: član može da upiše svoj utisak sa tuđim potpisom bibliotekara (rupa)", r.greska?.message ?? r.redovi);
+  await db.query("delete from public.utisci where tekst = 'A lažira potpis'");
+  r = await kao("authenticated", BIB, UT22, [NEAKTIVAN, KP1, "Za neaktivnog", "javno", BIB]);
+  ok(!r.greska, "PRE 0022: bibliotekar može da upiše utisak u ime neaktivnog člana (rupa)", r.greska?.message ?? r.redovi);
+  await db.query("delete from public.utisci where tekst = 'Za neaktivnog'");
+
+  for (const f of POTPIS) await pusti(f);
+
+  ok((await otisakPolitika22()) === politikePre22, "0022: politike (RLS) na utisci i clanovi su iste kao pre (nijedna dodata, izbrisana ni izmenjena)");
+  r = await kao("authenticated", UA, UT22, [UA, KP1, "A lažira potpis", "javno", ADM]);
+  ok(!r.greska && r.redovi[0]?.uneo_bibliotekar_id === null, "POSLE 0022: potpis koji član upiše uz svoj utisak se poništava", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, UT22, [UB, KP1, "Sa pulta za B", "samo_ja", BIB]);
+  const PULT_B = r.redovi?.[0]?.id;
+  ok(!r.greska && r.redovi[0]?.clan_id === UB && r.redovi[0]?.uneo_bibliotekar_id === BIB, "bibliotekar upisuje utisak u ime člana B: utisak pripada B-u, potpis je bibliotekar", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, UT22, [UB, KP1, "Opet za B", "javno", BIB]);
+  ok(r.greska?.code === "23505", "postojeći utisak člana se ne prepisuje (jedinstvenost član + knjiga)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, UT22, [NEAKTIVAN, KP2, "Za neaktivnog", "javno", BIB]);
+  ok(r.greska?.code === "22023", "neaktivnom članu se ne upisuje utisak (22023)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, UT22, [UB, KP2, "Tuđi potpis", "javno", ADM]);
+  ok(r.greska?.message?.includes("row-level security"), "bibliotekar ne može da potpiše tuđim imenom (politika zahteva potpis = on sam)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, UT22, [BIB, KP2, "Svoj utisak bibliotekara", "javno", BIB]);
+  ok(!r.greska && r.redovi[0]?.uneo_bibliotekar_id === null, "bibliotekar piše i svoj utisak: bez potpisa (nije ničiji „u ime”)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, UT22, [UB, KP3, "C piše za B", "javno", UC]);
+  ok(Boolean(r.greska), "običan član ne može da upiše utisak u tuđe ime", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", ADM, UT22, [UC, KP3, "Administrator za C", "javno", ADM]);
+  const PULT_C = r.redovi?.[0]?.id;
+  ok(!r.greska && r.redovi[0]?.uneo_bibliotekar_id === ADM, "administrator takođe upisuje u ime člana", r.greska?.message ?? r.redovi);
+  r = await kao("service_role", null, UT22, [UD, KP4, "Servisno", "javno", ADM]);
+  ok(!r.greska && r.redovi[0]?.uneo_bibliotekar_id === ADM, "servisna uloga je izuzeta", r.greska?.message ?? r.redovi);
+
+  // izmene
+  r = await kao("authenticated", UB, "update public.utisci set vidljivost = 'javno', spojler = false, uneo_bibliotekar_id = null where id = $1 returning vidljivost, uneo_bibliotekar_id", [PULT_B]);
+  ok(!r.greska && r.redovi[0]?.vidljivost === "javno" && r.redovi[0]?.uneo_bibliotekar_id === BIB, "član menja samo vidljivost: potpis ostaje (i ne može da ga skine rukom)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.utisci set skriven = true, uneo_bibliotekar_id = $2 where id = $1 returning skriven, uneo_bibliotekar_id", [PULT_B, ADM]);
+  ok(!r.greska && r.redovi[0]?.skriven === true && r.redovi[0]?.uneo_bibliotekar_id === BIB, "moderacija (sakrivanje) ne dira potpis, ni kad ga bibliotekar pokuša da prepravi", r.greska?.message ?? r.redovi);
+  await db.query("update public.utisci set skriven = false where id = $1", [PULT_B]);
+  r = await kao("authenticated", UB, "update public.utisci set uneo_bibliotekar_id = $2 where id = $1 returning uneo_bibliotekar_id", [PULT_B, ADM]);
+  ok(!r.greska && r.redovi[0]?.uneo_bibliotekar_id === BIB, "član ne može da promeni potpis na svom utisku", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UB, "update public.utisci set tekst = 'Sad pišem ja' where id = $1 returning tekst, uneo_bibliotekar_id", [PULT_B]);
+  ok(!r.greska && r.redovi[0]?.tekst === "Sad pišem ja" && r.redovi[0]?.uneo_bibliotekar_id === null, "član koji promeni tekst preuzima utisak: potpis se poništava", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.utisci set uneo_bibliotekar_id = $2 where id = $1 returning uneo_bibliotekar_id", [PULT_B, BIB]);
+  ok(!r.greska && r.redovi[0]?.uneo_bibliotekar_id === null, "bibliotekar ne može naknadno da potpiše tuđ utisak (potpis se postavlja samo pri upisu)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, "update public.utisci set ocena = 2 where id = $1 returning ocena, uneo_bibliotekar_id", [PULT_C]);
+  ok(!r.greska && r.redovi[0]?.ocena === 2 && r.redovi[0]?.uneo_bibliotekar_id === null, "član koji promeni ocenu takođe preuzima utisak", r.greska?.message ?? r.redovi);
+
+  // funkcije i idempotentnost
+  const fn22 = async () => JSON.stringify((await db.query("select tgname from pg_trigger where tgrelid = 'public.utisci'::regclass and not tgisinternal order by 1")).rows);
+  const pre22 = await fn22();
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, POTPIS[0]), "utf8"));
+  ok((await fn22()) === pre22 && (await otisakPolitika22()) === politikePre22, "0022 je idempotentna: drugo puštanje ne duplira okidače i ne menja politike", await fn22());
+  ok(JSON.parse(pre22).map((x) => x.tgname).filter((n) => n.startsWith("utisci_potpis")).join() === "utisci_potpis_bi,utisci_potpis_bu", "na utiscima su okidači utisci_potpis_bi i utisci_potpis_bu (uz postojeće)", JSON.parse(pre22));
+  const f22 = (await db.query("select p.prosecdef, has_function_privilege('anon', p.oid, 'execute') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'privatno' and p.proname = 'utisci_potpis'")).rows[0];
+  ok(f22?.prosecdef === false && f22.anon === false, "privatno.utisci_potpis nije SECURITY DEFINER i nije dostupna anon-u", f22);
+
+  // ───────── 0023: moje_blokade i odblokiranje ─────────
+  faza("0023: pogled moje_blokade (samo moje, samo nadimak), odblokiranje je brisanje svoje blokade");
+  const otisakPolitika23 = async () =>
+    JSON.stringify((await db.query("select c.relname, p.polname, p.polcmd::text as cmd, pg_get_expr(p.polqual, p.polrelid) as q, pg_get_expr(p.polwithcheck, p.polrelid) as w from pg_policy p join pg_class c on c.oid = p.polrelid where c.relname in ('blokade', 'veze', 'clanovi') order by 1, 2")).rows);
+  const politikePre23 = await otisakPolitika23();
+  const UE = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  await db.query("insert into auth.users (id) values ($1)", [UE]);
+  await db.query("insert into clanovi (id, broj_kartice, ime, nadimak, uloga, aktivan) values ($1, 'UE1', 'Pravo Ime E', 'Nadimak E', 'citalac', true)", [UE]);
+  await db.query("update clanovi set nadimak = 'Nadimak D' where id = $1", [UD]);
+  const sifraE = (await db.query("select sifra_poziva from clanovi where id = $1", [UE])).rows[0].sifra_poziva;
+  await db.query("insert into public.blokade (blokirao_id, blokirani_id) values ($1, $2)", [UD, UE]);
+
+  r = await kao("authenticated", UD, "select * from public.moje_blokade");
+  ok(r.greska && /moje_blokade|does not exist/.test(r.greska.message), "PRE 0023: pogleda moje_blokade nema", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UD, "select posalji_poziv($1)", [sifraE]);
+  ok(r.greska?.code === "P0001", "PRE odblokiranja: D ne može da pozove E-a koga je blokirao (ista opšta greška)", r.greska?.message ?? r.redovi);
+
+  for (const f of BLOKADE) await pusti(f);
+
+  ok((await otisakPolitika23()) === politikePre23, "0023: politike (RLS) na blokade, veze i clanovi su iste kao pre (nijedna dodata, izbrisana ni izmenjena)");
+  r = await kao("authenticated", UD, "select id, clan_id, nadimak, kreirana from public.moje_blokade");
+  const BLOKADA_DE = r.redovi?.[0]?.id;
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].clan_id === UE && r.redovi[0].nadimak === "Nadimak E", "D vidi koga je blokirao: samo E, sa nadimkom", r.greska?.message ?? r.redovi);
+  const kol23 = (await db.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'moje_blokade' order by ordinal_position")).rows.map((x) => x.column_name);
+  ok(JSON.stringify(kol23) === JSON.stringify(["id", "clan_id", "kreirana", "nadimak"]), "pogled nema ime, broj karte ni šifru poziva", kol23);
+  r = await kao("authenticated", UE, "select count(*)::int as n from public.moje_blokade");
+  ok(r.redovi?.[0]?.n === 0, "blokirani E ne vidi ništa (ne saznaje za blokadu)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select count(*)::int as n from public.moje_blokade");
+  ok(r.redovi?.[0]?.n === 0, "bibliotekar kroz pogled vidi samo svoje blokade (ne tuđe)", r.greska?.message ?? r.redovi);
+  r = await kao("anon", null, "select * from public.moje_blokade");
+  ok(nemaPrava(r), "anon ne sme da čita pogled", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UE, "delete from public.blokade where id = $1 returning id", [BLOKADA_DE]);
+  ok(!r.greska && r.redovi.length === 0, "E ne može da obriše blokadu koju je D napravio", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UC, "delete from public.blokade where id = $1 returning id", [BLOKADA_DE]);
+  ok(!r.greska && r.redovi.length === 0, "treći član ne može da obriše tuđu blokadu", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UD, "delete from public.blokade where id = $1 returning id", [BLOKADA_DE]);
+  ok(!r.greska && r.redovi.length === 1, "D odblokira E-a: brisanje svoje blokade", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UD, "select count(*)::int as n from public.moje_blokade");
+  ok(r.redovi?.[0]?.n === 0, "posle odblokiranja spisak je prazan", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UD, "select posalji_poziv($1)", [sifraE]);
+  ok(!r.greska, "posle odblokiranja D može ponovo da pozove E-a (veza se ne vraća sama, pravi se novim pozivom)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UD, "select count(*)::int as n from public.moje_veze where status = 'prihvacena' and clan_id = $1", [UE]);
+  ok(r.redovi?.[0]?.n === 0, "odblokiranje samo po sebi ne pravi vezu (poziv čeka prihvatanje)", r.greska?.message ?? r.redovi);
+  await db.query("delete from public.veze where pozivalac_id = $1 and pozvani_id = $2", [UD, UE]);
+
+  const pre23 = JSON.stringify([(await db.query("select pg_get_viewdef('public.moje_blokade'::regclass) as v")).rows, (await db.query("select reloptions from pg_class where relname = 'moje_blokade'")).rows]);
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, BLOKADE[0]), "utf8"));
+  const posle23 = JSON.stringify([(await db.query("select pg_get_viewdef('public.moje_blokade'::regclass) as v")).rows, (await db.query("select reloptions from pg_class where relname = 'moje_blokade'")).rows]);
+  ok(pre23 === posle23 && (await otisakPolitika23()) === politikePre23 && pre23.includes("security_invoker=true"), "0023 je idempotentna i pogled je security_invoker", pre23);
 
   // ───────── opšte ─────────
   faza("Opšta pravila");

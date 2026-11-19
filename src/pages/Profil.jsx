@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import KarticaInstalacije from "../components/KarticaInstalacije.jsx";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../lib/auth-context.js";
@@ -91,6 +92,10 @@ export default function Profil() {
       </form>
 
       <KarticaInstalacije />
+
+      <Link to="/pravila" className="mt-5 inline-flex min-h-11 items-center text-sm font-medium text-bordo underline">
+        {tekst.pravila.link}
+      </Link>
 
       <button type="button" onClick={odjavi} className={`${stil.okvirno} mt-5`}>
         {tekst.meni.odjava}

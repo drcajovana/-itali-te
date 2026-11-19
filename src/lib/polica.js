@@ -61,7 +61,7 @@ export async function ucitajOcenu(knjigaId) {
 export async function ucitajMojUtisak(clanId, knjigaId) {
   const { data, error } = await supabase
     .from("utisci")
-    .select("id, ocena, tekst, vidljivost, spojler, skriven, izmenjeno")
+    .select("id, ocena, tekst, vidljivost, spojler, skriven, izmenjeno, uneo_bibliotekar_id")
     .eq("clan_id", clanId)
     .eq("knjiga_id", knjigaId)
     .maybeSingle();
@@ -87,7 +87,7 @@ export async function ucitajTudjeUtiske(clanId, knjigaId) {
 export async function sacuvajUtisak(clanId, knjigaId, unos, postojeciId = null) {
   const u = urediUtisak(unos);
   if (!u.ok) throw Object.assign(new Error(`${u.polje}_${u.razlog}`), { kod: `utisak_${u.polje}_${u.razlog}` });
-  const kolone = "id, ocena, tekst, vidljivost, spojler, skriven, izmenjeno";
+  const kolone = "id, ocena, tekst, vidljivost, spojler, skriven, izmenjeno, uneo_bibliotekar_id";
   const q = postojeciId
     ? supabase.from("utisci").update(u.red).eq("id", postojeciId).select(kolone).single()
     : supabase.from("utisci").insert({ clan_id: clanId, knjiga_id: knjigaId, ...u.red }).select(kolone).single();

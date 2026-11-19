@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth-context.js";
 import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
@@ -104,6 +104,9 @@ export default function Prijava() {
       </form>
 
       <p className="mt-5 text-sm text-mastilo-2">{tekst.prijava.pomoc}</p>
+      <Link to="/pravila" className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-bordo underline">
+        {tekst.pravila.link}
+      </Link>
     </main>
   );
 }

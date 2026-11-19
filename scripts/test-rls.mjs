@@ -1560,6 +1560,64 @@ async function main() {
     return r.error || (r.data ?? []).length === 0 ? true : "anon je dobio redove";
   });
 
+  faza("17. Utisak sa pulta: potpis bibliotekara (migracija 0022)");
+  const V = await napraviClana("pv", "citalac");
+  const W = await napraviClana("pw", "citalac");
+  const KV = await napraviKnjigu("PULT-K");
+  const KV2 = await napraviKnjigu("PULT-K2");
+  let pultId = null;
+  await provera("bibliotekar upisuje utisak u ime člana V: utisak pripada V-u, potpis je bibliotekar", async () => {
+    const r = await BIB.db.from("utisci").insert({ clan_id: V.id, knjiga_id: KV.id, ocena: 6, tekst: N("pult V"), vidljivost: "samo_ja", uneo_bibliotekar_id: BIB.id }).select("id, clan_id, uneo_bibliotekar_id");
+    pultId = r.data?.[0]?.id;
+    return !r.error && r.data[0]?.clan_id === V.id && r.data[0].uneo_bibliotekar_id === BIB.id ? true : opis(r);
+  });
+  await provera("V vidi svoj utisak, W ga ne vidi (vidljivost „samo ja”)", async () => {
+    const v = await V.db.from("utisci").select("id, uneo_bibliotekar_id").eq("id", pultId);
+    const w = await W.db.from("utisci").select("id").eq("id", pultId);
+    return tacno(v, 1, "V") === true && v.data[0].uneo_bibliotekar_id === BIB.id && tacno(w, 0, "W") === true ? true : `${opis(v)} / ${opis(w)}`;
+  });
+  await provera("isti utisak se ne prepisuje drugi put (23505); neaktivnom članu se ne upisuje (22023)", async () => {
+    const a = await BIB.db.from("utisci").insert({ clan_id: V.id, knjiga_id: KV.id, ocena: 1, vidljivost: "javno", uneo_bibliotekar_id: BIB.id }).select("id");
+    await S.from("clanovi").update({ aktivan: false }).eq("id", W.id);
+    const b = await BIB.db.from("utisci").insert({ clan_id: W.id, knjiga_id: KV2.id, ocena: 3, vidljivost: "javno", uneo_bibliotekar_id: BIB.id }).select("id");
+    await S.from("clanovi").update({ aktivan: true }).eq("id", W.id);
+    return a.error?.code === "23505" && b.error?.code === "22023" ? true : `${a.error?.code}/${b.error?.code}`;
+  });
+  await provera("član ne može da lažira potpis (poništava se), ni da upiše utisak u tuđe ime", async () => {
+    const a = await W.db.from("utisci").insert({ clan_id: W.id, knjiga_id: KV2.id, ocena: 4, vidljivost: "javno", uneo_bibliotekar_id: BIB.id }).select("uneo_bibliotekar_id");
+    const b = await W.db.from("utisci").insert({ clan_id: V.id, knjiga_id: KV2.id, ocena: 4, vidljivost: "javno", uneo_bibliotekar_id: W.id }).select("id");
+    return !a.error && a.data[0]?.uneo_bibliotekar_id === null && Boolean(b.error) ? true : `${opis(a)} / ${b.error?.code}`;
+  });
+  await provera("V menja vidljivost: potpis ostaje; V menja tekst: potpis se poništava (utisak je sada njegov)", async () => {
+    const a = await V.db.from("utisci").update({ vidljivost: "javno", uneo_bibliotekar_id: null }).eq("id", pultId).select("uneo_bibliotekar_id");
+    const b = await V.db.from("utisci").update({ tekst: N("V sada piše") }).eq("id", pultId).select("uneo_bibliotekar_id");
+    return !a.error && a.data[0]?.uneo_bibliotekar_id === BIB.id && !b.error && b.data[0]?.uneo_bibliotekar_id === null ? true : `${opis(a)} / ${opis(b)}`;
+  });
+
+  faza("18. Odblokiranje: pogled moje_blokade i brisanje svoje blokade (migracija 0023)");
+  const X = await napraviClana("bx", "citalac");
+  const Y = await napraviClana("by", "citalac");
+  await S.from("clanovi").update({ nadimak: "RLS-nad-Y-" + RUN }).eq("id", Y.id);
+  const bl = await ubaci("blokade", { blokirao_id: X.id, blokirani_id: Y.id });
+  await provera("X vidi koga je blokirao (samo Y, sa nadimkom), Y ne vidi ništa, bibliotekar vidi samo svoje", async () => {
+    const x = await X.db.from("moje_blokade").select("id, clan_id, nadimak");
+    const y = await Y.db.from("moje_blokade").select("id");
+    const b = await BIB.db.from("moje_blokade").select("id").eq("id", bl.id);
+    return !x.error && x.data.length === 1 && x.data[0].clan_id === Y.id && x.data[0].nadimak === "RLS-nad-Y-" + RUN && tacno(y, 0, "Y") === true && tacno(b, 0, "bibliotekar") === true ? true : `${opis(x)} / ${opis(y)} / ${opis(b)}`;
+  });
+  await provera("anon ne vidi pogled; Y ne može da obriše blokadu koju je napravio X (stanje ostaje)", async () => {
+    const a = await anon.from("moje_blokade").select("id").limit(1);
+    const r = await pokusaj(Y.db.from("blokade").delete().eq("id", bl.id).select());
+    const s2 = await S.from("blokade").select("id").eq("id", bl.id).maybeSingle();
+    return (a.error || (a.data ?? []).length === 0) && r.pogodjeno === 0 && s2.data ? true : `pogođeno ${r.pogodjeno}`;
+  });
+  await provera("X odblokira Y: blokada nestaje, spisak je prazan, a veza se ne pravi sama", async () => {
+    const d = await X.db.from("blokade").delete().eq("id", bl.id).select("id");
+    const l = await X.db.from("moje_blokade").select("id");
+    const v = await X.db.from("moje_veze").select("id").eq("clan_id", Y.id);
+    return !d.error && d.data.length === 1 && tacno(l, 0, "spisak") === true && tacno(v, 0, "veze") === true ? true : `${opis(d)} / ${opis(l)} / ${opis(v)}`;
+  });
+
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────

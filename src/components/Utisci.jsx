@@ -149,6 +149,7 @@ export default function Utisci({ knjigaId, naPromenjeno }) {
               {moj.spojler ? ` · ${T.spojler}` : ""}
             </p>
             {moj.skriven && <p className="text-sm font-medium text-bordo">{T.sakrivenMoj}</p>}
+            {moj.uneo_bibliotekar_id && <p className="rounded-srednji bg-pozadina px-3 py-2 text-sm text-mastilo-2">{T.zapisanNaPultu}</p>}
             {moj.tekst && <p className="whitespace-pre-line border-l-2 border-bordo-svetla pl-3 text-sm leading-[1.55]">{moj.tekst}</p>}
             {!potvrda ? (
               <div className="flex flex-wrap gap-2">

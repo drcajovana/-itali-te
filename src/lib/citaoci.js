@@ -169,3 +169,18 @@ export async function ucitajObavestenja() {
 
 // Javlja Okviru da osveži tačku (posle prihvatanja, odbijanja, obrade preporuke).
 export const javiPromenu = () => window.dispatchEvent(new Event("citaoci-promena"));
+
+// ── blokirani čitaoci ──
+// Koga sam ja blokirao, sa nadimkom (pogled moje_blokade, migracija 0023: samo moje blokade, bez imena i broja karte).
+export async function ucitajBlokirane() {
+  const { data, error } = await supabase.from("moje_blokade").select("id, clan_id, kreirana, nadimak").order("kreirana", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Odblokiranje je običan DELETE svoje blokade (RLS blokade_svoje). Veza se ne vraća; blokirani ne dobija nikakav signal.
+export async function odblokiraj(blokadaId) {
+  const { data, error } = await supabase.from("blokade").delete().eq("id", blokadaId).select("id");
+  if (error) throw error;
+  if (!data?.length) throw new GreskaApija("blokada_nije_pronadjena");
+}

@@ -233,6 +233,9 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   učitava dok veza nije prihvaćena (prvo `ucitajVezuSaClanom`).
 - `preporuke.procitana = true` znači „primalac je odlučio" (želim, već pročitano, nije za mene). `skrivena` je samo moderacija.
 - Svaka nova migracija za ovaj ekran ostaje idempotentna i bez izmene politika (0019 ne dira nijednu politiku).
+- **Odblokiranje** (0023): spisak dolazi iz pogleda `moje_blokade` (samo moje blokade, samo nadimak), a odblokiranje je običan DELETE svoje
+  blokade (`blokade_svoje`). Veza se ne vraća sama (pri blokadi je obrisana). Blokirani ne saznaje ni za blokadu ni za odblokiranje: nikakav
+  signal, nikakva poruka. Ekran Читаоци ne pominje blokadu u toku poziva (isti odgovor za nepostojeću i blokiranu šifru).
 
 ## Nabavka (/bibliotekar/nabavka)
 
@@ -249,6 +252,16 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   knjiga nije među „Нове"; `u_fondu` je već u skladu sa odlukom. Datum pri upisu je sat bibliotekara.
 - CSV (`nabavka-logika.js`): UTF-8 sa BOM-om, `sep=;`, polja u navodnicima, tekst koji liči na formulu dobija apostrof,
   ISBN se piše kao `="…"`.
+
+## Utisak sa pulta (/bibliotekar/utisak)
+
+- Bibliotekar upisuje utisak U IME člana (običan klijent, RLS `utisci_insert` uz `uneo_bibliotekar_id = auth.uid()`). **Potpis čuva okidač**
+  (0022): član ga ne može lažirati ni skinuti, bibliotekar ga ne postavlja naknadno, a autor koji promeni ocenu ili tekst preuzima utisak
+  (potpis se poništava). Ne vraćati proveru potpisa u interfejs.
+- **Vidljivost se ne pretpostavlja**: bibliotekar pita člana i bira, pa potvrđuje da član to želi. Ništa se ne objavljuje „iz navike".
+- **Postojeći utisak člana se ne prepisuje** (nema update-a ni upsert-a u `pult.js`); svoje reči menja samo član.
+- Neaktivnom članu se ne upisuje (22023). **Polica se ne dira**: `polica_svoja` dozvoljava pisanje samo vlasniku, a ne proširivati je.
+- Član vidi napomenu `tekst.utisak.zapisanNaPultu` uz svoj utisak; to je jedino mesto gde se potpis prikazuje (drugi članovi ga ne vide).
 
 ## Prijave (/bibliotekar/prijave)
 
