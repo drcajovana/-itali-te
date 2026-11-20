@@ -200,7 +200,7 @@ const cir = {
     obrisi: "Обриши",
     zatvori: "Затвори",
     otvori: "Отвори податке о књизи „{naslov}”",
-    detalji: { izvor: "Извор", odluka: "Стање", citaoca: "Читалаца на полици", uneto: "Унето", postaviSliku: "Постави слику", zameniSliku: "Замени слику", slikaPostavljena: "Слика корице је постављена.", koricaUklonjena: "Корица је уклоњена.", stranica: "Отвори страницу књиге" },
+    detalji: { izvor: "Извор", odluka: "Стање", citaoca: "Читалаца на полици", uneto: "Унето", postaviSliku: "Постави слику", zameniSliku: "Замени слику", slikaPostavljena: "Слика корице је постављена.", koricaUklonjena: "Корица је уклоњена.", stranica: "Отвори страницу књиге", stanjeOk: "Стање је промењено.", stanjeGreska: "Стање није промењено. Покушајте поново.", stanjeNemaDozvole: "Немате право да мењате стање ове књиге." },
     izmena: {
       naslov: "Измена књиге",
       polja: { naslov: "Наслов", autor: "Аутор", izdavac: "Издавач", godina: "Година", isbn: "ISBN" },

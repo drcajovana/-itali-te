@@ -7,6 +7,7 @@ import Skeleton from "../components/Skeleton.jsx";
 import { useAuth } from "../lib/auth-context.js";
 import { izmeniKnjigu, obrisiKnjigu } from "../lib/knjige-admin.js";
 import { ukloniKoricu } from "../lib/knjige.js";
+import { postaviOdluku } from "../lib/nabavka.js";
 import { datumIzVremena } from "../lib/osoblje-logika.js";
 import { formatDatum } from "../lib/polica-logika.js";
 import { IZVORI, KORICE, ODLUKE, REDOSLEDI, filteriIzAdrese, filteriUAdresu, grupeZbira, imaJos, kljucFiltera, kljucGreskeIzmene, mozeDaBrise, opcijeIzdavaca, poljaIzmene } from "../lib/pregled-knjiga-logika.js";
@@ -54,6 +55,7 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
   const [slikaOk, setSlikaOk] = useState(false);
   const [uklanjanje, setUklanjanje] = useState(false); // pitanje „Уклонити корицу?” je otvoreno
   const [koricaUklonjena, setKoricaUklonjena] = useState(false);
+  const [stanjeOk, setStanjeOk] = useState(false);
 
   async function sacuvaj(e) {
     e.preventDefault();
@@ -69,6 +71,26 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
       const kljuc = kljucGreskeIzmene(err);
       if (kljuc === "opste") console.error("izmena knjige:", err?.code ?? err?.message);
       setGreska(T.izmena.greske[kljuc]);
+    }
+    setZauzet(false);
+  }
+
+  // Stanje knjige (U fondu / Nabavljamo / Ne nabavljamo): ista odluka kao na ekranu „Набавка” (knjige.odluka_nabavke). „У фонду” (imamo) okidač u bazi
+  // pretvara u u_fondu = true, ostale dve u false. Tako bibliotekar ili administrator knjigu koju je uneo član proglašava delom fonda (ili ne).
+  async function promeniStanje(novo) {
+    if (zauzet || !novo || novo === k.odluka) return;
+    setZauzet(true);
+    setGreska(null);
+    setStanjeOk(false);
+    try {
+      await postaviOdluku(k.id, novo);
+      const nova = { odluka: novo };
+      setK((x) => ({ ...x, ...nova }));
+      naIzmenjeno(k.id, nova);
+      setStanjeOk(true);
+    } catch (err) {
+      console.error("promena stanja knjige:", err?.kod ?? err?.code);
+      setGreska(err?.kod === "nema_dozvole" ? T.detalji.stanjeNemaDozvole : T.detalji.stanjeGreska);
     }
     setZauzet(false);
   }
@@ -205,7 +227,23 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
       </div>
       <dl className="mt-2">
         <Podatak natpis={T.detalji.izvor} vrednost={T.izvori[k.izvor] ?? k.izvor} />
-        <Podatak natpis={T.detalji.odluka} vrednost={k.odluka ? T.odluke[k.odluka] : T.odluke.bez} />
+        <div className="flex items-center gap-3 border-b border-linija py-2 text-sm">
+          <label htmlFor="stanje-knjige" className="w-28 flex-none text-mastilo-2">
+            {T.detalji.odluka}
+          </label>
+          <select id="stanje-knjige" value={k.odluka ?? ""} disabled={zauzet} onChange={(e) => promeniStanje(e.target.value)} className={`${stil.polje} min-w-0 flex-1 py-1.5`}>
+            {!k.odluka && (
+              <option value="" disabled>
+                {T.odluke.bez}
+              </option>
+            )}
+            {["imamo", "nabavljamo", "ne_nabavljamo"].map((v) => (
+              <option key={v} value={v}>
+                {T.odluke[v]}
+              </option>
+            ))}
+          </select>
+        </div>
         <Podatak natpis={T.detalji.citaoca} vrednost={String(k.citaoca)} />
         <Podatak natpis={T.detalji.uneto} vrednost={formatDatum(datumIzVremena(k.kreirana))} />
       </dl>
@@ -286,6 +324,11 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
       {slikaOk && (
         <p role="status" className="mt-3 text-sm font-medium">
           {T.detalji.slikaPostavljena}
+        </p>
+      )}
+      {stanjeOk && (
+        <p role="status" className="mt-3 text-sm font-medium">
+          {T.detalji.stanjeOk}
         </p>
       )}
       {koricaUklonjena && (
