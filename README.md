@@ -66,6 +66,7 @@ Migracije se puštaju redom, brojevima:
 | `0018_rezervacije_statusi.sql` | **(puštena, ali ništa je ne koristi: aplikacija nema rezervacije)** stanja rezervacije `nova`, `spremna`, `preuzeta`, `otkazana` (stara `obradjena` postaje `preuzeta`); jedinstveni indeks „jedna otvorena rezervacija po članu i knjizi” važi za `nova` i `spremna`. Politike se ne menjaju; idempotentna |
 | `0019_citaoci_nadimci_preporuke.sql` | pogledi `moje_veze` i `moje_preporuke` (samo moje, samo nadimak druge strane, bez blokiranih), `privatno.ima_blokade()`, prijava člana (`prijave.tip = 'clan'`), napomena preporuke do 280 znakova i jedna neobrađena preporuka iste knjige po paru. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0020_nabavka_i_zastita_administratora.sql` | `knjige.odluka_nabavke` i `odluka_datum` (datum postavlja okidač; „imamo” = `u_fondu`), pogled `izvestaj_za_nabavku` nad `privatno.izvestaj_nabavke()` (samo agregat, samo bibliotekar), i okidači koji bibliotekaru zabranjuju da menja administratora ili dodeljuje ulogu. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
+| `0027_pregled_knjiga_korica.sql` | filter korica u „Све књиге”: `p_korica` ('bez' ili 'sa') u `pregled_knjiga`, `pregled_knjiga_izdavaci` i zajedničkom filteru `privatno.pregled_knjige_filter` (stari potpisi se brišu), nova kolona `bez_korice` u `pregled_knjiga_zbir()`. „Bez korice” = `knjige.korice_url` je prazan (naša korica), a ne ono što Open Library trenutno vraća. Samo bibliotekar. Idempotentna. |
 | `0026_jedinstven_isbn.sql` | svaki ISBN samo jednom: postojeći duplikati po ISBN-u se prvo SPAJAJU (`spojena_sa_id`, kao `spoji_knjige`: police, utisci, rezervacije, preporuke i objave prelaze na matični zapis, ništa se ne briše; matična je ona u fondu), pa jedinstven indeks `knjige_isbn_jedinstven_idx` na `isbn` među matičnim knjigama (greška 23505 pri novom duplikatu). Idempotentna. |
 | `0025_pregled_knjiga_izdavac.sql` | `public.pregled_knjiga` dobija `p_izdavac` (stara verzija sa šest parametara se briše), nova `public.pregled_knjiga_izdavaci(p_upit, p_izvor, p_odluka)` (kljuc, naziv, broj) i zajednički filter `privatno.pregled_knjige_filter`. Ključ izdavača je `norm_tekst(btrim(izdavac))`. Nema novih politika; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0024_pregled_knjiga.sql` | funkcije `public.pregled_knjiga_zbir()` i `public.pregled_knjiga(...)` (SECURITY DEFINER, samo bibliotekar, prazno svima ostalima): zbirni brojevi i lista knjiga sa brojem čitalaca na polici, bez ikakvog traga do člana (nema `uneo_id`, imena, id-eva). Nema novih politika; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
@@ -364,7 +365,7 @@ ima nerešenih prijava, a na početnom ekranu osoblja piše koliko ih je.
   ulogom različitom od `citalac`; brisanje je samo administratoru. Administrator i servisna uloga sme sve.
   Ekran svejedno nudi dugme samo za čitaoce (administrator vidi sve), da korisnik ne nailazi na grešku.
 - `npm run test:api` proverava uloge, ograničenje, vodeću nulu i da PIN nije u logu ni u poruci greške;
-  `test:db` migracije 0018 do 0026; `test:rls` (faze 13 do 21) isto na pravoj bazi.
+  `test:db` migracije 0018 do 0027; `test:rls` (faze 13 do 22) isto na pravoj bazi.
 
 ### Čitaoci: veze, preporuke, blokada
 

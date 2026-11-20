@@ -10,10 +10,10 @@ export async function ucitajZbirKnjiga() {
   return data?.[0] ?? null;
 }
 
-// Spisak izdavača (kljuc, naziv, broj) po ostalim aktivnim filterima (pretraga, izvor, odluka), ne po izabranom izdavaču.
-export async function ucitajIzdavace({ upit = "", izvor = "", odluka = "" } = {}) {
-  const p = parametriPregleda({ upit, izvor, odluka });
-  const { data, error } = await supabase.rpc("pregled_knjiga_izdavaci", { p_upit: p.p_upit, p_izvor: p.p_izvor, p_odluka: p.p_odluka });
+// Spisak izdavača (kljuc, naziv, broj) po ostalim aktivnim filterima (pretraga, izvor, odluka, korica), ne po izabranom izdavaču.
+export async function ucitajIzdavace({ upit = "", izvor = "", odluka = "", korica = "" } = {}) {
+  const p = parametriPregleda({ upit, izvor, odluka, korica });
+  const { data, error } = await supabase.rpc("pregled_knjiga_izdavaci", { p_upit: p.p_upit, p_izvor: p.p_izvor, p_odluka: p.p_odluka, p_korica: p.p_korica });
   if (error) throw error;
   return data ?? [];
 }

@@ -9,12 +9,15 @@ export const NAJVISE_PO_STRANI = 50;
 export const IZVORI = ["fond", "link", "google_books", "clan"];
 export const ODLUKE = ["imamo", "nabavljamo", "ne_nabavljamo", "bez"];
 export const REDOSLEDI = ["najnovije", "citaoca", "naslov"];
+// Filter po koricama (migracija 0027): „bez" = knjiga nema našu koricu (korice_url je prazan), „sa" = ima.
+export const KORICE = ["bez", "sa"];
 // Posebna vrednost filtera po izdavaču: knjige bez izdavača (isto kao u public.pregled_knjiga, migracija 0025).
 export const BEZ_IZDAVACA = "__bez__";
 
 // Filteri iz ekrana → parametri RPC-a (prazno = bez filtera).
-export function parametriPregleda({ upit = "", izvor = "", odluka = "", izdavac = "", redosled = "najnovije", pomeraj = 0 } = {}) {
+export function parametriPregleda({ upit = "", izvor = "", odluka = "", izdavac = "", korica = "", redosled = "najnovije", pomeraj = 0 } = {}) {
   return {
+    p_korica: KORICE.includes(korica) ? korica : null,
     p_izdavac: String(izdavac ?? "").trim() || null,
     p_upit: String(upit).trim() || null,
     p_izvor: IZVORI.includes(izvor) ? izvor : null,
@@ -26,22 +29,24 @@ export function parametriPregleda({ upit = "", izvor = "", odluka = "", izdavac 
 }
 
 // Ključ filtera: kad se promeni, lista počinje iznova (stranice se ne mešaju).
-export const kljucFiltera = (f) => JSON.stringify([String(f.upit ?? "").trim(), f.izvor ?? "", f.odluka ?? "", f.izdavac ?? "", f.redosled ?? "najnovije"]);
+export const kljucFiltera = (f) => JSON.stringify([String(f.upit ?? "").trim(), f.izvor ?? "", f.odluka ?? "", f.izdavac ?? "", f.korica ?? "", f.redosled ?? "najnovije"]);
 
 // Filteri u adresi (URL parametri), da se izbor sačuva pri osvežavanju i povratku na ekran. Samo vrednosti koje nisu
 // podrazumevane se upisuju; nepoznata vrednost izvora, odluke ili redosleda u adresi se ignoriše (ne šalje se bazi).
-export const PARAMETRI_ADRESE = { upit: "q", izvor: "izvor", odluka: "odluka", izdavac: "izdavac", redosled: "redosled" };
+export const PARAMETRI_ADRESE = { upit: "q", izvor: "izvor", odluka: "odluka", izdavac: "izdavac", korica: "korica", redosled: "redosled" };
 
 export function filteriIzAdrese(params) {
   const uzmi = (k) => params?.get?.(PARAMETRI_ADRESE[k]) ?? "";
   const izvor = uzmi("izvor");
   const odluka = uzmi("odluka");
+  const korica = uzmi("korica");
   const redosled = uzmi("redosled");
   return {
     upit: uzmi("upit").slice(0, 100),
     izvor: IZVORI.includes(izvor) ? izvor : "",
     odluka: ODLUKE.includes(odluka) ? odluka : "",
     izdavac: uzmi("izdavac").slice(0, 200),
+    korica: KORICE.includes(korica) ? korica : "",
     redosled: REDOSLEDI.includes(redosled) ? redosled : "najnovije",
   };
 }
@@ -54,6 +59,7 @@ export function filteriUAdresu(f) {
   if (IZVORI.includes(f.izvor)) p.set(PARAMETRI_ADRESE.izvor, f.izvor);
   if (ODLUKE.includes(f.odluka)) p.set(PARAMETRI_ADRESE.odluka, f.odluka);
   if (f.izdavac) p.set(PARAMETRI_ADRESE.izdavac, f.izdavac);
+  if (KORICE.includes(f.korica)) p.set(PARAMETRI_ADRESE.korica, f.korica);
   if (REDOSLEDI.includes(f.redosled) && f.redosled !== "najnovije") p.set(PARAMETRI_ADRESE.redosled, f.redosled);
   return p;
 }
@@ -95,6 +101,7 @@ export function grupeZbira(z) {
   return {
     ukupno: n(z?.ukupno),
     spojenih: n(z?.spojenih),
+    bezKorice: n(z?.bez_korice),
     izvori: IZVORI.map((k) => ({ kljuc: k, broj: n(z?.[k]) })),
     odluke: [
       { kljuc: "imamo", broj: n(z?.imamo) },

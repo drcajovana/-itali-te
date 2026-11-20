@@ -1745,6 +1745,39 @@ async function main() {
     return !m.error && !p.error && !t.error ? true : `${opis(m)} ${opis(p)} ${opis(t)}`;
   });
 
+  faza("22. Filter korica: samo bibliotekar, „bez” i „sa” se poklapaju sa direktnim brojanjem (migracija 0027)");
+  const U22 = await napraviClana("kor1", "citalac");
+  const KORICA22 = "https://covers.openlibrary.org/b/isbn/9780140449136-M.jpg";
+  await napraviKnjigu("KOR-A", { korice_url: KORICA22, korice_izvor: "open_library" });
+  await napraviKnjigu("KOR-B", { korice_url: KORICA22, korice_izvor: "open_library" });
+  await napraviKnjigu("KOR-C");
+  await napraviKnjigu("KOR-D");
+  await napraviKnjigu("KOR-E");
+  const upitKor = N("KOR-");
+  await provera("običan član dobija prazno (bez greške) iz liste, zbira i spiska izdavača", async () => {
+    const a = await U22.db.rpc("pregled_knjiga", { p_upit: upitKor, p_korica: "bez" });
+    const b = await U22.db.rpc("pregled_knjiga_zbir");
+    const c = await U22.db.rpc("pregled_knjiga_izdavaci", { p_upit: upitKor, p_korica: "bez" });
+    return !a.error && a.data.length === 0 && !b.error && b.data.length === 0 && !c.error && c.data.length === 0 ? true : `${opis(a)} / ${opis(b)} / ${opis(c)}`;
+  });
+  await provera("anon nema pravo ni na listu ni na zbir", async () => {
+    const a = await anon.rpc("pregled_knjiga", { p_korica: "bez" });
+    const b = await anon.rpc("pregled_knjiga_zbir");
+    return nedostupna(a) && nedostupna(b) ? true : `${potpisGreske(a)} / ${potpisGreske(b)}`;
+  });
+  await provera("bibliotekar: „bez” vraća 3 knjige bez korice, „sa” vraća 2 sa koricom, bez filtera 5; nepoznata vrednost je greška 22023", async () => {
+    const bez = await BIB.db.rpc("pregled_knjiga", { p_upit: upitKor, p_korica: "bez" });
+    const sa = await BIB.db.rpc("pregled_knjiga", { p_upit: upitKor, p_korica: "sa" });
+    const sve = await BIB.db.rpc("pregled_knjiga", { p_upit: upitKor });
+    const lose = await BIB.db.rpc("pregled_knjiga", { p_upit: upitKor, p_korica: "xx" });
+    return !bez.error && bez.data.length === 3 && !sa.error && sa.data.length === 2 && !sve.error && sve.data.length === 5 && lose.error?.code === "22023" ? true : `${opis(bez)} ${opis(sa)} ${opis(sve)} ${opis(lose)}`;
+  });
+  await provera("zbir: bez_korice se poklapa sa direktnim brojanjem preko servisnog ključa (matične knjige bez korice)", async () => {
+    const z = await BIB.db.rpc("pregled_knjiga_zbir");
+    const direktno = await S.from("knjige").select("id", { count: "exact", head: true }).is("spojena_sa_id", null).is("korice_url", null);
+    return !z.error && z.data[0]?.bez_korice === direktno.count ? true : `${opis(z)} direktno=${direktno.count}`;
+  });
+
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────
