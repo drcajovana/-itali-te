@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Korica from "../components/Korica.jsx";
-import KoricaIzbor from "../components/KoricaIzbor.jsx";
 import PreporuciCitaocu from "../components/PreporuciCitaocu.jsx";
 import StanjePolice from "../components/StanjePolice.jsx";
 import Utisci from "../components/Utisci.jsx";
 import { useAuth } from "../lib/auth-context.js";
 import { ucitajKnjigu } from "../lib/knjige.js";
-import { nasaFotografija } from "../lib/korica-slika.js";
 import { prosecnaOcena } from "../lib/polica-logika.js";
 import { ucitajOcenu } from "../lib/polica.js";
 import { stil } from "../lib/stil.js";
@@ -114,23 +112,7 @@ function KnjigaSadrzaj({ id }) {
 
       {knjiga.opis && <p className="mt-5 text-[15px] leading-relaxed text-mastilo-2">{knjiga.opis}</p>}
 
-      {jeBibliotekar(clan?.uloga) && (
-        <section className="mt-5" aria-label={T.koricaOdeljak}>
-          <div className={stil.karta}>
-            <KoricaIzbor
-              knjigaId={knjiga.id}
-              naslov={knjiga.naslov}
-              korica={nasaFotografija(knjiga)}
-              mozeUklanjanje
-              onKorica={(adresa, izvor = "fotografija") =>
-                setStanje((s) => ({ ...s, knjiga: { ...s.knjiga, korice_url: adresa, korice_izvor: izvor } }))
-              }
-              onUklonjena={() => setStanje((s) => ({ ...s, knjiga: { ...s.knjiga, korice_url: null, korice_izvor: null, korice_poreklo: null } }))}
-            />
-          </div>
-        </section>
-      )}
-
+      {/* korice se menjaju samo u kartici Biblioteka (Све књиге i unos), ne na stranici knjige */}
       <StanjePolice knjiga={knjiga} />
 
       {/* Preporuči čitaocu: povezani čitaoci (nadimci iz pogleda moje_veze), preporuka ide u tabelu preporuke */}
