@@ -365,7 +365,6 @@ export default function BibliotekarKnjige() {
   return (
     <>
       <h1 className={`${stil.naslov} pt-2`}>{T.naslov}</h1>
-      <p className={`${stil.uvod} max-w-[70ch]`}>{T.uvod}</p>
 
       {/* zbir: ukupno + po izvoru + po odluci, u jednom redu na širokom ekranu */}
       <section className={`${stil.karta} mt-4`} aria-label={T.ukupno}>

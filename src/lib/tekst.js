@@ -153,7 +153,6 @@ const cir = {
   // Ekran „Све књиге" (/bibliotekar/knjige): sve knjige u bazi, zbirni brojevi i broj čitalaca po knjizi. Nikad član.
   pregledKnjiga: {
     naslov: "Све књиге",
-    uvod: "Све књиге у бази: зброј по извору и по одлуци набавке, и листа са бројем читалаца који књигу имају на полици. Видите само бројеве, не и ко је шта унео или ставио на полицу.",
     ucitava: "Учитавам књиге…",
     greska: "Не могу да учитам књиге. Проверите интернет и покушајте поново.",
     zbirGreska: "Не могу да учитам збирне бројеве.",
@@ -161,7 +160,7 @@ const cir = {
     ukupnoPomoc: "Рачунају се матичне књиге; спојени дупликати су посебно.",
     spojenih: "Спојених дупликата: {n}",
     poIzvoru: "По извору",
-    poOdluci: "По одлуци набавке",
+    poOdluci: "По стању",
     izvori: {
       fond: "Фонд библиотеке",
       link: "Унос са линка (библиотекар)",
@@ -174,11 +173,11 @@ const cir = {
       google_books: "Google Books",
       clan: "Члан",
     },
-    odluke: { imamo: "Имамо", nabavljamo: "Набављамо", ne_nabavljamo: "Не набављамо", bez: "Без одлуке" },
+    odluke: { imamo: "У фонду", nabavljamo: "Набављамо", ne_nabavljamo: "Не набављамо", bez: "Без одлуке" },
     pretraga: "Претрага по наслову, аутору или ISBN-у",
     pretragaPrazno: "Наслов, аутор или ISBN",
     filterIzvor: "Извор",
-    filterOdluka: "Одлука",
+    filterOdluka: "Стање",
     filter: "Филтери",
     filterIzdavac: "Издавач",
     sviIzdavaci: "Сви издавачи",
@@ -198,7 +197,7 @@ const cir = {
     obrisi: "Обриши",
     zatvori: "Затвори",
     otvori: "Отвори податке о књизи „{naslov}”",
-    detalji: { izvor: "Извор", odluka: "Одлука набавке", citaoca: "Читалаца на полици", uneto: "Унето", postaviSliku: "Постави слику", zameniSliku: "Замени слику", slikaPostavljena: "Слика корице је постављена." },
+    detalji: { izvor: "Извор", odluka: "Стање", citaoca: "Читалаца на полици", uneto: "Унето", postaviSliku: "Постави слику", zameniSliku: "Замени слику", slikaPostavljena: "Слика корице је постављена." },
     izmena: {
       naslov: "Измена књиге",
       polja: { naslov: "Наслов", autor: "Аутор", izdavac: "Издавач", godina: "Година", isbn: "ISBN" },
