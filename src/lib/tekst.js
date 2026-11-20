@@ -179,6 +179,7 @@ const cir = {
     pretragaPrazno: "Наслов, аутор или ISBN",
     filterIzvor: "Извор",
     filterOdluka: "Одлука",
+    filter: "Филтери",
     filterIzdavac: "Издавач",
     sviIzdavaci: "Сви издавачи",
     izdavac: { stavka: "{naziv} ({n})", bez: "Без издавача" },
@@ -195,6 +196,9 @@ const cir = {
     isbn: "ISBN {isbn}",
     izmeni: "Измени",
     obrisi: "Обриши",
+    zatvori: "Затвори",
+    otvori: "Отвори податке о књизи „{naslov}”",
+    detalji: { izvor: "Извор", odluka: "Одлука набавке", citaoca: "Читалаца на полици", uneto: "Унето" },
     izmena: {
       naslov: "Измена књиге",
       polja: { naslov: "Наслов", autor: "Аутор", izdavac: "Издавач", godina: "Година", isbn: "ISBN" },
