@@ -38,13 +38,12 @@ export default function Prijava() {
   return (
     <main className="mx-auto w-full max-w-[520px] px-5 pb-10 pt-8">
       <div className="flex items-center gap-3">
-        <img src="/logo-header.png" alt="" aria-hidden="true" width="40" height="40" className="size-10 flex-none" />
+        <img src="/znak.svg" alt="" aria-hidden="true" width="40" height="40" className="size-10 flex-none" />
         <span className="font-naslov text-[19px] font-extrabold tracking-[-0.03em]">
           {NAZIV.slice(0, 4)}
           <span className="text-bordo">{NAZIV.slice(4)}</span>
         </span>
       </div>
-      <p className="mt-2 text-sm text-mastilo-2">{tekst.aplikacija.ustanova}</p>
 
       <h1 className={`${stil.naslov} mt-8`}>{tekst.prijava.naslov}</h1>
       <p className={stil.uvod}>{tekst.prijava.uvod}</p>
@@ -107,6 +106,12 @@ export default function Prijava() {
       <Link to="/pravila" className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-bordo underline">
         {tekst.pravila.link}
       </Link>
+
+      {/* logo biblioteke (ДНБ, 1846) ostaje na ekranu za prijavu; znak aplikacije je u zaglavlju */}
+      <div className="mt-8 flex items-center gap-3 border-t border-linija pt-5">
+        <img src="/logo.png" alt="" aria-hidden="true" width="56" height="56" className="size-14 flex-none" />
+        <p className="text-sm text-mastilo-2">{tekst.aplikacija.ustanova}</p>
+      </div>
     </main>
   );
 }

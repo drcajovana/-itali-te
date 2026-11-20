@@ -24,8 +24,8 @@ import { tipSlike } from "../api/_lib/slika.js";
 import { preuzmi } from "../api/_lib/bezbedan-fetch.js";
 import { BUCKET_KORICE, putanjaKorice } from "../src/lib/korica-slika.js";
 import {
-  IZDAVACI, KORISNICKI_AGENT, PAUZA_MS, VERZIJA_PRAVILA, adreseIzRezultata, adreseIzSitemapa, adreseZaKnjigu, adresaOpenLibrary, alternativneKorice, indeksSitemapa, izdavacOdgovara, jeKonacno, jePrekid, prosireneAdrese,
-  slikaDomenIzdavaca, slikaJeUpotrebljiva, statusIzGreske, stranicaOdgovara,
+  DELFI_NAJVISE_STRANICA, DELFI_PO_STRANI, IZDAVACI, KORISNICKI_AGENT, PAUZA_MS, VERZIJA_PRAVILA, adreseIzRezultata, adreseIzSitemapa, adreseZaKnjigu, adresaOpenLibrary, alternativneKorice, indeksSitemapa, izdavacOdgovara, jeKonacno, jePrekid, prosireneAdrese,
+  adreseSlikaDelfi, izaberiProizvodDelfi, slikaDomenIzdavaca, slikaJeUpotrebljiva, statusIzGreske, stranicaOdgovara, upitZaDelfi,
 } from "../src/lib/korice-izdavaci.js";
 
 const URL_ = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL;
@@ -152,7 +152,44 @@ async function adreseIzPretrage(k) {
   }
 }
 
+// Delfi knjižare: jedan zahtev (najviše dva) po knjizi vraća proizvode sa ISBN-om i adresama slika; prihvata se samo isti ISBN.
+async function obradiDelfi(k) {
+  const upit = upitZaDelfi(k.naslov);
+  if (!upit) return { stanje: "nije_nadjeno", razlog: "naslov je prekratak za pretragu" };
+  let proizvodi = [];
+  let izbor = { ok: false, razlog: "nema rezultata kod Delfija za naslov" };
+  for (let strana = 0; strana < DELFI_NAJVISE_STRANICA; strana++) {
+    let odgovor;
+    try {
+      const o = await preuzmiPoliticno(CFG.pretraga(upit, strana * DELFI_PO_STRANI), { accept: "application/json", tipovi: ["application/json"], najviseBajtova: 1_500_000 });
+      odgovor = JSON.parse(o.telo)?.data;
+    } catch (e) {
+      if (e instanceof Prekid) throw e;
+      return { stanje: "greska", razlog: `pretraga ne odgovara (${String(e?.message ?? e).slice(0, 80)})` };
+    }
+    const stranica = odgovor?.products ?? [];
+    proizvodi = proizvodi.concat(stranica);
+    izbor = izaberiProizvodDelfi(k, proizvodi);
+    if (izbor.ok || stranica.length < DELFI_PO_STRANI) break;
+  }
+  if (!izbor.ok) return { stanje: proizvodi.length ? "ne_odgovara" : "nije_nadjeno", razlog: izbor.razlog };
+
+  const adrese = adreseSlikaDelfi(izbor.proizvod);
+  const oznaka = `Delfi: ${skrati(izbor.proizvod.title, 40)} (${izbor.proizvod.publisher ?? "—"})`;
+  if (!adrese.length) return { stanje: "bez_korice", stranica: oznaka, po: izbor.po };
+  let slika = null;
+  let koricaUrl = adrese[0];
+  for (const a of adrese) {
+    koricaUrl = a;
+    slika = await preuzmiSliku(a);
+    if (slika.ok) break;
+  }
+  if (!slika?.ok) return { stanje: "slika_neupotrebljiva", stranica: oznaka, po: izbor.po, korica: koricaUrl, razlog: slika?.razlog };
+  return { stanje: "nadjeno", stranica: oznaka, po: izbor.po, korica: koricaUrl, tip: slika.tip, bajtova: slika.telo.length, telo: slika.telo };
+}
+
 async function obradi(k, indeks) {
+  if (CFG.strategija === "delfi") return obradiDelfi(k);
   const poPretrazi = CFG.strategija === "pretraga";
   const tacne = poPretrazi ? await adreseIzPretrage(k) : adreseZaKnjigu(k.naslov, indeks);
   // prošireno pogađanje (serije, deo prvi/drugi, ćirilica/latinica) samo za sitemap, i samo ako ceo naslov nije dao prihvaćenu stranicu; traži ISBN
@@ -255,7 +292,9 @@ async function main() {
   mreza.pauzaSekundi = r.pauzaSekundi ?? 0;
   console.log(`robots.txt: ${r.procitan ? "pročitan" : "nije pročitan (nastavlja se uz pauzu)"}${r.pauzaSekundi ? `, Crawl-delay ${r.pauzaSekundi} s` : ""}`);
   let indeks = null;
-  if (CFG.strategija === "pretraga") {
+  if (CFG.strategija === "delfi") {
+    console.log("Strategija: pretraga naslova kod Delfija (1 do 2 zahteva po knjizi), prihvata se samo isti ISBN");
+  } else if (CFG.strategija === "pretraga") {
     console.log("Strategija: pretraga po ISBN-u (jedan zahtev), pa stranica knjige");
   } else {
     const sitemap = await preuzmiPoliticno(CFG.sitemap, { accept: "application/xml,text/xml", tipovi: ["application/xml", "text/xml"], najviseBajtova: 20_000_000 });
@@ -298,6 +337,15 @@ async function main() {
   console.log(`   BEZ KORICE na stranici (ili van bele liste):      ${po("bez_korice").length}`);
   console.log(`   SLIKA NEUPOTREBLJIVA (nije slika / manja od 1 KB): ${po("slika_neupotrebljiva").length}`);
   console.log(`   GREŠKE:                                           ${po("greska").length}`);
+
+  // ista slika kod više knjiga je verovatno zamenska slika (npr. „nema korice“): proveriti pre upisa
+  const poSlici = new Map();
+  for (const { o } of po("nadjeno")) poSlici.set(o.korica, (poSlici.get(o.korica) ?? 0) + 1);
+  const ponovljene = [...poSlici].filter(([, n]) => n > 1);
+  if (ponovljene.length) {
+    console.log(`\n── UPOZORENJE: ista slika kod više knjiga (moguća zamenska slika), proverite pre upisa (${ponovljene.length})`);
+    for (const [a, n] of ponovljene.slice(0, PRIMERA)) console.log(`   ${n}× ${a}`);
+  }
 
   console.log(`\n── Primeri nađenog (prvih ${PRIMERA})`);
   if (!po("nadjeno").length) console.log("   nijedan");

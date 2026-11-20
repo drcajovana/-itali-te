@@ -5,6 +5,7 @@
 // Pravila (CLAUDE.md, „Šta se ne radi" i „Korice i ISBN"): samo knjige iz fonda bez korice; jedan zahtev u sekundi, robots.txt, jasan
 // User-Agent, prekid na 429 i 403; sa stranice se čita samo naslov, ISBN i adresa slike (nikad opis); slika se preuzima u NAŠ Storage
 // (izvor 'preuzeto', korice_poreklo = adresa slike), jer se slika sa tuđeg servera ne prikazuje.
+import { uIsbn13 } from "./isbn.js";
 import { normTekst } from "./uvoz-fonda.js";
 
 export const KORISNICKI_AGENT = "Citaliste-NBDN/1.0 (biblioteka Negotin)";
@@ -88,12 +89,32 @@ export const IZDAVACI = {
   },
 };
 
+// Delfi knjižare (delfi.rs) nisu izdavač nego knjižara: probni režim po odluci vlasnice (2026-11-20), samo za knjige iz FONDA koje i posle
+// izdavača ostaju bez korice (sviIzdavaci: nema filtera po izdavaču). Sajt je JavaScript aplikacija bez običnog HTML-a, sitemap-a i robots.txt-a
+// (404), pa se koristi ista adresa pretrage koju zove njihova stranica (GET, JSON). Jedan zahtev vraća do 20 proizvoda SA ISBN-om (barcode ili
+// atribut ISBN), autorima i adresama slika, pa nema drugog zahteva po knjizi. Pretraga po ISBN-u ne radi (vraća 0), po naslovu radi
+// (neosetljiva na kvačice, ne razume ćirilicu), pa se traži normalizovan naslov, a prihvata se samo isti ISBN.
+IZDAVACI.delfi = {
+  naziv: "Delfi knjižare",
+  prepoznaj: [],
+  sviIzdavaci: true,
+  domen: "delfi.rs",
+  robots: "https://delfi.rs/robots.txt",
+  podrzan: true,
+  strategija: "delfi",
+  pretraga: (upit, preskoci = 0) => `https://delfi.rs/api/pc-frontend-api/search/advance-search/${encodeURIComponent(upit)}?sort=order_asc&limit=${DELFI_PO_STRANI}&skip=${preskoci}`,
+  // slika se preuzima u naš Storage (delfi.rs je već na beloj listi domena, a ovde je naveden i izričito za ovu skriptu)
+  slikeDomeni: ["delfi.rs"],
+  napomena: "nema robots.txt-a (404) ni sitemap-a; pretraga po naslovu (interni JSON, isti poziv kao njihova pretraga), poklapanje samo po ISBN-u",
+};
+
 export const nazivIzdavaca = (k) => IZDAVACI[k]?.naziv ?? k;
 
 // Da li se izdavač iz baze ("Laguna", "LAGUNA d.o.o.", ćirilicom) odnosi na izabranog izdavača skripte.
 export function izdavacOdgovara(izdavacUBazi, kljuc) {
   const cfg = IZDAVACI[kljuc];
   if (!cfg) return false;
+  if (cfg.sviIzdavaci) return true; // knjižara: sve knjige iz fonda bez korice, bez obzira na izdavača
   const k = normTekst(String(izdavacUBazi ?? "")).replace(/\s+/g, " ").trim();
   return cfg.prepoznaj.some((p) => k.includes(p));
 }
@@ -211,6 +232,60 @@ export function slikaDomenIzdavaca(url, domeni = []) {
 // Najviše dve dodatne.
 export function alternativneKorice(dijagnostika, izabrana) {
   return [...new Set((dijagnostika?.kandidati ?? []).filter((c) => c.ishod === "prihvacena" && !String(c.izvor ?? "").startsWith("<img>") && c.dopunjena && c.dopunjena !== izabrana).map((c) => c.dopunjena))].slice(0, 2);
+}
+
+// ───── Delfi knjižare ─────
+export const DELFI_PO_STRANI = 20;
+export const DELFI_NAJVISE_STRANICA = 2; // najviše dva zahteva po knjizi (prva i druga strana rezultata)
+
+const glavniNaslov = (t) => String(t ?? "").split(/\s+[:/]\s+/)[0];
+
+// Upit za pretragu: glavni naslov (bez podnaslova), latinica bez kvačica i znakova, do 80 znakova; prekratak naslov ne daje upit.
+export function upitZaDelfi(naslov) {
+  const u = normTekst(glavniNaslov(naslov).normalize("NFC")).replace(/[^a-z0-9]+/g, " ").trim().slice(0, 80).trim();
+  return u.length >= 3 ? u : "";
+}
+
+// ISBN-13 proizvoda: atribut ISBN i/ili barcode (samo ako je ispravan ISBN-13 koji počinje sa 978 ili 979; ostali barkodovi su EAN-i drugih artikala).
+export function isbnoviProizvodaDelfi(p) {
+  const izlaz = [];
+  const atribut = uIsbn13(String((p?.attributes ?? []).find((a) => a?.k === "ISBN")?.v ?? ""));
+  if (atribut) izlaz.push(atribut);
+  const bar = String(p?.barcode ?? "");
+  if (/^97[89]\d{10}$/.test(bar)) {
+    const b = uIsbn13(bar);
+    if (b && !izlaz.includes(b)) izlaz.push(b);
+  }
+  return izlaz;
+}
+
+// Koji proizvod iz rezultata je ova knjiga. Knjiga sa ISBN-om: samo proizvod sa ISTIM ISBN-om (Delfi ima više izdanja istog naslova, pa naslov nije
+// dovoljan). Knjiga bez ISBN-a: samo ako tačno jedan proizvod ima isti glavni naslov i sve reči autora. Vraća { ok, proizvod, po } ili { ok: false, razlog }.
+export function izaberiProizvodDelfi(knjiga, proizvodi) {
+  const lista = Array.isArray(proizvodi) ? proizvodi : [];
+  if (knjiga?.isbn) {
+    const p = lista.find((x) => isbnoviProizvodaDelfi(x).includes(knjiga.isbn));
+    if (p) return { ok: true, proizvod: p, po: "isbn" };
+    return { ok: false, razlog: lista.length ? `kod Delfija ima ${lista.length} rezultata za naslov, nijedan sa ISBN-om ${knjiga.isbn}` : "nema rezultata kod Delfija za naslov" };
+  }
+  const naslov = reci(glavniNaslov(knjiga?.naslov));
+  const autorReci = reci(knjiga?.autor).split(" ").filter((r) => r.length > 2);
+  if (!naslov || !autorReci.length) return { ok: false, razlog: "knjiga nema ISBN, a za poklapanje treba i naslov i autor" };
+  const kandidati = lista.filter((x) => reci(glavniNaslov(x?.title)) === naslov && autorReci.every((r) => reci((x?.authors ?? []).map((a) => a?.authorName).join(" ")).includes(r)));
+  if (kandidati.length === 1) return { ok: true, proizvod: kandidati[0], po: "naslov+autor" };
+  return { ok: false, razlog: kandidati.length ? "više izdanja istog naslova i autora, a knjiga nema ISBN" : "nema proizvoda sa istim naslovom i autorom kod Delfija" };
+}
+
+// Adrese slika proizvoda (xl, l, m), samo relativne putanje /_img/... na delfi.rs; zamenske slike se izostavljaju.
+export function adreseSlikaDelfi(p) {
+  const izlaz = [];
+  for (const velicina of ["xl", "l", "m"]) {
+    const t = typeof p?.images?.[velicina] === "string" ? p.images[velicina].trim() : "";
+    if (!/^\/_img\/[A-Za-z0-9_\-./]+$/.test(t) || t.includes("..") || /placeholder|no[-_]?image|nema[-_]?slik/i.test(t)) continue;
+    const a = `https://delfi.rs${t}`;
+    if (!izlaz.includes(a)) izlaz.push(a);
+  }
+  return izlaz;
 }
 
 // Open Library: adresa po ISBN-u; default=false daje 404 kad korice nema (isto kao u src/lib/korica-slika.js).

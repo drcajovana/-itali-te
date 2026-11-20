@@ -151,6 +151,9 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   izdavača i preuzima koricu u naš Storage (kao `korica-iz-linka`, `korice_izvor = 'preuzeto'`). Ovo je izuzetak od pravila „nikad automatskim obilaskom": samo fond, jedan
   izdavač po pokretanju, probni režim podrazumevan, robots.txt, 1 zahtev u sekundi, prekid na 429 i 403, keš na disku, poklapanje ISBN-a ili naslova, bez opisa. Izdavač
   se uključuje tek kad se proveri (`IZDAVACI` u `src/lib/korice-izdavaci.js`, `docs/korice-izdavaci.md`). Domen izvora slike mora da bude na beloj listi ili u `slikeDomeni` tog izdavača (za Lagunu `laguna.oozmi-cdn.com`, dozvoljen samo u skripti, ne u opštoj listi).
+  **Delfi knjižare (odluka vlasnice, 2026-11-20): dozvoljeni su probni režim i, posle provere uzorka, upis** za knjige iz fonda koje izdavači nisu pokrili (`--izdavac=delfi`). Delfi je knjižara
+  bez robots.txt-a i sitemap-a; koristi se njihova pretraga po naslovu (isti GET poziv kao njihova stranica), a prihvata se samo proizvod sa istim ISBN-om. Ista pravila: 1 zahtev u
+  sekundi, 429 i 403 prekidaju, keš na disku, slika u naš Storage, bez opisa. Ovo ne važi za druge knjižare.
 - **Ne dodavati domene izdavača** u listu za korice. `knjige.korice_url`: samo https, do 500
   znakova, samo domeni sa liste (`DOZVOLJENI_DOMENI_KORICA` u `api/_lib/bela-lista.js` I
   `privatno.domeni_korica`; `npm run test:db` pada ako se razilaze). U praksi se koriste samo
@@ -395,6 +398,9 @@ Service Worker **nikad ne presreće POST zahteve**.
 - Traka „Нема везе са интернетом" prati `navigator.onLine` (približno); greške učitavanja i dalje imaju poruke na ekranima.
 - Instalacija: `KarticaInstalacije` na Profilu (dugme preko `beforeinstallprompt`; iPhone: uputstvo „Подели → Додај на почетни екран").
 - `theme_color` i `background_color` su boja aplikacije (`#f4efe5`), jer je zaglavlje bež.
+- **Znak aplikacije** je lepeza od pet knjiga (bordo i zlatna), bez slova: `public/znak.svg` (zaglavlje i ekran za prijavu) i PNG ikone (favicon, apple-touch-icon, `icons/`).
+  Sve pravi `node scripts/napravi-ikone.mjs` (bez novih paketa); znak se menja samo tamo (geometrija, boje), pa se pokrene ponovo. **Logo biblioteke** (`public/logo.png`,
+  ДНБ 1846) ostaje na ekranu za prijavu (uz naziv ustanove) i na članskoj karti za štampu; ne koristi se kao ikona aplikacije.
 
 ## Interfejs
 

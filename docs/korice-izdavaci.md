@@ -29,6 +29,14 @@ npm run admin:obogati-korice -- --izdavac=laguna --open-library  # za knjige koj
 | Pčelica | prazan (sve dozvoljeno, pa i pretraga) | nema sitemap-a; **pretraga po ISBN-u** je obična adresa (`index.php?route=product/search&search=<isbn>`), pa stranica knjige: 2 zahteva po knjizi | **uključena** (2026-11-20); probni uzorak: 20 od 20 nađeno po ISBN-u (kod 8 je najveća slika prevelika, pa se uzima druga predložena sa iste stranice) |
 | Publik Praktikum | nema ga (404) | nema sitemap-a (404); pretraga `/proizvodi?search=<isbn>` vraća praznu ljusku, a rezultate učitava JavaScript preko internog POST API-ja (`/api`, uz Auth), što se ne koristi | **nije uključen** (proveren 2026-11-20; 68 knjiga ostaje za ručno dodavanje korica) |
 | Booka | zabranjuje `/?s=` i `/search/` | pretraga se ne koristi; **sitemap** `product-sitemap.xml` (oko 280 adresa `/knjige/<kategorija>/<naslov>/`), na stranici ISBN i korica (`booka.rs`) | **uključena** (2026-11-20); mala pokrivenost |
+| Delfi knjižare (delfi.rs) | nema robots.txt-a (404); uslovi korišćenja (/uslovi_koriscenja) su uslovi kupovine i privatnosti, bez odredbe o automatskom pristupu ili kopiranju slika | sajt je JavaScript aplikacija (svaka adresa vraća praznu ljusku), nema sitemap-a; **pretraga po naslovu** je GET `/api/pc-frontend-api/search/advance-search/<naslov>?limit=20&skip=0` (isti poziv koji šalje njihova stranica), pretraga po ISBN-u ne radi (0 rezultata), a ćirilicu ne razume | **probni režim** (odluka vlasnice, 2026-11-20); knjižara, ne izdavač: obrađuje sve knjige iz fonda bez korice |
+
+## Delfi knjižare (probni režim)
+`npm run admin:obogati-korice -- --izdavac=delfi --uzorak=20`. Pokreće se **posle** izdavača (ostaju samo knjige koje oni nisu pokrili). Jedan zahtev vraća do 20 proizvoda sa
+ISBN-om (barcode ili atribut), autorima i adresama slika, pa po knjizi ide 1 zahtev (2 ako prva strana nema isti ISBN). Traži se normalizovan glavni naslov (latinica, bez
+kvačica), a prihvata se **samo proizvod sa istim ISBN-om** (Delfi ima više izdanja istog naslova); knjiga bez ISBN-a se prihvata samo kad tačno jedan proizvod ima isti naslov i
+sve reči autora. Slika: xl, pa l, pa m (samo `/_img/...` na delfi.rs, bez zamenskih slika). Izveštaj upozorava kad ista slika stigne za više knjiga (moguća zamenska slika).
+Upis (`--upisi`) tek posle provere uzorka.
 
 ## Pogađanje adrese (Laguna)
 1. Ceo naslov, pa naslov bez podnaslova (`slug`) traži se u sitemap-u; stranica se prihvata po ISBN-u **ili** naslovu.
