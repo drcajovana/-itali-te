@@ -272,6 +272,7 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   dolaze od bibliotekara/servisa; ekran zato piše „Додао члан" samo za `clan`.
 - Odluka je efektivna (isto kao izveštaj za nabavku): `u_fondu` bez odluke je „imamo". Spojeni duplikati se ne računaju u ukupno.
 - Nepoznata vrednost filtera ili redosleda je greška 22023 u bazi; klijent je ne šalje (`parametriPregleda`).
+- Filteri izvor, odluka, izdavač i redosled su padajući meniji (`select`), ne dugmad. U dijalogu je i „Постави/Замени слику” (`SlikajKoricu`, isti tok kao na stranici knjige: izvor `fotografija`).
 - **Kartica knjige** je dugme koje otvara dijalog (`KnjigaDijalog`) sa podacima; Измени i Обриши su samo tamo (ne na kartici), pa sve kartice ostaju iste veličine.
 - **Izmena i brisanje** (`src/lib/knjige-admin.js`): izmena samo naslova, autora, izdavača, godine i ISBN-a kroz `urediPotvrdu`; sme bibliotekar (RLS `knjige_update_bibliotekar`).
   Brisanje je **samo administrator** (RLS `knjige_delete_admin`; dugme se bibliotekaru ne nudi) i odnosi stavke na policama, utiske i preporuke (on delete cascade), pa ga ekran traži

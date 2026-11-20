@@ -22,6 +22,7 @@ export default function SlikajKoricu({
   kamera = true,
   onemoguceno = false,
   onRadi = null,
+  mala = false, // malo dugme (dijalog sa podacima o knjizi)
 }) {
   const ulaz = useRef(null);
   const [radi, setRadi] = useState(false);
@@ -62,9 +63,11 @@ export default function SlikajKoricu({
         type="button"
         disabled={radi || onemoguceno}
         onClick={() => ulaz.current?.click()}
-        className={`flex min-h-12 w-full items-center justify-center rounded-full px-5 py-3 text-base font-semibold disabled:opacity-60 sm:w-auto ${
-          glavno ? "bg-bordo text-white" : "border border-bordo text-bordo"
-        }`}
+        className={
+          mala
+            ? "inline-flex min-h-11 md:min-h-9! items-center rounded-full border border-linija bg-povrsina px-4 text-[13px] font-medium text-bordo transition hover:bg-bordo-svetla disabled:opacity-60"
+            : `flex min-h-12 w-full items-center justify-center rounded-full px-5 py-3 text-base font-semibold disabled:opacity-60 sm:w-auto ${glavno ? "bg-bordo text-white" : "border border-bordo text-bordo"}`
+        }
       >
         {radi ? T.radi : oznaka}
       </button>

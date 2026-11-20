@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Dijalog from "../components/Dijalog.jsx";
 import Korica from "../components/Korica.jsx";
+import SlikajKoricu from "../components/SlikajKoricu.jsx";
 import Skeleton from "../components/Skeleton.jsx";
 import { useAuth } from "../lib/auth-context.js";
 import { izmeniKnjigu, obrisiKnjigu } from "../lib/knjige-admin.js";
@@ -48,6 +49,7 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
   const [forma, setForma] = useState(() => poljaIzmene(pocetna));
   const [zauzet, setZauzet] = useState(false);
   const [greska, setGreska] = useState(null);
+  const [slikaOk, setSlikaOk] = useState(false);
 
   async function sacuvaj(e) {
     e.preventDefault();
@@ -207,10 +209,30 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
             {T.obrisi}
           </button>
         )}
+        {/* samo slika: postavlja ili zamenjuje koricu postojeće knjige, ostali podaci se ne diraju (isti tok kao na stranici knjige) */}
+        <SlikajKoricu
+          knjigaId={k.id}
+          staraAdresa={k.korice_url}
+          kamera={false}
+          glavno={false}
+          mala
+          oznaka={k.korice_url ? T.detalji.zameniSliku : T.detalji.postaviSliku}
+          onPostavljena={(adresa, izvor) => {
+            const nova = { korice_url: adresa, korice_izvor: izvor };
+            setK((x) => ({ ...x, ...nova }));
+            naIzmenjeno(k.id, nova);
+            setSlikaOk(true);
+          }}
+        />
         <button type="button" onClick={onZatvori} className={`${MALO_DUGME} ml-auto text-mastilo-2`}>
           {T.zatvori}
         </button>
       </div>
+      {slikaOk && (
+        <p role="status" className="mt-3 text-sm font-medium">
+          {T.detalji.slikaPostavljena}
+        </p>
+      )}
     </Dijalog>
   );
 }
@@ -381,15 +403,17 @@ export default function BibliotekarKnjige() {
         )}
       </section>
 
-      {/* filteri: u tri kolone na širokom ekranu */}
-      <section className={`${stil.karta} mt-4 md:grid md:grid-cols-3 md:gap-x-6`} aria-label={T.filter}>
+      {/* filteri: sve su padajući meniji (osim pretrage), u tri kolone na širokom ekranu */}
+      <section className={`${stil.karta} mt-4 grid gap-4 md:grid-cols-3`} aria-label={T.filter}>
         <div>
           <label htmlFor="pregled-pretraga" className="text-sm font-medium text-mastilo-2">
             {T.pretraga}
           </label>
           <input id="pregled-pretraga" type="search" autoComplete="off" placeholder={T.pretragaPrazno} value={upit} onChange={(e) => setUpit(e.target.value)} className={`${stil.polje} mt-1.5`} />
+        </div>
 
-          <label htmlFor="pregled-izdavac" className="mt-4 block text-sm font-medium text-mastilo-2">
+        <div>
+          <label htmlFor="pregled-izdavac" className="text-sm font-medium text-mastilo-2">
             {T.filterIzdavac}
           </label>
           <select id="pregled-izdavac" value={izdavac} onChange={(e) => postavi({ izdavac: e.target.value })} className={`${stil.polje} mt-1.5`}>
@@ -402,35 +426,45 @@ export default function BibliotekarKnjige() {
           </select>
         </div>
 
-        <div className="mt-4 md:mt-0">
-          <p className="text-sm font-medium text-mastilo-2">{T.filterIzvor}</p>
-          <div role="group" aria-label={T.filterIzvor} className="mt-1.5 flex flex-wrap gap-2">
-            {["", ...IZVORI].map((v) => (
-              <button key={v || "sve"} type="button" aria-pressed={izvor === v} onClick={() => postavi({ izvor: v })} className={stil.cip}>
-                {v ? T.izvoriKratko[v] : T.sve}
-              </button>
+        <div>
+          <label htmlFor="pregled-izvor" className="text-sm font-medium text-mastilo-2">
+            {T.filterIzvor}
+          </label>
+          <select id="pregled-izvor" value={izvor} onChange={(e) => postavi({ izvor: e.target.value })} className={`${stil.polje} mt-1.5`}>
+            <option value="">{T.sve}</option>
+            {IZVORI.map((v) => (
+              <option key={v} value={v}>
+                {T.izvori[v]}
+              </option>
             ))}
-          </div>
-
-          <p className="mt-4 text-sm font-medium text-mastilo-2">{T.filterOdluka}</p>
-          <div role="group" aria-label={T.filterOdluka} className="mt-1.5 flex flex-wrap gap-2">
-            {["", ...ODLUKE].map((v) => (
-              <button key={v || "sve"} type="button" aria-pressed={odluka === v} onClick={() => postavi({ odluka: v })} className={stil.cip}>
-                {v ? T.odluke[v] : T.sve}
-              </button>
-            ))}
-          </div>
+          </select>
         </div>
 
-        <div className="mt-4 md:mt-0">
-          <p className="text-sm font-medium text-mastilo-2">{T.redosled}</p>
-          <div role="group" aria-label={T.redosled} className="mt-1.5 flex flex-wrap gap-2">
-            {REDOSLEDI.map((v) => (
-              <button key={v} type="button" aria-pressed={redosled === v} onClick={() => postavi({ redosled: v })} className={stil.cip}>
-                {T.redosledi[v]}
-              </button>
+        <div>
+          <label htmlFor="pregled-odluka" className="text-sm font-medium text-mastilo-2">
+            {T.filterOdluka}
+          </label>
+          <select id="pregled-odluka" value={odluka} onChange={(e) => postavi({ odluka: e.target.value })} className={`${stil.polje} mt-1.5`}>
+            <option value="">{T.sve}</option>
+            {ODLUKE.map((v) => (
+              <option key={v} value={v}>
+                {T.odluke[v]}
+              </option>
             ))}
-          </div>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="pregled-redosled" className="text-sm font-medium text-mastilo-2">
+            {T.redosled}
+          </label>
+          <select id="pregled-redosled" value={redosled} onChange={(e) => postavi({ redosled: e.target.value })} className={`${stil.polje} mt-1.5`}>
+            {REDOSLEDI.map((v) => (
+              <option key={v} value={v}>
+                {T.redosledi[v]}
+              </option>
+            ))}
+          </select>
         </div>
       </section>
 

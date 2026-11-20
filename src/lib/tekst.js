@@ -198,7 +198,7 @@ const cir = {
     obrisi: "Обриши",
     zatvori: "Затвори",
     otvori: "Отвори податке о књизи „{naslov}”",
-    detalji: { izvor: "Извор", odluka: "Одлука набавке", citaoca: "Читалаца на полици", uneto: "Унето" },
+    detalji: { izvor: "Извор", odluka: "Одлука набавке", citaoca: "Читалаца на полици", uneto: "Унето", postaviSliku: "Постави слику", zameniSliku: "Замени слику", slikaPostavljena: "Слика корице је постављена." },
     izmena: {
       naslov: "Измена књиге",
       polja: { naslov: "Наслов", autor: "Аутор", izdavac: "Издавач", godina: "Година", isbn: "ISBN" },
