@@ -126,7 +126,7 @@ function dekoder(kodiranje) {
 
 // Izdvojeno u objekat da test može da ga zameni, bez prave mreže.
 export const unutrasnje = {
-  jedanZahtev(u, { accept, tipovi, najviseBajtova }, preostaloMs) {
+  jedanZahtev(u, { accept, tipovi, najviseBajtova, korisnickiAgent }, preostaloMs) {
     return new Promise((resolve, reject) => {
       let zavrseno = false;
       const gotovo = (f, v) => {
@@ -145,7 +145,7 @@ export const unutrasnje = {
           lookup: lookupZasticen,
           servername: u.hostname,
           headers: {
-            "User-Agent": KORISNICKI_AGENT,
+            "User-Agent": korisnickiAgent || KORISNICKI_AGENT,
             Accept: accept,
             "Accept-Encoding": "gzip, deflate, br",
             "Accept-Language": "sr,en;q=0.5",
@@ -230,6 +230,7 @@ export async function preuzmi(ulaz, opcije = {}) {
     najviseBajtova = OGRANICENJA.najviseBajtova,
     lista = DOZVOLJENI_DOMENI,
     sirovo = false, // true: telo su bajtovi (Buffer), bez dekodiranja u tekst (slike)
+    korisnickiAgent = null, // samo za skripte u scripts/ (npr. obogati-korice.mjs); api/ funkcije ga ne šalju
   } = opcije;
   const pocetak = Date.now();
   let u = proveriUrl(ulaz, lista);
@@ -240,7 +241,7 @@ export async function preuzmi(ulaz, opcije = {}) {
 
     let odgovor;
     try {
-      odgovor = await unutrasnje.jedanZahtev(u, { accept, tipovi, najviseBajtova }, preostalo);
+      odgovor = await unutrasnje.jedanZahtev(u, { accept, tipovi, najviseBajtova, korisnickiAgent }, preostalo);
     } catch (e) {
       if (e instanceof ApiGreska) throw e;
       throw new ApiGreska(502, "ne_mogu_da_procitam", `Veza nije uspela: ${e?.code ?? e?.message ?? e}`);

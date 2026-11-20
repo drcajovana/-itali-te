@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Korica from "../components/Korica.jsx";
 import Skeleton from "../components/Skeleton.jsx";
+import { useAuth } from "../lib/auth-context.js";
+import { izmeniKnjigu, obrisiKnjigu } from "../lib/knjige-admin.js";
 import { datumIzVremena } from "../lib/osoblje-logika.js";
 import { formatDatum } from "../lib/polica-logika.js";
-import { IZVORI, ODLUKE, REDOSLEDI, filteriIzAdrese, filteriUAdresu, grupeZbira, imaJos, kljucFiltera, opcijeIzdavaca } from "../lib/pregled-knjiga-logika.js";
+import { IZVORI, ODLUKE, REDOSLEDI, filteriIzAdrese, filteriUAdresu, grupeZbira, imaJos, kljucFiltera, kljucGreskeIzmene, mozeDaBrise, opcijeIzdavaca, poljaIzmene } from "../lib/pregled-knjiga-logika.js";
 import { ucitajIzdavace, ucitajStranuKnjiga, ucitajZbirKnjiga } from "../lib/pregled-knjiga.js";
 import { popuni } from "../lib/prijave-logika.js";
 import { stil } from "../lib/stil.js";
@@ -22,35 +24,175 @@ function Broj({ broj, natpis }) {
   );
 }
 
-// Jedna knjiga u listi. Samo podaci o knjizi i ZBIRNI broj čitalaca; nikad ko je unosilac ni ko je knjigu stavio na policu.
-function RedKnjige({ k }) {
+// Jedna knjiga u listi, sa izmenom (bibliotekar i administrator) i brisanjem (samo administrator, uz potvrdu). Samo podaci o knjizi i
+// ZBIRNI broj čitalaca; nikad ko je unosilac ni ko je knjigu stavio na policu.
+function RedKnjige({ k, uloga, naIzmenjeno, naObrisano }) {
   const odluka = k.odluka ? T.odluke[k.odluka] : T.odluke.bez;
+  const [rezim, setRezim] = useState("pregled"); // "pregled" | "izmena" | "brisanje"
+  const [forma, setForma] = useState(() => poljaIzmene(k));
+  const [zauzet, setZauzet] = useState(false);
+  const [poruka, setPoruka] = useState(null); // { tekst, greska }
+
+  async function sacuvaj(e) {
+    e.preventDefault();
+    if (zauzet) return;
+    setZauzet(true);
+    setPoruka(null);
+    try {
+      const nova = await izmeniKnjigu(k.id, forma);
+      naIzmenjeno(k.id, nova);
+      setRezim("pregled");
+      setPoruka({ tekst: T.izmena.sacuvano });
+    } catch (err) {
+      const kljuc = kljucGreskeIzmene(err);
+      if (kljuc === "opste") console.error("izmena knjige:", err?.code ?? err?.message);
+      setPoruka({ tekst: T.izmena.greske[kljuc], greska: true });
+    }
+    setZauzet(false);
+  }
+
+  async function obrisi() {
+    if (zauzet) return;
+    setZauzet(true);
+    setPoruka(null);
+    try {
+      await obrisiKnjigu(k);
+      naObrisano(k.id);
+    } catch (err) {
+      console.error("brisanje knjige:", err?.kod ?? err?.code);
+      setPoruka({ tekst: err?.kod === "nema_dozvole" ? T.brisanje.nemaDozvole : T.brisanje.greska, greska: true });
+      setZauzet(false);
+    }
+  }
+
+  const polje = (ime, oznaka, opcije = {}) => (
+    <div className={opcije.sirina}>
+      <label htmlFor={`${k.id}-${ime}`} className="text-xs font-medium text-mastilo-2">
+        {oznaka}
+      </label>
+      <input id={`${k.id}-${ime}`} type="text" autoComplete="off" value={forma[ime]} onChange={(e) => setForma((f) => ({ ...f, [ime]: e.target.value }))} inputMode={opcije.inputMode} className={`${stil.polje} mt-1`} />
+    </div>
+  );
+
   return (
     <li className={`${stil.karta} flex gap-3`}>
       <div className="w-11 flex-none">
         <Korica knjiga={k} autor={k.autor} velicina="sitna" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="font-naslov text-[15.5px] font-bold leading-tight tracking-[-0.02em]">{k.naslov}</p>
-        <p className="mt-0.5 text-sm text-mastilo-2">{k.autor || T.bezAutora}</p>
-        {(k.izdavac || k.godina) && <p className="text-xs text-mastilo-2">{[k.izdavac, k.godina].filter(Boolean).join(", ")}</p>}
-        {k.isbn && <p className="text-xs tabular-nums text-mastilo-2">{popuni(T.isbn, { isbn: k.isbn })}</p>}
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className={k.izvor === "fond" ? stil.izvorFond : stil.izvor}>{T.izvoriKratko[k.izvor] ?? k.izvor}</span>
-          <span className={k.odluka === "imamo" ? stil.izvorFond : stil.izvor}>{odluka}</span>
-        </div>
-        <p className="mt-2 text-xs text-mastilo-2">
-          {popuni(T.citaoca, { n: k.citaoca })} · {popuni(T.unetoDatum, { datum: formatDatum(datumIzVremena(k.kreirana)) })}
-        </p>
+        {rezim === "izmena" ? (
+          <form onSubmit={sacuvaj} noValidate className="space-y-2.5" aria-label={T.izmena.naslov}>
+            <h3 className="font-naslov text-[15px] font-bold">{T.izmena.naslov}</h3>
+            {polje("naslov", T.izmena.polja.naslov)}
+            {polje("autor", T.izmena.polja.autor)}
+            {polje("izdavac", T.izmena.polja.izdavac)}
+            <div className="grid grid-cols-[96px_1fr] gap-2.5">
+              {polje("godina", T.izmena.polja.godina, { inputMode: "numeric" })}
+              {polje("isbn", T.izmena.polja.isbn)}
+            </div>
+            {poruka?.greska && (
+              <p role="alert" className="text-sm font-medium text-bordo">
+                {poruka.tekst}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" disabled={zauzet} className={stil.veliko}>
+                {zauzet ? T.izmena.cuvam : T.izmena.sacuvaj}
+              </button>
+              <button
+                type="button"
+                disabled={zauzet}
+                onClick={() => {
+                  setRezim("pregled");
+                  setForma(poljaIzmene(k));
+                  setPoruka(null);
+                }}
+                className={stil.tiho}
+              >
+                {T.izmena.odustani}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <p className="font-naslov text-[15.5px] font-bold leading-tight tracking-[-0.02em]">{k.naslov}</p>
+            <p className="mt-0.5 text-sm text-mastilo-2">{k.autor || T.bezAutora}</p>
+            {(k.izdavac || k.godina) && <p className="text-xs text-mastilo-2">{[k.izdavac, k.godina].filter(Boolean).join(", ")}</p>}
+            {k.isbn && <p className="text-xs tabular-nums text-mastilo-2">{popuni(T.isbn, { isbn: k.isbn })}</p>}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className={k.izvor === "fond" ? stil.izvorFond : stil.izvor}>{T.izvoriKratko[k.izvor] ?? k.izvor}</span>
+              <span className={k.odluka === "imamo" ? stil.izvorFond : stil.izvor}>{odluka}</span>
+            </div>
+            <p className="mt-2 text-xs text-mastilo-2">
+              {popuni(T.citaoca, { n: k.citaoca })} · {popuni(T.unetoDatum, { datum: formatDatum(datumIzVremena(k.kreirana)) })}
+            </p>
+
+            {rezim === "brisanje" ? (
+              <div role="group" aria-label={popuni(T.brisanje.pitanje, { naslov: k.naslov })} className="mt-3 space-y-2 rounded-srednji border border-bordo p-3">
+                <p className="text-sm font-semibold">{popuni(T.brisanje.pitanje, { naslov: k.naslov })}</p>
+                <p className="text-sm text-mastilo-2">{popuni(k.citaoca > 0 ? T.brisanje.upozorenje : T.brisanje.upozorenjeBez, { n: k.citaoca })}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={zauzet} onClick={obrisi} className={stil.veliko}>
+                    {zauzet ? T.izmena.cuvam : T.brisanje.da}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={zauzet}
+                    onClick={() => {
+                      setRezim("pregled");
+                      setPoruka(null);
+                    }}
+                    className={stil.tiho}
+                  >
+                    {T.izmena.odustani}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForma(poljaIzmene(k));
+                    setPoruka(null);
+                    setRezim("izmena");
+                  }}
+                  className="inline-flex min-h-11 items-center rounded-full bg-pozadina px-4 text-sm font-medium text-bordo"
+                >
+                  {T.izmeni}
+                </button>
+                {mozeDaBrise(uloga) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPoruka(null);
+                      setRezim("brisanje");
+                    }}
+                    className="inline-flex min-h-11 items-center rounded-full bg-pozadina px-4 text-sm font-medium text-mastilo-2"
+                  >
+                    {T.obrisi}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+        {rezim !== "izmena" && poruka && (
+          <p role={poruka.greska ? "alert" : "status"} className={`mt-2 text-sm font-medium ${poruka.greska ? "text-bordo" : ""}`}>
+            {poruka.tekst}
+          </p>
+        )}
       </div>
     </li>
   );
 }
 
-// Ekran „Све књиге" (/bibliotekar/knjige): zbirni brojevi i lista svih knjiga sa brojem čitalaca. Samo za bibliotekare i
-// administratore (RutaZaBibliotekare je udobnost; funkcije iz 0024 vraćaju prazno svima ostalima). Ekran ne dobija nikakav trag
-// do člana: nema unosioca, nema imena, nema onoga ko je knjigu stavio na policu.
+// Ekran „Све књиге" (/bibliotekar/knjige): zbirni brojevi i lista svih knjiga sa brojem čitalaca, uz izmenu podataka o knjizi i brisanje
+// (samo administrator). Samo za bibliotekare i administratore (RutaZaBibliotekare je udobnost; funkcije iz 0024 vraćaju prazno svima
+// ostalima, a RLS štiti izmenu i brisanje). Ekran ne dobija nikakav trag do člana: nema unosioca, nema imena, nema onoga ko je knjigu
+// stavio na policu. Na širokim ekranima (lg) zbir i filteri su u bočnoj koloni, a knjige u mreži.
 export default function BibliotekarKnjige() {
+  const { clan: ja } = useAuth();
   // Filteri žive u adresi (?q=&izvor=&odluka=&izdavac=&redosled=), pa se izbor čuva pri osvežavanju i povratku na ekran.
   // Svaka promena filtera menja adresu bez novog zapisa u istoriji, a lista počinje iznova od prve strane (ključ filtera).
   const [params, setParams] = useSearchParams();
@@ -63,6 +205,8 @@ export default function BibliotekarKnjige() {
   // Rezultat pamti za koji je filter učitan; dok se ne poklopi sa izabranim, ekran javlja da učitava.
   const [lista, setLista] = useState({ kljuc: null, redovi: [], ukupno: 0, greska: false });
   const [jos, setJos] = useState(false);
+  // posle izmene ili brisanja zbir i spisak izdavača se učitavaju ponovo
+  const [osvezi, setOsvezi] = useState(0);
 
   useEffect(() => {
     if (upit.trim() === trazi) return;
@@ -81,7 +225,7 @@ export default function BibliotekarKnjige() {
     return () => {
       otkazano = true;
     };
-  }, []);
+  }, [osvezi]);
 
   const filteri = { upit: trazi, izvor, odluka, izdavac, redosled };
   const kljuc = kljucFiltera(filteri);
@@ -113,7 +257,7 @@ export default function BibliotekarKnjige() {
     return () => {
       otkazano = true;
     };
-  }, [trazi, izvor, odluka]);
+  }, [trazi, izvor, odluka, osvezi]);
 
   async function ucitajJos() {
     if (jos) return;
@@ -128,6 +272,16 @@ export default function BibliotekarKnjige() {
     setJos(false);
   }
 
+  // izmenjena knjiga ostaje u listi sa novim podacima; obrisana nestaje, a ukupan broj se smanjuje
+  const naIzmenjeno = (id, nova) => {
+    setLista((l) => ({ ...l, redovi: l.redovi.map((r) => (r.id === id ? { ...r, ...nova } : r)) }));
+    setOsvezi((n) => n + 1);
+  };
+  const naObrisano = (id) => {
+    setLista((l) => ({ ...l, redovi: l.redovi.filter((r) => r.id !== id), ukupno: Math.max(0, l.ukupno - 1) }));
+    setOsvezi((n) => n + 1);
+  };
+
   const ucitava = lista.kljuc !== kljuc;
   const g = grupeZbira(zbir.podaci);
   const opcijeIzd = opcijeIzdavaca(izdavaci.redovi, izdavac, T.izdavac);
@@ -135,119 +289,123 @@ export default function BibliotekarKnjige() {
   return (
     <>
       <h1 className={`${stil.naslov} pt-2`}>{T.naslov}</h1>
-      <p className={stil.uvod}>{T.uvod}</p>
+      <p className={`${stil.uvod} max-w-[70ch]`}>{T.uvod}</p>
 
-      <section className={`${stil.karta} mt-4`} aria-label={T.ukupno}>
-        {!zbir.ucitano && <Skeleton blokova={1} visina="h-[318px]" razmak="" />}
-        {zbir.greska && (
-          <p role="alert" className="text-sm font-medium text-bordo">
-            {T.zbirGreska}
-          </p>
-        )}
-        {zbir.podaci && (
-          <>
-            <p className="text-xs font-medium text-mastilo-2">{T.ukupno}</p>
-            <p className="font-naslov text-[40px] font-extrabold leading-none tracking-[-0.04em] text-bordo">{g.ukupno}</p>
-            <p className="mt-1 text-xs text-mastilo-2">{T.ukupnoPomoc}</p>
-            {g.spojenih > 0 && <p className="text-xs text-mastilo-2">{popuni(T.spojenih, { n: g.spojenih })}</p>}
-
-            <h2 className="mt-4 text-sm font-semibold">{T.poIzvoru}</h2>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {g.izvori.map((x) => (
-                <Broj key={x.kljuc} broj={x.broj} natpis={T.izvori[x.kljuc]} />
-              ))}
-            </div>
-
-            <h2 className="mt-4 text-sm font-semibold">{T.poOdluci}</h2>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {g.odluke.map((x) => (
-                <Broj key={x.kljuc} broj={x.broj} natpis={T.odluke[x.kljuc]} />
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-
-      <div className="mt-5">
-        <label htmlFor="pregled-pretraga" className="text-sm font-medium text-mastilo-2">
-          {T.pretraga}
-        </label>
-        <input id="pregled-pretraga" type="search" autoComplete="off" placeholder={T.pretragaPrazno} value={upit} onChange={(e) => setUpit(e.target.value)} className={`${stil.polje} mt-1.5`} />
-      </div>
-
-      <div className="mt-4">
-        <p className="text-sm font-medium text-mastilo-2">{T.filterIzvor}</p>
-        <div role="group" aria-label={T.filterIzvor} className="mt-1.5 flex flex-wrap gap-2">
-          {["", ...IZVORI].map((v) => (
-            <button key={v || "sve"} type="button" aria-pressed={izvor === v} onClick={() => postavi({ izvor: v })} className={stil.cip}>
-              {v ? T.izvoriKratko[v] : T.sve}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <p className="text-sm font-medium text-mastilo-2">{T.filterOdluka}</p>
-        <div role="group" aria-label={T.filterOdluka} className="mt-1.5 flex flex-wrap gap-2">
-          {["", ...ODLUKE].map((v) => (
-            <button key={v || "sve"} type="button" aria-pressed={odluka === v} onClick={() => postavi({ odluka: v })} className={stil.cip}>
-              {v ? T.odluke[v] : T.sve}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <label htmlFor="pregled-izdavac" className="text-sm font-medium text-mastilo-2">
-          {T.filterIzdavac}
-        </label>
-        <select id="pregled-izdavac" value={izdavac} onChange={(e) => postavi({ izdavac: e.target.value })} className={`${stil.polje} mt-1.5`}>
-          <option value="">{T.sviIzdavaci}</option>
-          {opcijeIzd.map((o) => (
-            <option key={o.kljuc} value={o.kljuc}>
-              {o.natpis}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="mt-4">
-        <p className="text-sm font-medium text-mastilo-2">{T.redosled}</p>
-        <div role="group" aria-label={T.redosled} className="mt-1.5 flex flex-wrap gap-2">
-          {REDOSLEDI.map((v) => (
-            <button key={v} type="button" aria-pressed={redosled === v} onClick={() => postavi({ redosled: v })} className={stil.cip}>
-              {T.redosledi[v]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <section className="mt-5" aria-label={T.naslov}>
-        {ucitava && <Skeleton blokova={3} visina="h-36" razmak="" />}
-        {!ucitava && lista.greska && (
-          <p role="alert" className="text-base font-medium text-bordo">
-            {T.greska}
-          </p>
-        )}
-        {!ucitava && !lista.greska && lista.redovi.length === 0 && <p className={`${stil.karta} text-sm text-mastilo-2`}>{T.nema}</p>}
-        {!ucitava && lista.redovi.length > 0 && (
-          <>
-            <p className="mb-3 text-sm text-mastilo-2" aria-live="polite">
-              {popuni(T.prikazano, { n: lista.redovi.length, ukupno: lista.ukupno })}
-            </p>
-            <ul className="space-y-3">
-              {lista.redovi.map((k) => (
-                <RedKnjige key={k.id} k={k} />
-              ))}
-            </ul>
-            {imaJos(lista.redovi.length, lista.ukupno) && (
-              <button type="button" disabled={jos} onClick={ucitajJos} className={`${stil.okvirno} mt-4`}>
-                {jos ? T.ucitavamJos : T.jos}
-              </button>
+      <div className="lg:mt-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-6">
+        <aside className="lg:sticky lg:top-24">
+          <section className={`${stil.karta} mt-4 lg:mt-0`} aria-label={T.ukupno}>
+            {!zbir.ucitano && <Skeleton blokova={1} visina="h-[318px]" razmak="" />}
+            {zbir.greska && (
+              <p role="alert" className="text-sm font-medium text-bordo">
+                {T.zbirGreska}
+              </p>
             )}
-          </>
-        )}
-      </section>
+            {zbir.podaci && (
+              <>
+                <p className="text-xs font-medium text-mastilo-2">{T.ukupno}</p>
+                <p className="font-naslov text-[40px] font-extrabold leading-none tracking-[-0.04em] text-bordo">{g.ukupno}</p>
+                <p className="mt-1 text-xs text-mastilo-2">{T.ukupnoPomoc}</p>
+                {g.spojenih > 0 && <p className="text-xs text-mastilo-2">{popuni(T.spojenih, { n: g.spojenih })}</p>}
+
+                <h2 className="mt-4 text-sm font-semibold">{T.poIzvoru}</h2>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {g.izvori.map((x) => (
+                    <Broj key={x.kljuc} broj={x.broj} natpis={T.izvori[x.kljuc]} />
+                  ))}
+                </div>
+
+                <h2 className="mt-4 text-sm font-semibold">{T.poOdluci}</h2>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {g.odluke.map((x) => (
+                    <Broj key={x.kljuc} broj={x.broj} natpis={T.odluke[x.kljuc]} />
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+
+          <div className="mt-5">
+            <label htmlFor="pregled-pretraga" className="text-sm font-medium text-mastilo-2">
+              {T.pretraga}
+            </label>
+            <input id="pregled-pretraga" type="search" autoComplete="off" placeholder={T.pretragaPrazno} value={upit} onChange={(e) => setUpit(e.target.value)} className={`${stil.polje} mt-1.5`} />
+          </div>
+
+          <div className="mt-4">
+            <p className="text-sm font-medium text-mastilo-2">{T.filterIzvor}</p>
+            <div role="group" aria-label={T.filterIzvor} className="mt-1.5 flex flex-wrap gap-2">
+              {["", ...IZVORI].map((v) => (
+                <button key={v || "sve"} type="button" aria-pressed={izvor === v} onClick={() => postavi({ izvor: v })} className={stil.cip}>
+                  {v ? T.izvoriKratko[v] : T.sve}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-sm font-medium text-mastilo-2">{T.filterOdluka}</p>
+            <div role="group" aria-label={T.filterOdluka} className="mt-1.5 flex flex-wrap gap-2">
+              {["", ...ODLUKE].map((v) => (
+                <button key={v || "sve"} type="button" aria-pressed={odluka === v} onClick={() => postavi({ odluka: v })} className={stil.cip}>
+                  {v ? T.odluke[v] : T.sve}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label htmlFor="pregled-izdavac" className="text-sm font-medium text-mastilo-2">
+              {T.filterIzdavac}
+            </label>
+            <select id="pregled-izdavac" value={izdavac} onChange={(e) => postavi({ izdavac: e.target.value })} className={`${stil.polje} mt-1.5`}>
+              <option value="">{T.sviIzdavaci}</option>
+              {opcijeIzd.map((o) => (
+                <option key={o.kljuc} value={o.kljuc}>
+                  {o.natpis}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-sm font-medium text-mastilo-2">{T.redosled}</p>
+            <div role="group" aria-label={T.redosled} className="mt-1.5 flex flex-wrap gap-2">
+              {REDOSLEDI.map((v) => (
+                <button key={v} type="button" aria-pressed={redosled === v} onClick={() => postavi({ redosled: v })} className={stil.cip}>
+                  {T.redosledi[v]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <section className="mt-5 lg:mt-0" aria-label={T.naslov}>
+          {ucitava && <Skeleton blokova={3} visina="h-36" razmak="" />}
+          {!ucitava && lista.greska && (
+            <p role="alert" className="text-base font-medium text-bordo">
+              {T.greska}
+            </p>
+          )}
+          {!ucitava && !lista.greska && lista.redovi.length === 0 && <p className={`${stil.karta} text-sm text-mastilo-2`}>{T.nema}</p>}
+          {!ucitava && lista.redovi.length > 0 && (
+            <>
+              <p className="mb-3 text-sm text-mastilo-2" aria-live="polite">
+                {popuni(T.prikazano, { n: lista.redovi.length, ukupno: lista.ukupno })}
+              </p>
+              <ul className="grid items-start gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                {lista.redovi.map((k) => (
+                  <RedKnjige key={k.id} k={k} uloga={ja.uloga} naIzmenjeno={naIzmenjeno} naObrisano={naObrisano} />
+                ))}
+              </ul>
+              {imaJos(lista.redovi.length, lista.ukupno) && (
+                <button type="button" disabled={jos} onClick={ucitajJos} className={`${stil.okvirno} mt-4`}>
+                  {jos ? T.ucitavamJos : T.jos}
+                </button>
+              )}
+            </>
+          )}
+        </section>
+      </div>
     </>
   );
 }

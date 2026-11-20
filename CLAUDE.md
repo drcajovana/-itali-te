@@ -147,6 +147,10 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   skida samo ograničenje domenom), najviše 1.5 MB, tip po sadržaju (`api/_lib/slika.js`), bez
   menjanja veličine na serveru i bez novih biblioteka. Pre upotrebe proveriti da sajt dozvoljava
   kopiranje slike (uslovi korišćenja); `korice_poreklo` čuva odakle je uzeta.
+- **Odluka vlasnice (2026-11-20): dozvoljena je administratorska skripta `scripts/obogati-korice.mjs`** koja za knjige iz FONDA bez korice nalazi stranicu knjige kod
+  izdavača i preuzima koricu u naš Storage (kao `korica-iz-linka`, `korice_izvor = 'preuzeto'`). Ovo je izuzetak od pravila „nikad automatskim obilaskom": samo fond, jedan
+  izdavač po pokretanju, probni režim podrazumevan, robots.txt, 1 zahtev u sekundi, prekid na 429 i 403, keš na disku, poklapanje ISBN-a ili naslova, bez opisa. Izdavač
+  se uključuje tek kad se proveri (`IZDAVACI` u `src/lib/korice-izdavaci.js`, `docs/korice-izdavaci.md`). Domen izvora slike mora da bude na beloj listi ili u `slikeDomeni` tog izdavača (za Lagunu `laguna.oozmi-cdn.com`, dozvoljen samo u skripti, ne u opštoj listi).
 - **Ne dodavati domene izdavača** u listu za korice. `knjige.korice_url`: samo https, do 500
   znakova, samo domeni sa liste (`DOZVOLJENI_DOMENI_KORICA` u `api/_lib/bela-lista.js` I
   `privatno.domeni_korica`; `npm run test:db` pada ako se razilaze). U praksi se koriste samo
@@ -253,6 +257,12 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
 - CSV (`nabavka-logika.js`): UTF-8 sa BOM-om, `sep=;`, polja u navodnicima, tekst koji liči na formulu dobija apostrof,
   ISBN se piše kao `="…"`.
 
+## Uvoz fonda (scripts/uvezi-fond.mjs)
+
+- Jednokratna skripta sa servisnim ključem; **podrazumevano probna** (ništa ne upisuje), upis tek sa `--upisi`. Logika u `src/lib/uvoz-fonda.js`, pravila u `docs/uvoz-fonda.md`.
+- Uvoz ne upisuje COBISS ID, primerke, opis, korice, `uneo_id` ni odluku nabavke. Isti ISBN sa različitim naslovom su različite knjige. Postojeća knjiga se samo
+  dopunjava (prazna polja, `u_fondu`, `izvor`), a odluka nabavke se ne menja. `uvoz/` je u `.gitignore`.
+
 ## Све књиге (/bibliotekar/knjige)
 
 - Ekran čita **samo** dve funkcije iz 0024 (`pregled_knjiga_zbir`, `pregled_knjiga`): knjige i zbirni brojevi. Nikad tabele `polica` i `clanovi`,
@@ -262,6 +272,10 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   dolaze od bibliotekara/servisa; ekran zato piše „Додао члан" samo za `clan`.
 - Odluka je efektivna (isto kao izveštaj za nabavku): `u_fondu` bez odluke je „imamo". Spojeni duplikati se ne računaju u ukupno.
 - Nepoznata vrednost filtera ili redosleda je greška 22023 u bazi; klijent je ne šalje (`parametriPregleda`).
+- **Izmena i brisanje** (`src/lib/knjige-admin.js`): izmena samo naslova, autora, izdavača, godine i ISBN-a kroz `urediPotvrdu`; sme bibliotekar (RLS `knjige_update_bibliotekar`).
+  Brisanje je **samo administrator** (RLS `knjige_delete_admin`; dugme se bibliotekaru ne nudi) i odnosi stavke na policama, utiske i preporuke (on delete cascade), pa ga ekran traži
+  uz potvrdu i broj čitalaca. Ne širiti pravo brisanja i ne uklanjati potvrdu.
+- **Širina:** `Okvir` je 520 px na telefonu, do 720 px na md, a za `/bibliotekar/*` do 900 px (md) i 1200 px (xl). Donja navigacija ostaje 520 px.
 - **Izdavač** (0025): ključ je `privatno.norm_tekst(btrim(izdavac))`, a prikaz je najčešći zapis u grupi (nad svim matičnim knjigama). Spisak izdavača prati pretragu,
   izvor i odluku, ne i izabranog izdavača. Pretraga, izvor i odluka su na JEDNOM mestu (`privatno.pregled_knjige_filter`); spisak i lista ga dele, pa se ne razilaze.
   `p_izdavac` je ključ, a `__bez__` znači bez izdavača. Filteri ekrana žive u adresi (`?q=&izvor=&odluka=&izdavac=&redosled=`).

@@ -126,7 +126,7 @@ export default function Pocetna() {
             {grupe[kartica].length === 0 ? (
               <p className="px-2 py-6 text-center text-sm text-mastilo-2">{T.prazneKartice[kartica]}</p>
             ) : (
-              <ul className="grid grid-cols-3 gap-x-[13px] gap-y-4 pb-2">
+              <ul className="grid grid-cols-3 gap-x-[13px] gap-y-4 pb-2 md:grid-cols-5">
                 {grupe[kartica].map((r) => (
                   <li key={r.id} className="min-w-0">
                     <PlocicaKnjige knjiga={r.knjiga} />

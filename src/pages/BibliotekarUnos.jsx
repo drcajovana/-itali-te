@@ -285,7 +285,7 @@ export default function BibliotekarUnos() {
       {stavke.length > 0 && (
         <section className="mt-6" aria-live="polite">
           <p className="text-base font-medium">{T.obradjeno.replace("{n}", String(obradjeno)).replace("{ukupno}", String(stavke.length))}</p>
-          <ul className="mt-3 space-y-4">
+          <ul className="mt-3 grid items-start gap-4 lg:grid-cols-2">
             {stavke.map((s) => (
               <KarticaUnosa
                 key={s.id}

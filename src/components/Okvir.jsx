@@ -86,7 +86,7 @@ export default function Okvir() {
   }, [pathname, osoblje]);
 
   return (
-    <div className="mx-auto w-full max-w-[520px]">
+    <div className={`mx-auto w-full max-w-[520px] ${pathname.startsWith("/bibliotekar") ? "md:max-w-[900px] xl:max-w-[1200px]" : "md:max-w-[720px]"}`}>
       <header className="sticky top-0 z-20 flex items-center gap-3 bg-pozadina px-5 pb-3 pt-[18px] after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-6 after:h-6 after:bg-linear-to-b after:from-pozadina after:to-transparent after:content-['']">
         <img src="/logo-header.png" alt="" aria-hidden="true" width="40" height="40" className="size-10 flex-none" />
         <Link to="/" className="flex min-h-11 flex-1 items-center font-naslov text-[19px] font-extrabold tracking-[-0.03em]">

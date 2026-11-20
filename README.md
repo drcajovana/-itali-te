@@ -29,6 +29,7 @@ Aplikacija još nema ekrane.
 | 14. Odblokiranje | ✅ na ekranu „Читаоци” odeljak „Блокирани читаоци” sa dugmetom „Одблокирај” (uz potvrdu). Veza se ne vraća sama; blokirani ne saznaje ni za blokadu ni za odblokiranje. **Treba migracija 0023** (pogled `moje_blokade`) |
 | 15. Све књиге | ✅ `/bibliotekar/knjige`: ukupan broj knjiga, raščlanjen po izvoru unosa i po odluci nabavke, i lista svih knjiga sa brojem čitalaca na polici (pretraga, filteri, sortiranje, „Учитај још”). Samo zbirni brojevi, nikad član. **Treba migracija 0024** |
 | 16. Filter po izdavaču | ✅ u „Све књиге”: padajući izbor „Издавач” („Лагуна (42)”, „Без издавача”), varijante pisanja se spajaju, brojevi prate ostale filtere; svi filteri su u adresi. **Treba migracija 0025** (posle 0024) |
+| 17. Uvoz fonda | ✅ `npm run admin:uvezi-fond` (probno) i `-- --upisi`: jednokratni uvoz `uvoz/fond-2025-2026.csv` kao knjige iz fonda, bez dupliranja i bez COBISS ID-a, opisa, korica i primeraka. Vidi [`docs/uvoz-fonda.md`](docs/uvoz-fonda.md). Bez migracije |
 | 11. Objava | ⬜ spisak za izvođenje je u [`docs/objava.md`](docs/objava.md): baza, Vercel, sadržaj, bibliotekari, prvi krug. Nije u kodu: pravila korišćenja i obaveštenje o obradi podataka, saglasnost za mlađe od 15 godina. U kodu: `noindex` i sigurnosna zaglavlja u `vercel.json` |
 
 ## Pokretanje
@@ -314,7 +315,9 @@ biblioteka ima knjigu.
 2. Ispod je lista sa koricom, naslovom, autorom, izdavačem, godinom, ISBN-om, izvorom, datumom unosa i **brojem čitalaca koji knjigu imaju na polici** (samo broj; računaju se aktivni članovi, bilo koje stanje police).
 3. Pretraga radi po naslovu, autoru i ISBN-u (i latinicom i ćirilicom, sa kvačicama i bez). Dugmad biraju izvor i odluku, i redosled: najnovije prvo, najviše čitalaca, po naslovu. Lista se učitava po 50 (**Учитај још**).
 4. Padajući izbor **Издавач** pokazuje izdavače sa brojem knjiga („Лагуна (42)”), najviše knjiga prvo, i „Без издавача”. „Laguna”, „LAGUNA”, „laguna ” i „Лагуна” su jedna stavka (neosetljivo na veličinu slova, pismo i razmake na krajevima; „Laguna d.o.o.” ostaje posebna stavka). Brojevi uz izdavače prate pretragu, izvor i odluku. Izbor filtera ostaje u adresi stranice.
-5. Ovde se **ne vidi ko je knjigu uneo ni ko je stavio na policu**, ni po imenu ni po broju karte; samo brojevi.
+5. **Izmena i brisanje.** Uz svaku knjigu je dugme **Измени**: otvara se forma sa naslovom, autorom, izdavačem, godinom i ISBN-om (iste provere kao pri unosu; ISBN se čuva u 13 cifara). Izmenu sme bibliotekar i administrator. Dugme **Обриши** vidi samo **administrator**: traži potvrdu i piše koliko čitalaca knjigu ima na polici, jer se brisanjem knjige brišu i njihove stavke na polici, utisci i preporuke za nju, a korica iz našeg Storage-a. To se ne može vratiti.
+6. Na računaru je prikaz širi: opšti ekrani do 720 px, panel za osoblje do 900 px (xl: 1200 px). „Све књиге" ima bočnu kolonu sa zbirom i filterima i knjige u mreži, „Унос књига" prikazuje kartice u dve kolone, a polica do pet knjiga u redu. Na telefonu je sve kao ranije.
+7. Ovde se **ne vidi ko je knjigu uneo ni ko je stavio na policu**, ni po imenu ni po broju karte; samo brojevi.
 
 **Kako se upisuje utisak sa pulta**
 

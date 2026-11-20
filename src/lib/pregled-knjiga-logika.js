@@ -69,6 +69,22 @@ export function opcijeIzdavaca(redovi, izabran, tekstovi) {
   return opcije;
 }
 
+// Polja forme za izmenu knjige iz reda liste (sve je tekst, kao i u formi za unos).
+export const poljaIzmene = (k) => ({ naslov: k?.naslov ?? "", autor: k?.autor ?? "", izdavac: k?.izdavac ?? "", godina: k?.godina != null ? String(k.godina) : "", isbn: k?.isbn ?? "" });
+
+// Ključ poruke (tekst.pregledKnjiga.izmena.greske) za grešku izmene: neispravan unos (polje + razlog), nema prava ili opšta greška.
+export function kljucGreskeIzmene(g) {
+  if (g?.polje === "naslov" && g.razlog === "prazno") return "naslov_prazno";
+  if (g?.razlog === "predugo") return "predugo";
+  if (g?.polje === "godina") return "godina_neispravno";
+  if (g?.polje === "isbn") return "isbn_neispravno";
+  if (g?.kod === "nema_dozvole" || g?.code === "42501") return "nema_dozvole";
+  return "opste";
+}
+
+// Brisanje knjige sme samo administrator (RLS knjige_delete_admin); dugme se bibliotekaru ni ne nudi.
+export const mozeDaBrise = (uloga) => uloga === "administrator";
+
 // Da li ima još redova posle učitanih (ukupno je broj svih koji odgovaraju filteru, iz svakog reda).
 export const imaJos = (ucitano, ukupno) => Number(ukupno) > ucitano;
 

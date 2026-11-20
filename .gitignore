@@ -14,3 +14,6 @@ supabase/.temp
 
 .vercel
 .env*
+
+# Uvoz fonda: CSV iz COBISS-a, ne ide na GitHub
+uvoz/

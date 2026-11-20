@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { DOZVOLJENI_DOMENI_KORICA, koricaJeDozvoljena } from "../api/_lib/bela-lista.js";
 import { uIsbn13 } from "../src/lib/isbn.js";
 import { putanjaIzAdrese, putanjaKorice } from "../src/lib/korica-slika.js";
+import { normTekst, redZaUpis } from "../src/lib/uvoz-fonda.js";
 
 const MIGRACIJE = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
 const db = new PGlite({ extensions: { pg_trgm } });
@@ -1725,6 +1726,56 @@ try {
   ok(!r.greska && r.redovi.length === 5, "posle drugog puštanja filter i dalje radi", r.greska?.message ?? r.redovi?.length);
   r = await kao("authenticated", BIB, "select ukupno from public.pregled_knjiga_zbir()");
   ok(!r.greska && r.redovi.length === 1, "zbir iz 0024 ostaje netaknut i radi", r.greska?.message ?? r.redovi);
+
+  // ───────── uvoz fonda: kako se okidači ponašaju prema servisnoj ulozi (pre prvog pokretanja skripte) ─────────
+  faza("Uvoz fonda (scripts/uvezi-fond.mjs): okidači ne diraju servisni upis, odluka ostaje prazna, JS i SQL normalizacija su isti");
+  const uzorciNorm = ["Ђорђе и змај", "Љубица Његош", "Šaponja Čačak, ćevap", "ĐURĐEVDAN", "Џон џеп", "Трагични дани Србије 1915—1918. : белешке", "10.000 milja da te pronađem", "(С)тиховање : одабране песме", "Народна библиотека \"Доситеј\"", "Žabalj Šabac Ćuprija"];
+  const sqlNorm = (await db.query("select privatno.norm_tekst(t) as n from unnest($1::text[]) as t", [uzorciNorm])).rows.map((x) => x.n);
+  ok(uzorciNorm.every((u, i) => normTekst(u) === sqlNorm[i]), "normTekst u skripti je isti kao privatno.norm_tekst u bazi (deset uzoraka na ćirilici i latinici)", uzorciNorm.map((u, i) => [u, normTekst(u), sqlNorm[i]]).filter(([, a, b]) => a !== b));
+
+  const UVEZENA = { naslov: "UVOZ Probna knjiga", autor: "Probni Autor", izdavac: "Laguna", godina: 2025, isbn: "978-86-521-2603-3", izvor: "fond", u_fondu: true };
+  r = await kao("service_role", null, "insert into public.knjige (naslov, autor, izdavac, godina, isbn, izvor, u_fondu) values ($1, $2, $3, $4, $5, $6, $7) returning izvor, u_fondu, uneo_id, odluka_nabavke, odluka_datum, isbn, broj_primeraka, cobiss_id, opis, korice_url, spojena_sa_id", [UVEZENA.naslov, UVEZENA.autor, UVEZENA.izdavac, UVEZENA.godina, UVEZENA.isbn, UVEZENA.izvor, UVEZENA.u_fondu]);
+  ok(!r.greska && r.redovi[0]?.izvor === "fond" && r.redovi[0]?.u_fondu === true && r.redovi[0]?.uneo_id === null && r.redovi[0]?.odluka_nabavke === null && r.redovi[0]?.odluka_datum === null, "servisni upis: izvor ostaje 'fond' i u_fondu true (okidač knjige_unos_clana izuzima servisnu ulogu), uneo_id i odluka su prazni", r.greska?.message ?? r.redovi);
+  ok(r.redovi?.[0]?.isbn === "9788652126033" && r.redovi[0].broj_primeraka === 0 && r.redovi[0].cobiss_id === null && r.redovi[0].opis === null && r.redovi[0].korice_url === null && r.redovi[0].spojena_sa_id === null, "ISBN sa crticama okidač knjige_isbn pretvara u 13 cifara; primerci, COBISS ID, opis i korica ostaju prazni", r.redovi?.[0]);
+  const idUvoz = (await db.query("select id from public.knjige where naslov = 'UVOZ Probna knjiga'")).rows[0].id;
+  r = await kao("authenticated", BIB, "select odluka, citaoca from public.pregled_knjiga('UVOZ Probna', null, null, 'najnovije', 5, 0, null)");
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].odluka === "imamo", "uvezena knjiga je u pregledu bibliotekara efektivno „imamo” (u_fondu bez odluke)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select odluka from public.izvestaj_za_nabavku where id = $1", [idUvoz]);
+  ok(!r.greska && r.redovi.length === 0, "uvezena knjiga nije među „Нове” u izveštaju za nabavku (niko je ne želi, a i u fondu je)", r.greska?.message ?? r.redovi);
+
+  // dopuna postojeće knjige koju je uneo član i za koju je bibliotekar odlučio „nabavljamo"
+  const idClan = (await db.query("insert into public.knjige (naslov, izvor, u_fondu, odluka_nabavke, odluka_datum) values ('UVOZ Dopuna', 'clan', false, 'nabavljamo', '2026-01-01T00:00:00Z') returning id")).rows[0].id;
+  r = await kao("service_role", null, "update public.knjige set u_fondu = true, izvor = 'fond', autor = 'Dopunjen Autor', isbn = '9780306406157' where id = $1 returning u_fondu, izvor, autor, isbn, odluka_nabavke, odluka_datum", [idClan]);
+  ok(!r.greska && r.redovi[0]?.u_fondu === true && r.redovi[0]?.izvor === "fond" && r.redovi[0]?.autor === "Dopunjen Autor" && r.redovi[0]?.isbn === "9780306406157" && r.redovi[0]?.odluka_nabavke === "nabavljamo" && new Date(r.redovi[0]?.odluka_datum).toISOString().startsWith("2026-01-01"), "dopuna servisnom ulogom: u_fondu, izvor i prazna polja se postavljaju, a odluka nabavke i njen datum ostaju netaknuti (okidač knjige_odluka_zastita)", r.greska?.message ?? r.redovi);
+  ok(Object.keys(redZaUpis({ naslov: "x", autor: null, izdavac: null, godina: null, isbn: null })).sort().join() === "autor,godina,isbn,izdavac,izvor,naslov,u_fondu", "redZaUpis iz skripte ima samo kolone koje test iznad proverava (nikakvo uneo_id, odluka_nabavke, cobiss_id, broj_primeraka)");
+  const serija = Array.from({ length: 200 }, (_, i) => ["UVOZ serija " + i, "fond", true]);
+  r = await kao("service_role", null, "insert into public.knjige (naslov, izvor, u_fondu) select * from unnest($1::text[], $2::text[], $3::boolean[]) returning id", [serija.map((x) => x[0]), serija.map((x) => x[1]), serija.map((x) => x[2])]);
+  ok(!r.greska && r.redovi.length === 200, "serija od 200 knjiga se upisuje u jednom upitu", r.greska?.message ?? r.redovi?.length);
+  await db.query("delete from public.knjige where naslov like 'UVOZ %'");
+
+  // ───────── izmena i brisanje knjige iz panela: RLS i posledice brisanja ─────────
+  faza("Panel: bibliotekar menja knjigu, samo administrator je briše, a brisanje odnosi i police, utiske i preporuke");
+  const KI = await nova("PANEL Izmena i brisanje");
+  await db.query("insert into polica (clan_id, knjiga_id, status) values ($1, $3, 'zelim'), ($2, $3, 'citam')", [UA, UB, KI]);
+  await db.query("insert into utisci (clan_id, knjiga_id, ocena, tekst, vidljivost) values ($1, $2, 7, 'PANEL utisak', 'javno')", [UA, KI]);
+  await db.query("insert into preporuke (posiljalac_id, primalac_id, knjiga_id, poruka) values ($1, $2, $3, 'PANEL preporuka')", [UB, UA, KI]);
+  const brojVeza = async () => (await db.query("select (select count(*) from polica where knjiga_id = $1)::int as p, (select count(*) from utisci where knjiga_id = $1)::int as u, (select count(*) from preporuke where knjiga_id = $1)::int as r", [KI])).rows[0];
+  r = await kao("authenticated", BIB, "update public.knjige set naslov = 'PANEL Novi naslov', autor = 'Novi Autor', izdavac = 'Novi Izdavač', godina = 2021, isbn = '978-86-521-2603-3' where id = $1 returning naslov, autor, izdavac, godina, isbn", [KI]);
+  ok(!r.greska && r.redovi[0]?.naslov === "PANEL Novi naslov" && r.redovi[0]?.autor === "Novi Autor" && r.redovi[0]?.godina === 2021 && r.redovi[0]?.isbn === "9788652126033", "bibliotekar menja naslov, autora, izdavača, godinu i ISBN (ISBN okidač pretvara u 13 cifara)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.knjige set isbn = '123-456' where id = $1 returning id", [KI]);
+  ok(r.greska?.code === "22023", "neispravan ISBN bibliotekar ne može da upiše (greška 22023); ekran ga ionako proverava pre slanja", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "update public.knjige set naslov = 'Hakovano' where id = $1 returning id", [KI]);
+  ok(!r.greska && r.redovi.length === 0, "čitalac ne može da menja knjigu (RLS: 0 izmenjenih redova)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "delete from public.knjige where id = $1 returning id", [KI]);
+  ok(!r.greska && r.redovi.length === 0 && (await db.query("select count(*)::int as n from knjige where id = $1", [KI])).rows[0].n === 1, "bibliotekar ne može da briše knjigu (samo administrator): 0 obrisanih redova, knjiga ostaje", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "delete from public.knjige where id = $1 returning id", [KI]);
+  ok(!r.greska && r.redovi.length === 0, "čitalac ne može da briše knjigu", r.greska?.message ?? r.redovi);
+  const preBrisanja = await brojVeza();
+  ok(preBrisanja.p === 2 && preBrisanja.u === 1 && preBrisanja.r === 1, "pre brisanja: dve stavke na policama, jedan utisak i jedna preporuka za knjigu", preBrisanja);
+  r = await kao("authenticated", ADM, "delete from public.knjige where id = $1 returning id", [KI]);
+  ok(!r.greska && r.redovi.length === 1, "administrator briše knjigu", r.greska?.message ?? r.redovi);
+  const posleBrisanja = await brojVeza();
+  ok(posleBrisanja.p === 0 && posleBrisanja.u === 0 && posleBrisanja.r === 0, "brisanje knjige odnosi i stavke sa polica, utiske i preporuke (zato ekran traži potvrdu sa brojem čitalaca)", posleBrisanja);
 
   // ───────── opšte ─────────
   faza("Opšta pravila");
