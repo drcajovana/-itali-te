@@ -93,7 +93,8 @@ export default function Okvir() {
           {NAZIV.slice(0, 4)}
           <span className="text-bordo">{NAZIV.slice(4)}</span>
         </Link>
-        {jeBibliotekar(clan?.uloga) && (
+        {/* „Унос књига”: samo uz pretragu (i na kartici Biblioteka); na početnoj polici i ostalim ekranima ga nema */}
+        {jeBibliotekar(clan?.uloga) && pathname.startsWith("/pretraga") && (
           <Link to="/bibliotekar/unos" className="flex min-h-11 items-center rounded-full bg-povrsina px-4 text-sm font-semibold text-bordo shadow-senka">
             {tekst.meni.unos}
           </Link>

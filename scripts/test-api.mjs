@@ -2499,6 +2499,11 @@ faza("15. Članovi (api/napravi-clana.js, api/resetuj-pin.js): uloge, PIN, ogran
         provera("0024 dolazi odmah posle 0023; nema politika, tabela ni kolona; obe funkcije SECURITY DEFINER sa search_path i proverom je_bibliotekar(); anon nema pravo; notify pgrst", (() => { const f = readdirSync(new URL("../supabase/migrations/", import.meta.url)).filter((x) => /^\d{4}_/.test(x)).sort(); return f.indexOf("0024_pregled_knjiga.sql") === f.indexOf("0023_moje_blokade.sql") + 1 && f.every((x, i) => Number(x.slice(0, 4)) === i + 1); })() && !/\b(create|drop|alter)\s+policy\b/i.test(k24s) && !/create\s+table|add column/i.test(k24s) && (k24s.match(/security definer\s+set search_path = pg_catalog, public/g) ?? []).length === 2 && (k24s.match(/privatno\.je_bibliotekar\(\)/g) ?? []).length === 2 && (k24s.match(/revoke all on function public\.pregled_knjiga/g) ?? []).length === 2 && /notify pgrst, 'reload schema'/.test(k24s));
         provera("0024: nijedna izlazna kolona ne vodi do člana (nema uneo_id, clan_id, nadimka, imena, broja karte); od police dolazi samo broj", !/\b(uneo_id|nadimak|broj_kartice|sifra_poziva|ime)\b/.test(k24s.slice(k24s.indexOf("returns table"))) && /count\(\*\)::integer as n/.test(k24s));
       }
+      // ── ulaz „Унос књига": samo uz pretragu i na kartici Biblioteka ──
+      {
+        const okvirU = bezKom(citaj("src/components/Okvir.jsx"));
+        provera("„Унос књига” u zaglavlju postoji samo za bibliotekare i samo na ekranu pretrage (ne na početnoj polici ni drugde); ulaz ostaje i na kartici Biblioteka", /jeBibliotekar\(clan\?\.uloga\) && pathname\.startsWith\("\/pretraga"\) && \(\s*<Link to="\/bibliotekar\/unos"/.test(okvirU) && (okvirU.match(/to="\/bibliotekar\/unos"/g) ?? []).length === 1 && /putanja: "\/bibliotekar\/unos", kljuc: "unos"/.test(citaj("src/pages/BibliotekarPocetna.jsx")));
+      }
       // ── uklanjanje knjige sa police i uklanjanje korice u dijalogu „Све књиге" ──
       {
         const TP = (await import("../src/lib/tekst.js")).tekst;
