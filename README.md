@@ -66,6 +66,7 @@ Migracije se puštaju redom, brojevima:
 | `0018_rezervacije_statusi.sql` | **(puštena, ali ništa je ne koristi: aplikacija nema rezervacije)** stanja rezervacije `nova`, `spremna`, `preuzeta`, `otkazana` (stara `obradjena` postaje `preuzeta`); jedinstveni indeks „jedna otvorena rezervacija po članu i knjizi” važi za `nova` i `spremna`. Politike se ne menjaju; idempotentna |
 | `0019_citaoci_nadimci_preporuke.sql` | pogledi `moje_veze` i `moje_preporuke` (samo moje, samo nadimak druge strane, bez blokiranih), `privatno.ima_blokade()`, prijava člana (`prijave.tip = 'clan'`), napomena preporuke do 280 znakova i jedna neobrađena preporuka iste knjige po paru. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0020_nabavka_i_zastita_administratora.sql` | `knjige.odluka_nabavke` i `odluka_datum` (datum postavlja okidač; „imamo” = `u_fondu`), pogled `izvestaj_za_nabavku` nad `privatno.izvestaj_nabavke()` (samo agregat, samo bibliotekar), i okidači koji bibliotekaru zabranjuju da menja administratora ili dodeljuje ulogu. Nijedna politika se ne menja; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
+| `0026_jedinstven_isbn.sql` | svaki ISBN samo jednom: postojeći duplikati po ISBN-u se prvo SPAJAJU (`spojena_sa_id`, kao `spoji_knjige`: police, utisci, rezervacije, preporuke i objave prelaze na matični zapis, ništa se ne briše; matična je ona u fondu), pa jedinstven indeks `knjige_isbn_jedinstven_idx` na `isbn` među matičnim knjigama (greška 23505 pri novom duplikatu). Idempotentna. |
 | `0025_pregled_knjiga_izdavac.sql` | `public.pregled_knjiga` dobija `p_izdavac` (stara verzija sa šest parametara se briše), nova `public.pregled_knjiga_izdavaci(p_upit, p_izvor, p_odluka)` (kljuc, naziv, broj) i zajednički filter `privatno.pregled_knjige_filter`. Ključ izdavača je `norm_tekst(btrim(izdavac))`. Nema novih politika; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0024_pregled_knjiga.sql` | funkcije `public.pregled_knjiga_zbir()` i `public.pregled_knjiga(...)` (SECURITY DEFINER, samo bibliotekar, prazno svima ostalima): zbirni brojevi i lista knjiga sa brojem čitalaca na polici, bez ikakvog traga do člana (nema `uneo_id`, imena, id-eva). Nema novih politika; idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
 | `0023_moje_blokade.sql` | pogled `moje_blokade` (security_invoker): samo blokade koje sam ja napravio, sa nadimkom blokiranog. Nema novih politika (brisanje svoje blokade je već dozvoljeno, 0002); idempotentna. Posle puštanja: `notify pgrst, 'reload schema';` |
@@ -162,7 +163,8 @@ početnu) služi da se knjiga upiše iz stranice izdavača, bez kucanja:
    (knjiga nije u fondu, bez primeraka, i ulazi u izveštaj za nabavku).
 4. **Sačuvaj** čuva jednu karticu. Ako knjiga već postoji (isti ISBN, ili sličan naslov i
    autor), prikazuje se postojeći zapis i nudi: *Otvori*, *Dodaj primerke ovom zapisu* (samo
-   za „U fondu") ili *Ipak sačuvaj kao novi zapis*. Označite „Potvrđeno" na više kartica pa
+   za „U fondu") ili *Ipak sačuvaj kao novi zapis*. **Isti ISBN se ne može uneti dvaput** (baza to ne dozvoljava, 0026):
+   kad postoji knjiga sa istim ISBN-om, nema dugmeta *Ipak sačuvaj*, samo dopuna primeraka postojećem zapisu; za slične naslove dugme ostaje. Označite „Potvrđeno" na više kartica pa
    **Sačuvaj sve potvrđene**: čuvaju se redom, a kartice sa duplikatom ili greškom čekaju vašu odluku.
 5. **Korica se preuzima zajedno sa čuvanjem.** Kad je link dao predlog korice, kartica pre
    čuvanja pokazuje pregled slike i kvačicu **Preuzmi i koricu** (podrazumevano uključena), a pored
@@ -362,7 +364,7 @@ ima nerešenih prijava, a na početnom ekranu osoblja piše koliko ih je.
   ulogom različitom od `citalac`; brisanje je samo administratoru. Administrator i servisna uloga sme sve.
   Ekran svejedno nudi dugme samo za čitaoce (administrator vidi sve), da korisnik ne nailazi na grešku.
 - `npm run test:api` proverava uloge, ograničenje, vodeću nulu i da PIN nije u logu ni u poruci greške;
-  `test:db` migracije 0018 do 0025; `test:rls` (faze 13 do 20) isto na pravoj bazi.
+  `test:db` migracije 0018 do 0026; `test:rls` (faze 13 do 21) isto na pravoj bazi.
 
 ### Čitaoci: veze, preporuke, blokada
 

@@ -64,14 +64,19 @@ function Duplikati({ stavka, onDodajPrimerke, onIpak }) {
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        disabled={saljem}
-        onClick={onIpak}
-        className={`${stil.okvirno} disabled:opacity-50`}
-      >
-        {T.duplikat.ipak}
-      </button>
+      {duplikati.poIsbn.length > 0 ? (
+        // isti ISBN ne sme da se unese dvaput (baza to ne dozvoljava, 0026): nema „Ipak sačuvaj”, samo dopuna postojećeg zapisa
+        <p className="text-base text-mastilo-2">{T.duplikat.isbnJedinstven}</p>
+      ) : (
+        <button
+          type="button"
+          disabled={saljem}
+          onClick={onIpak}
+          className={`${stil.okvirno} disabled:opacity-50`}
+        >
+          {T.duplikat.ipak}
+        </button>
+      )}
     </div>
   );
 }

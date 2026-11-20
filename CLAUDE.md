@@ -278,6 +278,7 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   Brisanje je **samo administrator** (RLS `knjige_delete_admin`; dugme se bibliotekaru ne nudi) i odnosi stavke na policama, utiske i preporuke (on delete cascade), pa ga ekran traži
   uz potvrdu i broj čitalaca. Ne širiti pravo brisanja i ne uklanjati potvrdu.
 - **Širina:** `Okvir` je 520 px na telefonu, do 720 px na md, a za `/bibliotekar/*` do 900 px (md) i 1200 px (xl). Donja navigacija ostaje 520 px.
+- **ISBN je jedinstven** (0026): jedinstven indeks `knjige_isbn_jedinstven_idx` na `isbn` među matičnim knjigama (`spojena_sa_id is null`); novi duplikat daje 23505 (unos člana uzima postojeću knjigu, unos bibliotekara pokazuje postojeći zapis bez dugmeta „Ипак сачувај”, izmena ISBN-a daje poruku, uvoz fonda poklapa po ISBN-u i ne pravi novu). Migracija prvo SPAJA postojeće duplikate (ništa ne briše). Ne vraćati „različit naslov = različita knjiga” ni dugme „Ипак” za isti ISBN.
 - **Izdavač** (0025): ključ je `privatno.norm_tekst(btrim(izdavac))`, a prikaz je najčešći zapis u grupi (nad svim matičnim knjigama). Spisak izdavača prati pretragu,
   izvor i odluku, ne i izabranog izdavača. Pretraga, izvor i odluka su na JEDNOM mestu (`privatno.pregled_knjige_filter`); spisak i lista ga dele, pa se ne razilaze.
   `p_izdavac` je ključ, a `__bez__` znači bez izdavača. Filteri ekrana žive u adresi (`?q=&izvor=&odluka=&izdavac=&redosled=`).

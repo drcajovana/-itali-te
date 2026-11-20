@@ -61,7 +61,14 @@ async function nadjiIliUpisi(knjiga) {
   }
 
   const { data, error } = await supabase.from("knjige").insert(redZaUpis(podaci)).select("id, u_fondu").single();
-  if (error) throw error;
+  if (error) {
+    // Dva istovremena unosa istog ISBN-a: baza (jedinstven indeks, 0026) propušta samo prvi. Drugi uzima onaj koji je upisan.
+    if (error.code === "23505" && podaci.isbn) {
+      const ista = (await pretraziNasuBazu(podaci.isbn)).find((k) => uIsbn13(k.isbn) === podaci.isbn);
+      if (ista) return { id: ista.id, uFondu: ista.u_fondu };
+    }
+    throw error;
+  }
   return { id: data.id, uFondu: data.u_fondu };
 }
 

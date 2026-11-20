@@ -105,7 +105,8 @@ try {
   const BLOKADE = fajlovi.filter((f) => /^0023_/.test(f));
   const PREGLED = fajlovi.filter((f) => /^0024_/.test(f));
   const IZDAVAC = fajlovi.filter((f) => /^0025_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x) && !POTPIS.includes(x) && !BLOKADE.includes(x) && !PREGLED.includes(x) && !IZDAVAC.includes(x))) await pusti(f);
+  const JEDINSTVEN = fajlovi.filter((f) => /^0026_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x) && !POTPIS.includes(x) && !BLOKADE.includes(x) && !PREGLED.includes(x) && !IZDAVAC.includes(x) && !JEDINSTVEN.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -1776,6 +1777,67 @@ try {
   ok(!r.greska && r.redovi.length === 1, "administrator briše knjigu", r.greska?.message ?? r.redovi);
   const posleBrisanja = await brojVeza();
   ok(posleBrisanja.p === 0 && posleBrisanja.u === 0 && posleBrisanja.r === 0, "brisanje knjige odnosi i stavke sa polica, utiske i preporuke (zato ekran traži potvrdu sa brojem čitalaca)", posleBrisanja);
+
+  // ───────── 0026: svaki ISBN samo jednom ─────────
+  faza("0026: jedinstven ISBN među matičnim knjigama (postojeći duplikati se spajaju, ništa se ne briše; novi duplikat daje 23505)");
+  const otisakPolitika26 = async () =>
+    JSON.stringify((await db.query("select c.relname, p.polname, p.polcmd::text as cmd, pg_get_expr(p.polqual, p.polrelid) as q, pg_get_expr(p.polwithcheck, p.polrelid) as w from pg_policy p join pg_class c on c.oid = p.polrelid order by 1, 2")).rows);
+  const politikePre26 = await otisakPolitika26();
+  const ISB = "9780140449136"; // ispravan ISBN-13 koji ranije testovi ne koriste; pre 0026 može triput, jer jedinstvenosti još nema
+  const dk = async (naslov, uFondu, primeraka, izvor) =>
+    (await db.query("insert into knjige (naslov, isbn, izvor, u_fondu, broj_primeraka, broj_slobodnih) values ($1, $2, $3, $4, $5, $5) returning id", [naslov, ISB, izvor, uFondu, primeraka])).rows[0].id;
+  const DUP1 = await dk("D26 clan prvi", false, 0, "clan");
+  const DUP2 = await dk("D26 fond", true, 2, "fond");
+  const DUP3 = await dk("D26 clan treci", false, 0, "clan");
+  const BEZ1 = (await db.query("insert into knjige (naslov) values ('D26 bez isbn 1') returning id")).rows[0].id;
+  await db.query("insert into knjige (naslov) values ('D26 bez isbn 2')");
+  await db.query("insert into polica (clan_id, knjiga_id, status) values ($1, $2, 'zelim'), ($1, $3, 'citam'), ($4, $5, 'procitano')", [UA, DUP1, DUP2, UB, DUP3]);
+  await db.query("insert into utisci (clan_id, knjiga_id, ocena, tekst, vidljivost) values ($1, $2, 8, 'D26 utisak', 'javno')", [UA, DUP1]);
+  const brojKnjiga = async () => (await db.query("select count(*)::int as n from knjige")).rows[0].n;
+  const knjigaPre26 = await brojKnjiga();
+  ok((await db.query("select count(*)::int as n from knjige where isbn = $1", [ISB])).rows[0].n === 3, "PRE 0026: isti ISBN je u bazi triput (nije bilo zaštite)", null);
+
+  for (const f of JEDINSTVEN) await pusti(f);
+
+  const m26 = (await db.query("select id, spojena_sa_id from knjige where isbn = $1 order by naslov", [ISB])).rows;
+  const sp = Object.fromEntries(m26.map((x) => [x.id, x.spojena_sa_id]));
+  ok(sp[DUP2] === null && sp[DUP1] === DUP2 && sp[DUP3] === DUP2, "posle 0026 je matična knjiga ona koja je u fondu (D26 fond), a ostale dve su spojene u nju (spojena_sa_id)", sp);
+  ok((await brojKnjiga()) === knjigaPre26, "spajanje ništa ne briše: broj redova u knjige je isti kao pre", [knjigaPre26, await brojKnjiga()]);
+  const pol26 = (await db.query("select clan_id, knjiga_id from polica where knjiga_id in ($1, $2, $3) order by 1", [DUP1, DUP2, DUP3])).rows;
+  ok(pol26.length === 2 && pol26.every((x) => x.knjiga_id === DUP2) && pol26.some((x) => x.clan_id === UA) && pol26.some((x) => x.clan_id === UB), "police prelaze na matični zapis; član koji je imao oba zapisa ima jednu stavku (nema dvostruke)", pol26);
+  ok((await db.query("select count(*)::int as n from utisci where knjiga_id = $1 and tekst = 'D26 utisak'", [DUP2])).rows[0].n === 1, "utisak sa duplikata prelazi na matični zapis", null);
+  ok((await db.query("select count(*)::int as n from knjige where isbn = $1 and spojena_sa_id is null", [ISB])).rows[0].n === 1, "među matičnim knjigama ISBN postoji tačno jednom", null);
+  ok((await db.query("select count(*)::int as n from (select isbn from knjige where isbn is not null and spojena_sa_id is null group by isbn having count(*) > 1) x")).rows[0].n === 0, "u celoj bazi nema nijednog ISBN-a koji se ponavlja među matičnim knjigama", null);
+
+  r = await kao("authenticated", BIB, "insert into public.knjige (naslov, isbn) values ('D26 novi', $1) returning id", [ISB]);
+  ok(r.greska?.code === "23505", "bibliotekar ne može da upiše novu knjigu sa postojećim ISBN-om (23505)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "insert into public.knjige (naslov, isbn) values ('D26 clan novi', $1) returning id", [ISB]);
+  ok(r.greska?.code === "23505", "ni član ne može da upiše knjigu sa postojećim ISBN-om (23505); aplikacija tada uzima postojeću", r.greska?.message ?? r.redovi);
+  r = await kao("service_role", null, "insert into public.knjige (naslov, isbn) values ('D26 servis novi', $1) returning id", [ISB]);
+  ok(r.greska?.code === "23505", "ni servisni upis (uvoz fonda) ne može da napravi duplikat ISBN-a", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "insert into public.knjige (naslov, isbn) values ('D26 isti isbn crtice', '978-0-7475-3269-9') returning isbn");
+  const prvi13 = r.redovi?.[0]?.isbn;
+  r = await kao("authenticated", BIB, "insert into public.knjige (naslov, isbn) values ('D26 isti isbn isbn10', '0-7475-3269-9') returning isbn");
+  ok(prvi13 === "9780747532699" && r.greska?.code === "23505", "ISBN-10 i ISBN-13 iste knjige su isti ISBN: drugi unos je odbijen (okidač ih pretvara u 13 cifara pre provere jedinstvenosti)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "update public.knjige set isbn = $2 where id = $1 returning id", [BEZ1, ISB]);
+  ok(r.greska?.code === "23505", "izmena ISBN-a druge knjige u postojeći je odbijena (23505); ekran to pretvara u poruku", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "insert into public.knjige (naslov, isbn) values ('D26 bez isbn 3', null), ('D26 bez isbn 4', null) returning id");
+  ok(!r.greska && r.redovi.length === 2, "knjige bez ISBN-a (null) se ne ograničavaju: sme ih biti koliko god", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "insert into public.knjige (naslov, isbn) values ('D26 novi isbn', '9780306406157x') returning id");
+  ok(r.greska?.code === "22023", "neispravan ISBN i dalje daje grešku 22023 iz 0010 (nova provera je ne zamenjuje)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select id, naslov from public.trazi_knjige('D26', 50)");
+  ok(!r.greska, "pretraga i dalje radi posle 0026", r.greska?.message);
+  r = await kao("authenticated", BIB, "select ukupno, spojenih from public.pregled_knjiga_zbir()");
+  ok(!r.greska && r.redovi[0]?.spojenih >= 2, "pregled „Све књиге” broji spojene duplikate posebno, a ukupno su samo matične knjige", r.greska?.message ?? r.redovi);
+
+  ok((await otisakPolitika26()) === politikePre26, "0026: nijedna politika (RLS) nije dodata, izbrisana ni izmenjena");
+  const k26 = fs.readFileSync(path.join(MIGRACIJE, JEDINSTVEN[0]), "utf8").replace(/^\s*--.*$/gm, "");
+  ok(!/\b(create|drop|alter)\s+policy\b/i.test(k26) && !/create\s+table|add column/i.test(k26), "0026 ne piše politike, tabele ni kolone");
+  const stanje26 = JSON.stringify((await db.query("select id, spojena_sa_id from knjige order by id")).rows) + JSON.stringify((await db.query("select clan_id, knjiga_id from polica order by 1, 2")).rows);
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, JEDINSTVEN[0]), "utf8"));
+  const stanje26b = JSON.stringify((await db.query("select id, spojena_sa_id from knjige order by id")).rows) + JSON.stringify((await db.query("select clan_id, knjiga_id from polica order by 1, 2")).rows);
+  ok(stanje26 === stanje26b && (await otisakPolitika26()) === politikePre26, "0026 je idempotentna: drugo puštanje ne menja knjige, spajanja ni police, i ne dira politike");
+  ok((await db.query("select count(*)::int as n from pg_indexes where indexname = 'knjige_isbn_jedinstven_idx'")).rows[0].n === 1, "postoji tačno jedan jedinstven indeks knjige_isbn_jedinstven_idx", null);
 
   // ───────── opšte ─────────
   faza("Opšta pravila");

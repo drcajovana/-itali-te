@@ -123,8 +123,20 @@ export default function BibliotekarUnos() {
       izmeni(s.id, { saljem: false, duplikati: null, sacuvano: { id: upisano.id, naslov: upisano.naslov, isbn: u.podaci.isbn, uFondu: upisano.u_fondu, korica: null } });
       return { status: "sacuvano", id: upisano.id };
     } catch (err) {
+      // isti ISBN već postoji (jedinstven indeks, 0026): prikazuje se postojeći zapis, a ne opšta greška
+      if (err?.code === "23505" && u.podaci.isbn) {
+        try {
+          const d = await nadjiDuplikate({ isbn: u.podaci.isbn, naslov: u.podaci.naslov, autor: u.podaci.autor });
+          if (d.poIsbn.length) {
+            izmeni(s.id, { saljem: false, duplikati: d });
+            return { status: "duplikat" };
+          }
+        } catch (e) {
+          console.error("provera duplikata posle 23505:", e);
+        }
+      }
       console.error("čuvanje knjige:", err);
-      izmeni(s.id, { saljem: false, greskaPolja: T.greskeKartice.upis });
+      izmeni(s.id, { saljem: false, greskaPolja: err?.code === "23505" ? T.greskeKartice.isbn_postoji : T.greskeKartice.upis });
       return { status: "greska" };
     }
   }

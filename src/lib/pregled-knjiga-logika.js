@@ -79,6 +79,7 @@ export function kljucGreskeIzmene(g) {
   if (g?.polje === "godina") return "godina_neispravno";
   if (g?.polje === "isbn") return "isbn_neispravno";
   if (g?.kod === "nema_dozvole" || g?.code === "42501") return "nema_dozvole";
+  if (g?.code === "23505") return "isbn_zauzet"; // drugi matični zapis već ima ovaj ISBN (jedinstven indeks, 0026)
   return "opste";
 }
 

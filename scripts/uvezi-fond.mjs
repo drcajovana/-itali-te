@@ -62,7 +62,7 @@ function ispisi(plan, ukupnoRedova) {
   console.log("\n── Zbir");
   console.log(`   redova u CSV-u (bez zaglavlja):                 ${z.ukupnoRedova}`);
   console.log(`   NOVE knjige (upisuju se):                       ${z.nove}`);
-  console.log(`   DOPUNJENE (isti ISBN i naslov u bazi):          ${z.dopune}`);
+  console.log(`   DOPUNJENE (isti ISBN u bazi):${z.dopune}`);
   console.log(`   DOPUNJENE bez ISBN-a u bazi (naslov+autor+god): ${z.dopuneBezIsbna}`);
   console.log(`   PRESKOČENE, već u fondu (nema šta da se menja): ${z.vecUFondu}`);
   console.log(`   PRESKOČENE, ponovljene u samom CSV-u:           ${z.duplikatiUFajlu}`);
@@ -88,9 +88,13 @@ function ispisi(plan, ukupnoRedova) {
   if (!plan.upozorenja.length) console.log("   nijedno");
   for (const w of plan.upozorenja) console.log(`   red ${w.linija}: ${skrati(w.naslov, 50)}: ${w.tekst}`);
 
-  console.log(`\n── Isti ISBN, različit naslov u CSV-u: RAZLIČITE knjige, obe se uvoze (${plan.isbnRazlicitNaslov.length})`);
+  console.log(`\n── Isti ISBN, različit naslov u CSV-u: ISBN je jedinstven, uvozi se samo prvi red, ostali se preskaču — proverite (${plan.isbnRazlicitNaslov.length})`);
   if (!plan.isbnRazlicitNaslov.length) console.log("   nijedan");
   for (const x of plan.isbnRazlicitNaslov) console.log(`   ISBN ${x.isbn}: redovi ${x.naslovi.map((n) => n.linija).join(", ")}`);
+
+  console.log(`\n── ISBN već ima knjiga u bazi sa DRUGIM naslovom: to je ista knjiga (ne pravi se nova), proverite naslov (${plan.isbnDrugiNaslovUBazi.length})`);
+  if (!plan.isbnDrugiNaslovUBazi.length) console.log("   nijedan");
+  for (const x of plan.isbnDrugiNaslovUBazi.slice(0, 50)) console.log(`   red ${x.linija}: ${skrati(x.naslov, 45)} ↔ u bazi: ${skrati(x.naslovUBazi, 45)}`);
 
   if (plan.viseSlucajeva.length) {
     console.log(`\n── Više knjiga u bazi odgovara istom redu (dopunjena je prva, proverite ručno) (${plan.viseSlucajeva.length})`);

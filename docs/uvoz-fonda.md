@@ -21,9 +21,9 @@ efektivno „Имамо", isto kao u izveštaju za nabavku i u „Све књи�
 
 ## Kako se poznaje ista knjiga
 
-- **Sa ISBN-om:** isti normalizovan ISBN (13 cifara, kao u `src/lib/isbn.js` i `privatno.isbn13`) **i** isti normalizovan naslov. Naslov se poredi kao
-  `privatno.norm_tekst` (mala slova, ćirilica = latinica, bez kvačica), uz sabrane razmake.
-- **Isti ISBN a različit naslov** su RAZLIČITE knjige (greška u COBISS-u): ne spajaju se, obe se uvoze. Takvi slučajevi se ispisuju u izveštaju.
+- **Sa ISBN-om:** isti normalizovan ISBN (13 cifara, kao u `src/lib/isbn.js` i `privatno.isbn13`) je ista knjiga. Svaki ISBN postoji samo jednom (migracija 0026).
+- **Isti ISBN a različit naslov** je i dalje ista knjiga: u bazi se postojeća knjiga dopunjava (naslov se ne prepisuje), a u CSV-u se uvozi samo prvi red, ostali se
+  preskaču. Takvi slučajevi se ispisuju u izveštaju (dva odeljka), da naslove proverite ručno.
 - **Bez ISBN-a:** normalizovan naslov + autor + godina.
 - Dodatno (da se ne napravi duplikat): knjiga iste godine, naslova i autora koja u bazi **nema** ISBN smatra se istom, pa dobija ISBN. U izveštaju se broji posebno.
 - Spojeni duplikati u bazi (`spojena_sa_id`) se ne porede.

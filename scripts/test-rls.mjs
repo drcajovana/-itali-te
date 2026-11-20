@@ -1717,6 +1717,34 @@ async function main() {
     return a.error?.code === "22023" && b.error?.code === "22023" ? true : `${a.error?.code} / ${b.error?.code}`;
   });
 
+  faza("21. Svaki ISBN samo jednom: novi duplikat daje 23505, spojeni duplikat sme da zadrži ISBN (migracija 0026)");
+  const U21 = await napraviClana("is1", "citalac");
+  const ISBN21 = "9780140449136";
+  const prva21 = await napraviKnjigu("ISBN-A", { isbn: ISBN21 });
+  await provera("bibliotekar ne može da upiše drugu knjigu sa istim ISBN-om (23505)", async () => {
+    const r = await BIB.db.from("knjige").insert({ naslov: N("ISBN-B"), isbn: ISBN21 }).select("id");
+    return r.error?.code === "23505" ? true : opis(r);
+  });
+  await provera("običan član ne može da upiše knjigu sa istim ISBN-om (23505), a ISBN-10 iste knjige se tretira kao isti ISBN", async () => {
+    const a = await U21.db.from("knjige").insert({ naslov: N("ISBN-C"), isbn: ISBN21 }).select("id");
+    const b = await U21.db.from("knjige").insert({ naslov: N("ISBN-D"), isbn: "0-14-044913-2" }).select("id");
+    return a.error?.code === "23505" && b.error?.code === "23505" ? true : `${opis(a)} / ${opis(b)}`;
+  });
+  await provera("izmena ISBN-a druge knjige u postojeći je odbijena (23505); knjige bez ISBN-a se ne ograničavaju", async () => {
+    const druga = await napraviKnjigu("ISBN-E");
+    const a = await BIB.db.from("knjige").update({ isbn: ISBN21 }).eq("id", druga.id).select("id");
+    const b = await napraviKnjigu("ISBN-F");
+    const c = await napraviKnjigu("ISBN-G");
+    return a.error?.code === "23505" && b.isbn === null && c.isbn === null ? true : `${opis(a)} ${b.isbn} ${c.isbn}`;
+  });
+  await provera("knjiga spojena u matičnu (spojena_sa_id) ne kvari pregled ni pretragu", async () => {
+    const dupli = await napraviKnjigu("ISBN-H", { izvor: "clan", u_fondu: false, broj_primeraka: 0, broj_slobodnih: 0 });
+    const m = await S.from("knjige").update({ spojena_sa_id: prva21.id }).eq("id", dupli.id).select("id");
+    const p = await BIB.db.rpc("pregled_knjiga", { p_upit: N("ISBN-") });
+    const t = await BIB.db.rpc("trazi_knjige", { upit: N("ISBN-A"), najvise: 5 });
+    return !m.error && !p.error && !t.error ? true : `${opis(m)} ${opis(p)} ${opis(t)}`;
+  });
+
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────

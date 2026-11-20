@@ -130,13 +130,13 @@ const kBezIsbn = (k) => `${kljucTeksta(k.naslov)}|${kljucTeksta(k.autor)}|${k.go
 
 // Postojeće knjige iz baze (samo matične, spojena_sa_id is null) → indeksi za poređenje.
 function indeksirajBazu(postojece) {
-  const poIsbn = new Map(); // `${isbn}|${naslov}` → [knjiga]
+  const poIsbn = new Map(); // isbn → [knjiga] (ISBN je jedinstven među matičnim knjigama, migracija 0026)
   const bezIsbn = new Map(); // naslov|autor|godina → [knjiga] (sve), za knjige bez ISBN-a
   const sveNaslovAutorGodina = new Map();
   const dodaj = (m, k, v) => (m.has(k) ? m.get(k).push(v) : m.set(k, [v]));
   for (const k of postojece) {
     if (k.spojena_sa_id) continue;
-    if (k.isbn) dodaj(poIsbn, `${k.isbn}|${kNaslov(k)}`, k);
+    if (k.isbn) dodaj(poIsbn, k.isbn, k);
     else dodaj(bezIsbn, kBezIsbn(k), k);
     dodaj(sveNaslovAutorGodina, kBezIsbn(k), k);
   }
@@ -162,10 +162,12 @@ export const redZaUpis = (k) => ({ naslov: k.naslov, autor: k.autor, izdavac: k.
 // Ceo plan. `redovi` su rezultat urediRed za sve redove (ili { ok: false } sa linijom), `postojece` knjige iz baze.
 //   nove, dopune (po ISBN-u i naslovu), dopuneBezIsbna (po naslovu, autoru i godini kod knjige bez ISBN-a u bazi),
 //   vecUFondu (poklapanje bez potrebe za izmenom), duplikatiUFajlu, odbijeni, upozorenja, spornoIsbn, viseSlucajeva,
-//   saOdlukom (postojeće knjige koje postaju „u fondu", a imaju odluku nabavke različitu od „imamo": odluka se NE menja).
+//   saOdlukom (postojeće knjige koje postaju „u fondu", a imaju odluku nabavke različitu od „imamo": odluka se NE menja),
+//   isbnRazlicitNaslov (isti ISBN u više redova CSV-a sa različitim naslovom: uvozi se samo prvi), isbnDrugiNaslovUBazi (ISBN već ima knjiga
+//   sa drugim naslovom: to je ista knjiga, ne pravi se nova). ISBN je jedinstven u bazi (0026), pa se knjige uvek poklapaju po ISBN-u.
 export function planiraj(unos, postojece) {
   const baza = indeksirajBazu(postojece);
-  const plan = { nove: [], dopune: [], dopuneBezIsbna: [], vecUFondu: [], duplikatiUFajlu: [], odbijeni: [], upozorenja: [], viseSlucajeva: [], saOdlukom: [], isbnRazlicitNaslov: [] };
+  const plan = { nove: [], dopune: [], dopuneBezIsbna: [], vecUFondu: [], duplikatiUFajlu: [], odbijeni: [], upozorenja: [], viseSlucajeva: [], saOdlukom: [], isbnRazlicitNaslov: [], isbnDrugiNaslovUBazi: [] };
   const videno = new Map(); // ključ u fajlu → linija
   const videnoBezIsbn = new Map(); // naslov|autor|godina → linija (svi redovi)
   const isbnNaslovi = new Map(); // isbn → Map(naslov → linija)
@@ -178,9 +180,16 @@ export function planiraj(unos, postojece) {
     const k = u.knjiga;
     for (const w of u.upozorenja) plan.upozorenja.push({ linija: k.linija, naslov: k.naslov, tekst: w });
 
-    // ista knjiga u istom fajlu (više COBISS zapisa, npr. više primeraka): jedna
+    // isti ISBN sa različitim naslovom u fajlu: samo se prijavljuje (prvi red se uvozi, ostali su duplikati ispod)
+    if (k.isbn) {
+      const m = isbnNaslovi.get(k.isbn) ?? new Map();
+      if (!m.has(kNaslov(k))) m.set(kNaslov(k), k.linija);
+      isbnNaslovi.set(k.isbn, m);
+    }
+
+    // ista knjiga u istom fajlu (više COBISS zapisa, npr. više primeraka): jedna; isti ISBN je ista knjiga bez obzira na naslov
     // (red bez ISBN-a je duplikat i kad ranije stoji red sa ISBN-om istog naslova, autora i godine)
-    const kljucFajla = k.isbn ? `${k.isbn}|${kNaslov(k)}` : kBezIsbn(k);
+    const kljucFajla = k.isbn ? `isbn|${k.isbn}` : kBezIsbn(k);
     const prva = videno.get(kljucFajla) ?? (k.isbn ? undefined : videnoBezIsbn.get(kBezIsbn(k)));
     if (prva !== undefined) {
       plan.duplikatiUFajlu.push({ linija: k.linija, naslov: k.naslov, prvaLinija: prva });
@@ -189,17 +198,12 @@ export function planiraj(unos, postojece) {
     videno.set(kljucFajla, k.linija);
     if (!videnoBezIsbn.has(kBezIsbn(k))) videnoBezIsbn.set(kBezIsbn(k), k.linija);
 
-    if (k.isbn) {
-      const m = isbnNaslovi.get(k.isbn) ?? new Map();
-      m.set(kNaslov(k), k.linija);
-      isbnNaslovi.set(k.isbn, m);
-    }
-
     // poklapanje sa bazom
     let nadjene;
     let vrsta = "dopune";
     if (k.isbn) {
-      nadjene = baza.poIsbn.get(`${k.isbn}|${kNaslov(k)}`) ?? [];
+      nadjene = baza.poIsbn.get(k.isbn) ?? [];
+      if (nadjene.length && kNaslov(nadjene[0]) !== kNaslov(k)) plan.isbnDrugiNaslovUBazi.push({ linija: k.linija, naslov: k.naslov, naslovUBazi: nadjene[0].naslov, id: nadjene[0].id });
       if (!nadjene.length) {
         // knjiga istog naslova, autora i godine koja u bazi nema ISBN: ista knjiga, samo bez ISBN-a
         nadjene = baza.bezIsbn.get(kBezIsbn(k)) ?? [];
@@ -250,5 +254,6 @@ export function sazetak(plan, ukupnoRedova) {
     viseSlucajeva: plan.viseSlucajeva.length,
     saOdlukom: plan.saOdlukom.length,
     isbnRazlicitNaslov: plan.isbnRazlicitNaslov.length,
+    isbnDrugiNaslovUBazi: plan.isbnDrugiNaslovUBazi.length,
   };
 }
