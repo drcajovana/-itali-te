@@ -43,6 +43,14 @@ export async function postaviStanje(clanId, knjigaId, novo, postojeci = null) {
   return data;
 }
 
+// Uklanjanje knjige sa MOJE police (briše se samo red police; utisak o knjizi je posebna stvar i ostaje). RLS (polica_svoja) dozvoljava brisanje samo
+// svog reda; prazan odgovor znači da reda nema ili nije moj, pa se to javlja kao greška.
+export async function ukloniSaPolice(redId) {
+  const { data, error } = await supabase.from("polica").delete().eq("id", redId).select("id");
+  if (error) throw error;
+  if (!data?.length) throw new Error("nijedan red nije uklonjen");
+}
+
 export async function postaviNapredak(redId, napredak) {
   const { data, error } = await supabase.from("polica").update({ napredak }).eq("id", redId).select("id, status, napredak, datum_pocetka, datum_kraja").single();
   if (error) throw error;

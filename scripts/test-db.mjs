@@ -1913,6 +1913,23 @@ try {
   r = await lista27("bez");
   ok(!r.greska && r.redovi.length === 4, "posle drugog puštanja filter i dalje radi", r.greska?.message ?? r.redovi?.length);
 
+  // ───────── uklanjanje knjige sa police ─────────
+  faza("Polica: član uklanja samo svoj red (RLS polica_svoja), tuđi i bibliotekarov pokušaj ne brišu ništa, a utisak ostaje");
+  const KUP = await nova("POLICA Uklanjanje");
+  await db.query("insert into polica (clan_id, knjiga_id, status) values ($1, $3, 'procitano'), ($2, $3, 'zelim')", [UA, UB, KUP]);
+  await db.query("insert into utisci (clan_id, knjiga_id, ocena, tekst, vidljivost) values ($1, $2, 9, 'POLICA utisak ostaje', 'javno')", [UA, KUP]);
+  const redUA = (await db.query("select id from polica where clan_id = $1 and knjiga_id = $2", [UA, KUP])).rows[0].id;
+  const redUB = (await db.query("select id from polica where clan_id = $1 and knjiga_id = $2", [UB, KUP])).rows[0].id;
+  r = await kao("authenticated", UA, "delete from public.polica where id = $1 returning id", [redUB]);
+  ok(!r.greska && r.redovi.length === 0 && (await db.query("select count(*)::int as n from polica where id = $1", [redUB])).rows[0].n === 1, "član ne može da ukloni tuđ red police (0 obrisanih redova, red ostaje)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "delete from public.polica where id = $1 returning id", [redUB]);
+  ok(!r.greska && r.redovi.length === 0, "ni bibliotekar ne briše tuđu policu (ima samo uvid)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", UA, "delete from public.polica where id = $1 returning id", [redUA]);
+  ok(!r.greska && r.redovi.length === 1, "član uklanja svoj red police", r.greska?.message ?? r.redovi);
+  ok((await db.query("select count(*)::int as n from polica where knjiga_id = $1", [KUP])).rows[0].n === 1, "tuđi red police za istu knjigu ostaje", null);
+  ok((await db.query("select count(*)::int as n from utisci where knjiga_id = $1 and clan_id = $2", [KUP, UA])).rows[0].n === 1, "utisak člana o knjizi ostaje posle uklanjanja sa police", null);
+  ok((await db.query("select count(*)::int as n from knjige where id = $1", [KUP])).rows[0].n === 1, "knjiga ostaje u bazi", null);
+
   // ───────── opšte ─────────
   faza("Opšta pravila");
   const javne = await db.query(`select p.proname, has_function_privilege('anon', p.oid, 'execute') as anon, has_function_privilege('authenticated', p.oid, 'execute') as auth

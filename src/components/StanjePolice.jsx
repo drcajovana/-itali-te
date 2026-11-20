@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth-context.js";
 import { formatDatum, prikazaniNapredak, uredjenNapredak } from "../lib/polica-logika.js";
-import { postaviNapredak, postaviStanje, ucitajRedPolice } from "../lib/polica.js";
+import { postaviNapredak, postaviStanje, ucitajRedPolice, ukloniSaPolice } from "../lib/polica.js";
 import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 import TrakaNapretka from "./TrakaNapretka.jsx";
@@ -16,6 +16,7 @@ export default function StanjePolice({ knjiga }) {
   const [napredak, setNapredak] = useState("0");
   const [zauzet, setZauzet] = useState(false);
   const [poruka, setPoruka] = useState(null); // { tekst, greska }
+  const [uklanjanje, setUklanjanje] = useState(false); // pitanje „Уклонити књигу са полице?" je otvoreno
 
   useEffect(() => {
     let otkazano = false;
@@ -63,6 +64,18 @@ export default function StanjePolice({ knjiga }) {
     if (n === null) return setPoruka({ tekst: T.napredakGreska, greska: true });
     return uradi(async () => setRed(await postaviNapredak(red.id, n)), T.sacuvano, T.napredakGreska);
   };
+
+  const ukloni = () =>
+    uradi(
+      async () => {
+        await ukloniSaPolice(red.id);
+        setRed(null);
+        setNapredak("0");
+        setUklanjanje(false);
+      },
+      T.uklonjeno,
+      T.ukloniGreska
+    );
 
   if (red === undefined) return <p className="mt-7 text-base text-mastilo-2">{tekst.opste.ucitava}</p>;
 
@@ -119,6 +132,25 @@ export default function StanjePolice({ knjiga }) {
           <button type="button" disabled={zauzet} onClick={() => promeni("procitano")} className={stil.veliko}>
             {T.oznaciProcitano}
           </button>
+        )}
+
+        {red && !uklanjanje && (
+          <button type="button" disabled={zauzet} onClick={() => setUklanjanje(true)} className={stil.tiho}>
+            {T.ukloni}
+          </button>
+        )}
+        {red && uklanjanje && (
+          <div role="group" aria-label={T.ukloniPitanje} className="space-y-2 rounded-srednji border border-bordo p-3">
+            <p className="text-base font-semibold">{T.ukloniPitanje}</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={zauzet} onClick={ukloni} className={stil.veliko}>
+                {T.ukloniDa}
+              </button>
+              <button type="button" disabled={zauzet} onClick={() => setUklanjanje(false)} className={stil.tiho}>
+                {T.ukloniNe}
+              </button>
+            </div>
+          </div>
         )}
 
         {poruka && (

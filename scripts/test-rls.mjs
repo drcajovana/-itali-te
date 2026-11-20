@@ -1778,6 +1778,29 @@ async function main() {
     return !z.error && z.data[0]?.bez_korice === direktno.count ? true : `${opis(z)} direktno=${direktno.count}`;
   });
 
+  faza("23. Uklanjanje knjige sa police: svoj red da, tuđi ne, utisak ostaje");
+  const A23 = await napraviClana("pol1", "citalac");
+  const B23 = await napraviClana("pol2", "citalac");
+  const knjiga23 = await napraviKnjigu("POL-A");
+  const redA = await ubaci("polica", { clan_id: A23.id, knjiga_id: knjiga23.id, status: "procitano" });
+  const redB = await ubaci("polica", { clan_id: B23.id, knjiga_id: knjiga23.id, status: "zelim" });
+  await ubaci("utisci", { clan_id: A23.id, knjiga_id: knjiga23.id, ocena: 9, tekst: "RLS-TEST utisak ostaje", vidljivost: "javno" });
+  await provera("član ne može da ukloni tuđ red police (0 redova)", async () => {
+    const r = await A23.db.from("polica").delete().eq("id", redB.id).select("id");
+    const ostao = await S.from("polica").select("id").eq("id", redB.id);
+    return !r.error && r.data.length === 0 && ostao.data.length === 1 ? true : opis(r);
+  });
+  await provera("bibliotekar ne briše tuđu policu", async () => {
+    const r = await BIB.db.from("polica").delete().eq("id", redB.id).select("id");
+    return !r.error && r.data.length === 0 ? true : opis(r);
+  });
+  await provera("član uklanja svoj red police, a utisak i knjiga ostaju", async () => {
+    const r = await A23.db.from("polica").delete().eq("id", redA.id).select("id");
+    const utisak = await S.from("utisci").select("id").eq("knjiga_id", knjiga23.id).eq("clan_id", A23.id);
+    const knjiga = await S.from("knjige").select("id").eq("id", knjiga23.id);
+    return !r.error && r.data.length === 1 && utisak.data.length === 1 && knjiga.data.length === 1 ? true : opis(r);
+  });
+
 }
 
 // ───────────────────────── izvršavanje i čišćenje ─────────────────────────

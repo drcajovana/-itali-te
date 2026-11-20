@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import Dijalog from "../components/Dijalog.jsx";
 import Korica from "../components/Korica.jsx";
 import SlikajKoricu from "../components/SlikajKoricu.jsx";
 import Skeleton from "../components/Skeleton.jsx";
 import { useAuth } from "../lib/auth-context.js";
 import { izmeniKnjigu, obrisiKnjigu } from "../lib/knjige-admin.js";
+import { ukloniKoricu } from "../lib/knjige.js";
 import { datumIzVremena } from "../lib/osoblje-logika.js";
 import { formatDatum } from "../lib/polica-logika.js";
 import { IZVORI, KORICE, ODLUKE, REDOSLEDI, filteriIzAdrese, filteriUAdresu, grupeZbira, imaJos, kljucFiltera, kljucGreskeIzmene, mozeDaBrise, opcijeIzdavaca, poljaIzmene } from "../lib/pregled-knjiga-logika.js";
@@ -15,6 +16,7 @@ import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
 
 const T = tekst.pregledKnjiga;
+const TK = tekst.korice;
 
 // Jedan broj iz zbira: veliki broj i natpis ispod.
 function Broj({ broj, natpis }) {
@@ -50,6 +52,8 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
   const [zauzet, setZauzet] = useState(false);
   const [greska, setGreska] = useState(null);
   const [slikaOk, setSlikaOk] = useState(false);
+  const [uklanjanje, setUklanjanje] = useState(false); // pitanje „Уклонити корицу?” je otvoreno
+  const [koricaUklonjena, setKoricaUklonjena] = useState(false);
 
   async function sacuvaj(e) {
     e.preventDefault();
@@ -65,6 +69,26 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
       const kljuc = kljucGreskeIzmene(err);
       if (kljuc === "opste") console.error("izmena knjige:", err?.code ?? err?.message);
       setGreska(T.izmena.greske[kljuc]);
+    }
+    setZauzet(false);
+  }
+
+  // Uklanjanje korice (isti tok kao na stranici knjige: knjiga prvo gubi adresu, pa se briše fajl iz našeg Storage-a).
+  async function ukloniSliku() {
+    if (zauzet) return;
+    setZauzet(true);
+    setGreska(null);
+    try {
+      await ukloniKoricu(k.id, k.korice_url);
+      const nova = { korice_url: null, korice_izvor: null };
+      setK((x) => ({ ...x, ...nova }));
+      naIzmenjeno(k.id, nova);
+      setUklanjanje(false);
+      setSlikaOk(false);
+      setKoricaUklonjena(true);
+    } catch (err) {
+      console.error("uklanjanje korice:", err?.kod ?? err?.code);
+      setGreska(TK.greske[err?.kod] ?? TK.greske.korica_upis);
     }
     setZauzet(false);
   }
@@ -222,15 +246,51 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
             setK((x) => ({ ...x, ...nova }));
             naIzmenjeno(k.id, nova);
             setSlikaOk(true);
+            setKoricaUklonjena(false);
           }}
         />
+        {k.korice_url && !uklanjanje && (
+          <button
+            type="button"
+            disabled={zauzet}
+            onClick={() => {
+              setGreska(null);
+              setUklanjanje(true);
+            }}
+            className={`${MALO_DUGME} text-mastilo-2 hover:text-bordo`}
+          >
+            {TK.ukloni}
+          </button>
+        )}
+        <Link to={`/knjiga/${encodeURIComponent(k.id)}`} className={`${MALO_DUGME} text-bordo`}>
+          {T.detalji.stranica}
+        </Link>
         <button type="button" onClick={onZatvori} className={`${MALO_DUGME} ml-auto text-mastilo-2`}>
           {T.zatvori}
         </button>
       </div>
+      {uklanjanje && (
+        <div role="group" aria-label={TK.ukloniPitanje} className="mt-4 space-y-2 rounded-srednji border border-bordo p-3">
+          <p className="text-base font-semibold">{TK.ukloniPitanje}</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={zauzet} onClick={ukloniSliku} className={stil.veliko}>
+              {zauzet ? TK.uklanjam : TK.ukloniDa}
+            </button>
+            <button type="button" disabled={zauzet} onClick={() => setUklanjanje(false)} className={stil.tiho}>
+              {TK.ukloniNe}
+            </button>
+          </div>
+        </div>
+      )}
+      {poruka}
       {slikaOk && (
         <p role="status" className="mt-3 text-sm font-medium">
           {T.detalji.slikaPostavljena}
+        </p>
+      )}
+      {koricaUklonjena && (
+        <p role="status" className="mt-3 text-sm font-medium">
+          {T.detalji.koricaUklonjena}
         </p>
       )}
     </Dijalog>
