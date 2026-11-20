@@ -48,7 +48,7 @@ export default function Pocetna() {
         <br />
         {ime}
       </h1>
-      {!ucitava && !greska && redovi.length > 0 && <p className={stil.uvod}>{T.uvod[oblikBroja(uToku)].replace("{n}", String(uToku))}</p>}
+      {!ucitava && !greska && uToku > 0 && <p className={stil.uvod}>{T.uvod[oblikBroja(uToku)].replace("{n}", String(uToku))}</p>}
 
       {ucitava && <Skeleton blokova={2} visina="h-36" razmak="mt-6" />}
 
@@ -79,10 +79,8 @@ export default function Pocetna() {
 
       {!ucitava && !greska && redovi.length > 0 && (
         <>
+          {grupe.citam.length > 0 && (
           <section className="mt-4" aria-label={T.uToku}>
-            {grupe.citam.length === 0 ? (
-              <p className="mt-2 text-base text-mastilo-2">{T.nemaUToku}</p>
-            ) : (
               <ul className="space-y-3">
                 {grupe.citam.map((r) => (
                   <li key={r.id}>
@@ -102,8 +100,8 @@ export default function Pocetna() {
                   </li>
                 ))}
               </ul>
-            )}
           </section>
+          )}
 
           <div role="tablist" aria-label={T.prikaz} className="my-5 flex gap-1 rounded-full bg-povrsina p-1 shadow-senka">
             {KARTICE.map((s) => (
