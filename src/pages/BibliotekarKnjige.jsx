@@ -231,7 +231,7 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
           <label htmlFor="stanje-knjige" className="w-28 flex-none text-mastilo-2">
             {T.detalji.odluka}
           </label>
-          <select id="stanje-knjige" value={k.odluka ?? ""} disabled={zauzet} onChange={(e) => promeniStanje(e.target.value)} className={`${stil.polje} min-w-0 flex-1 py-1.5`}>
+          <select id="stanje-knjige" value={k.odluka ?? ""} disabled={zauzet} onChange={(e) => promeniStanje(e.target.value)} className={`${stil.polje} w-auto! min-w-0 max-w-full py-1.5 md:min-h-9! md:py-1 md:text-[13px]`}>
             {!k.odluka && (
               <option value="" disabled>
                 {T.odluke.bez}
