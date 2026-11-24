@@ -115,6 +115,30 @@ export const IZDAVACI = {
     uzorakRezultata: /href="(https:\/\/datastatus\.rs\/knjige\/[^"?#]+\/)"/g,
     napomena: "robots.txt: Crawl-delay 10 s (poštuje se samo za ovaj sajt), zabranjeni su samo parametri filtera; pretraga po ISBN-u (/?s=<isbn>&post_type=product) preusmerava na /knjige/<naslov>/",
   },
+  // Uključeni po potvrdi vlasnice 2026-11-24 (domeni su dodati na belu listu, migracija 0029).
+  pravoslavna: {
+    naziv: "Pravoslavna reč",
+    prepoznaj: ["pravoslavna rec"],
+    domen: "pravoslavnarec.com",
+    robots: "https://pravoslavnarec.com/robots.txt",
+    podrzan: true,
+    strategija: "sitemap",
+    sitemap: "https://pravoslavnarec.com/product-sitemap.xml",
+    uzorakAdrese: /^https:\/\/pravoslavnarec\.com\/proizvod\/([^/?#]+)\/$/,
+    napomena: "robots.txt zabranjuje samo /wp-admin/, wc-logs i ?add-to-cart=; sitemap proizvoda ima samo 54 adrese /proizvod/<naslov>/, pa je pokrivenost mala; ISBN i slika (og:image) su na stranici",
+  },
+  portalibris: {
+    naziv: "PortaLibris",
+    prepoznaj: ["portalibris"],
+    domen: "portalibris.rs",
+    robots: "https://portalibris.rs/robots.txt",
+    podrzan: true,
+    strategija: "sitemap",
+    sitemap: "https://portalibris.rs/product-sitemap.xml",
+    // adrese su /<naslov>-<autor>/ (autor je u adresi), pa ceo naslov retko pogodi; knjiga se nalazi prošireno (adresa koja počinje naslovom), uz obavezan ISBN
+    uzorakAdrese: /^https:\/\/portalibris\.rs\/([a-z0-9-]+)\/$/,
+    napomena: "robots.txt zabranjuje samo /wp-admin/, wc-logs i ?add-to-cart=; sitemap proizvoda ima oko 980 adresa /<naslov>-<autor>/; ISBN i slika (og:image) su na stranici",
+  },
 };
 
 // Adrese sitemap-ova izdavača: jedan (sitemap) ili više njih (sitemapi).

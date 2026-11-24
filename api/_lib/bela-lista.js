@@ -33,6 +33,10 @@ export const DOZVOLJENI_DOMENI = [
   // Dodato po potvrdi vlasnice (2026-11-24, migracija 0028): robots.txt proveren, vidi docs/korice-izdavaci.md
   "prometej.rs",
   "datastatus.rs",
+
+  // Dodato po potvrdi vlasnice (2026-11-24, migracija 0029): robots.txt proveren, vidi docs/korice-izdavaci.md
+  "pravoslavnarec.com",
+  "portalibris.rs",
 ];
 
 // ───────────────────────── korice ─────────────────────────
