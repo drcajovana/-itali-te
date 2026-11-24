@@ -54,7 +54,7 @@ Upis (`--upisi`) tek posle provere uzorka.
    isključuje se sa `--bez-open-library`.
 
 Isto kao ranije: jedan zahtev u sekundi, robots.txt, jasan User-Agent, prekid na 403 i 429, keš odgovora na disku, bez opisa, korica se nikad ne prepisuje (`korice_url is null` pri upisu).
-Stanje je u `uvoz/korice-sve.json` (nastavlja se gde je stalo; „nije nađeno" je konačno tek kad je probana i Open Library). Izveštaj: zbir po izvoru (sajt izdavača / Delfi / Open Library /
+Stanje je u `uvoz/korice-sve.json` (nastavlja se gde je stalo; „nije nađeno" je konačno tek kad su probani isti izvori: uključeni izdavači, Delfi ako je `--delfi`, i Open Library, pa se posle uključivanja novog izdavača ili Delfija knjige probaju ponovo, a odgovori se čitaju iz keša). Izveštaj: zbir po izvoru (sajt izdavača / Delfi / Open Library /
 nije nađeno), tabela po izdavaču i spisak izdavača BEZ podrške u skripti (kandidati za proveru robots.txt-a i pretrage po ISBN-u pre uključivanja).
 
 ## Pogađanje adrese (Laguna)

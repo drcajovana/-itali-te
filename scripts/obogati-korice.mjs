@@ -74,8 +74,10 @@ mkdirSync(KES_DIR, { recursive: true });
 const FAJL_STANJA = `uvoz/korice-${IZDAVAC}.json`;
 const stanje = !PONOVO && existsSync(FAJL_STANJA) ? JSON.parse(readFileSync(FAJL_STANJA, "utf8")) : {};
 const sacuvajStanje = () => writeFileSync(FAJL_STANJA, JSON.stringify(stanje, null, 1));
-// „nije nađeno" je konačno samo za verziju pravila kojom je dobijeno; u režimu „sve" i samo ako je Open Library već probana (ili je isključena)
-const konacno = (z) => jeKonacno(z) && (!SVE || !OPEN_LIBRARY || z.ol === true || z.stanje === "upisano");
+// Izvori kojima je knjiga probana: izdavači sa podrškom, pa Delfi (--delfi), pa Open Library. „nije nađeno" je konačno samo za verziju pravila kojom je dobijeno
+// i (u režimu „sve") samo ako je probano sa ISTIM izvorima: posle uključivanja novog izdavača ili Delfija knjige se probaju ponovo (odgovori su u kešu, pa to ne troši mrežu).
+const IZVORI = SVE ? [...Object.keys(IZDAVACI).filter((k) => IZDAVACI[k].podrzan && !IZDAVACI[k].sviIzdavaci), DELFI ? "delfi" : null, OPEN_LIBRARY ? "open-library" : null].filter(Boolean).join("+") : "";
+const konacno = (z) => jeKonacno(z) && (!SVE || z.stanje === "upisano" || z.izvori === IZVORI);
 
 // ───────────── mreža: keš na disku, pauza, robots, prekid ─────────────
 class Prekid extends Error {}
@@ -397,7 +399,7 @@ async function main() {
         const koricaUrl = await upisi(k, o);
         stanje[k.id] = { stanje: "upisano", stranica: o.stranica ?? null, korica: o.korica, korice_url: koricaUrl, izvor: o.izvor ?? null };
       } else if (o.stanje !== "nadjeno") {
-        stanje[k.id] = { stanje: o.stanje, razlog: o.razlog ?? null, stranica: o.stranica ?? null, pravilo: VERZIJA_PRAVILA, ol: OPEN_LIBRARY };
+        stanje[k.id] = { stanje: o.stanje, razlog: o.razlog ?? null, stranica: o.stranica ?? null, pravilo: VERZIJA_PRAVILA, izvori: IZVORI };
       }
     } catch (e) {
       if (e instanceof Prekid) {
