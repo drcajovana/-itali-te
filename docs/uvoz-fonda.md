@@ -55,6 +55,21 @@ ne odbija servisnu ulogu). Odbija se samo red bez naslova.
 Uvoz ne dira korice. U aplikaciji se korica za knjigu bez fotografije traži **pri prikazu** (ne pozadinski): Open Library po ISBN-u, a ako je nema (ili knjiga nema ISBN),
 prikazuje se generisana pločica u boji sa naslovom i autorom (`Korica.jsx`). Fotografiju bibliotekar dodaje na stranici knjige.
 
+## Izvoz iz COBISS-a u xlsx obliku (2023.)
+
+Sirov izvoz iz COBISS-a (xlsx, 29 kolona na ćirilici) pretvara se u CSV iz ovog dokumenta bez ikakve biblioteke:
+
+```bash
+npm run admin:cobiss-csv -- "C:\Users\PC\Downloads\export (1).xlsx" --izlaz=uvoz/fond-2023.csv   # ne treba .env ni bazu; ne prepisuje postojeći CSV bez --prepisi
+npm run admin:uvezi-fond -- --fajl=uvoz/fond-2023.csv                                             # probno
+npm run admin:uvezi-fond -- --fajl=uvoz/fond-2023.csv --upisi
+```
+
+Pravila pretvaranja (`scripts/cobiss-izvoz.mjs`, proverava ih `npm run test:api`), ista kao u ranijim CSV-ima: **autor** je varijanta sa ćirilicom („Арден, Кетрин = Arden, Katherine"
+→ „Кетрин Арден"; ako je nema, prva), „Prezime, Ime" postaje „Ime Prezime" (osim kad iza zareza ima cifara); **ISBN** je prva vrednost bez napomena u zagradama
+(„978-86-7818-742-1 (PortaLibris; брош.)" → 9788678187421); **primeraka** iz polja 998c (`?c2/…` → 2); naslov i izdavač ostaju kakvi jesu. Redovi bez naslova se preskaču.
+Izvoz iz 2023. ima 1359 zapisa (sve su iz 2023, monografske publikacije); 93 su bez autora, 7 bez ISBN-a („Брош." bez broja), takvi se uvoze bez tih polja.
+
 ## Idempotentnost
 
 Drugo pokretanje ne pravi duplikate: skripta pri `--upisi` na kraju ponovo čita bazu i proverava da su „novih" i „dopuna" 0.

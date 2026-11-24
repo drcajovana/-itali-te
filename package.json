@@ -13,6 +13,7 @@
     "test:api": "node scripts/test-api.mjs",
     "test:db": "node scripts/test-db.mjs",
     "admin:resetuj-pin": "node --env-file=.env scripts/resetuj-pin.mjs",
+    "admin:cobiss-csv": "node scripts/cobiss-xlsx-u-csv.mjs",
     "admin:uvezi-fond": "node --env-file=.env scripts/uvezi-fond.mjs",
     "admin:obogati-korice": "node --env-file=.env scripts/obogati-korice.mjs"
   },
