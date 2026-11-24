@@ -87,7 +87,38 @@ export const IZDAVACI = {
     uzorakAdrese: /^https:\/\/booka\.rs\/knjige\/[a-z0-9-]+\/([^/?#]+)\/$/,
     napomena: "robots.txt zabranjuje pretragu (/?s=, /search/), pa se ona NE koristi; sitemap proizvoda ima samo oko 280 adresa, pa je pokrivenost mala",
   },
+  // Uključen po potvrdi vlasnice 2026-11-24 (domen je dodat na belu listu, migracija 0028).
+  prometej: {
+    naziv: "Prometej",
+    prepoznaj: ["prometej"],
+    domen: "prometej.rs",
+    robots: "https://www.prometej.rs/robots.txt",
+    podrzan: true,
+    strategija: "sitemap",
+    // proizvodi su u dva sitemap-a (product-sitemap.xml i product-sitemap2.xml; treći ne postoji), u njima su i /prodavnica/ i druge stranice
+    sitemapi: ["https://www.prometej.rs/product-sitemap.xml", "https://www.prometej.rs/product-sitemap2.xml"],
+    // adrese su /prodavnica/<kategorija>/<naslov>/ (sam /prodavnica/ nema naslov, pa ne ulazi)
+    uzorakAdrese: /^https:\/\/www\.prometej\.rs\/prodavnica\/[a-z0-9-]+\/([^/?#]+)\/$/,
+    napomena: "robots.txt zabranjuje samo poznate SEO botove, za ostale nema zabrana; pretraga se NE koristi, nego dva sitemap-a proizvoda (oko 1900 adresa); ISBN (sa crticama) i slika (og:image) su na stranici",
+  },
+  datastatus: {
+    naziv: "Data Status",
+    prepoznaj: ["data status", "datastatus"],
+    domen: "datastatus.rs",
+    robots: "https://datastatus.rs/robots.txt",
+    podrzan: true,
+    // Sitemap proizvoda ima oko 365 fajlova (uz Crawl-delay od 10 s to je sat vremena samo za spisak), pa se NE koristi. Pretraga po ISBN-u
+    // (WooCommerce) nije zabranjena i kad ima tačno jedan rezultat preusmerava pravo na stranicu knjige; inače vraća stranicu sa rezultatima.
+    strategija: "pretraga",
+    pretraga: (isbn) => `https://datastatus.rs/?s=${isbn}&post_type=product`,
+    uzorakStranice: /^https:\/\/datastatus\.rs\/knjige\/[^/?#]+\/$/,
+    uzorakRezultata: /href="(https:\/\/datastatus\.rs\/knjige\/[^"?#]+\/)"/g,
+    napomena: "robots.txt: Crawl-delay 10 s (poštuje se samo za ovaj sajt), zabranjeni su samo parametri filtera; pretraga po ISBN-u (/?s=<isbn>&post_type=product) preusmerava na /knjige/<naslov>/",
+  },
 };
+
+// Adrese sitemap-ova izdavača: jedan (sitemap) ili više njih (sitemapi).
+export const adreseSitemapa = (cfg) => cfg.sitemapi ?? (cfg.sitemap ? [cfg.sitemap] : []);
 
 // Delfi knjižare (delfi.rs) nisu izdavač nego knjižara: probni režim po odluci vlasnice (2026-11-20), samo za knjige iz FONDA koje i posle
 // izdavača ostaju bez korice (sviIzdavaci: nema filtera po izdavaču). Sajt je JavaScript aplikacija bez običnog HTML-a, sitemap-a i robots.txt-a
@@ -290,6 +321,33 @@ export function adreseSlikaDelfi(p) {
 
 // Open Library: adresa po ISBN-u; default=false daje 404 kad korice nema (isto kao u src/lib/korica-slika.js).
 export const adresaOpenLibrary = (isbn) => `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
+
+// Open Library dozvoljava oko 100 zahteva na 5 minuta po IP adresi: najviše jedan zahtev na 3.5 s (među zahtevima ka covers.openlibrary.org).
+export const OL_PAUZA_MS = 3500;
+
+// ISBN-13 sa prefiksom 978 → ISBN-10 (devet cifara bez prefiksa i kontrolni znak, može i X); 979 nema ISBN-10, pa vraća null.
+export function isbn10Iz13(isbn13) {
+  const m = /^978(\d{9})\d$/.exec(String(isbn13 ?? ""));
+  if (!m) return null;
+  const zbir = [...m[1]].reduce((s, c, i) => s + (10 - i) * Number(c), 0);
+  const kontrolni = (11 - (zbir % 11)) % 11;
+  return `${m[1]}${kontrolni === 10 ? "X" : kontrolni}`;
+}
+
+// Adrese korice na Open Library: prvo ISBN-13, pa (samo ako ima ISBN-10) ISBN-10. Drugi se proba tek kad prvi nema koricu.
+export function adreseOpenLibrary(isbn13) {
+  if (!/^97[89]\d{10}$/.test(String(isbn13 ?? ""))) return [];
+  const deset = isbn10Iz13(isbn13);
+  return [adresaOpenLibrary(isbn13), ...(deset ? [adresaOpenLibrary(deset)] : [])];
+}
+
+// Izdavač iz baze → ključ izdavača skripte (laguna, vulkan, ...), ili null kad ga skripta ne poznaje. Delfi (knjižara, sviIzdavaci) se ne računa.
+export function izdavacKljuc(izdavacUBazi) {
+  return Object.keys(IZDAVACI).find((k) => !IZDAVACI[k].sviIzdavaci && izdavacOdgovara(izdavacUBazi, k)) ?? null;
+}
+
+// Ime izdavača za izveštaj o izdavačima bez podrške: sabrani razmaci; prazno je „(bez izdavača)".
+export const imeIzdavacaZaIzvestaj = (t) => String(t ?? "").replace(/\s+/g, " ").trim() || "(bez izdavača)";
 
 // Odluka za jednu knjigu → red u izveštaju; stanje u fajlu je mapa id → { stanje, ... }.
 // bez_korice i slika_neupotrebljiva NISU konačna: zavise od pravila (npr. dozvoljenih domena slika), pa se pri sledećem pokretanju ponovo pokušavaju (odgovori su u kešu).

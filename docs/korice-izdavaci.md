@@ -29,7 +29,14 @@ npm run admin:obogati-korice -- --izdavac=laguna --open-library  # za knjige koj
 | Pčelica | prazan (sve dozvoljeno, pa i pretraga) | nema sitemap-a; **pretraga po ISBN-u** je obična adresa (`index.php?route=product/search&search=<isbn>`), pa stranica knjige: 2 zahteva po knjizi | **uključena** (2026-11-20); probni uzorak: 20 od 20 nađeno po ISBN-u (kod 8 je najveća slika prevelika, pa se uzima druga predložena sa iste stranice) |
 | Publik Praktikum | nema ga (404) | nema sitemap-a (404); pretraga `/proizvodi?search=<isbn>` vraća praznu ljusku, a rezultate učitava JavaScript preko internog POST API-ja (`/api`, uz Auth), što se ne koristi | **nije uključen** (proveren 2026-11-20; 68 knjiga ostaje za ručno dodavanje korica) |
 | Booka | zabranjuje `/?s=` i `/search/` | pretraga se ne koristi; **sitemap** `product-sitemap.xml` (oko 280 adresa `/knjige/<kategorija>/<naslov>/`), na stranici ISBN i korica (`booka.rs`) | **uključena** (2026-11-20); mala pokrivenost |
+| Prometej (prometej.rs) | zabranjuje samo poznate SEO/analitičke botove (Sistrix, Ahrefs, DotBot...), za ostale nema zabrana | pretraga se ne koristi (ISBN-pretraga ne nalazi knjige koje nisu na sajtu); **dva sitemap-a** proizvoda `product-sitemap.xml` i `product-sitemap2.xml` (treći ne postoji; oko 1760 adresa `/prodavnica/<kategorija>/<naslov>/`), na stranici ISBN (sa crticama) i korica (`og:image`, isti domen) | **uključen** (2026-11-24, po potvrdi vlasnice; domen na beloj listi, migracija 0028); probni uzorak od 10 od 21 knjige: 1 nađena, 8 nije u sitemap-u (sajt ih ne prodaje), 1 odbijena kao druga knjiga (isti naslov, drugačiji tom) |
+| Data Status (datastatus.rs) | **Crawl-delay: 10** (skripta ga poštuje samo za ovaj sajt, ostali sajtovi idu 1 zahtev u sekundi); zabranjeni su samo parametri filtera (`orderby`, `add-to-cart`, `izdavac`, `autor`, `product-page`...) | sitemap proizvoda ima oko 365 fajlova (uz pauzu od 10 s to je sat vremena samo za spisak), pa se NE koristi; **pretraga po ISBN-u** (`/?s=<isbn>&post_type=product`, nije zabranjena) preusmerava pravo na stranicu `/knjige/<naslov>/` kad ima jedan rezultat; na stranici ISBN i korica (`og:image`, isti domen) | **uključen** (2026-11-24, po potvrdi vlasnice; domen na beloj listi, migracija 0028); probni uzorak od 6 od 35 knjiga: 5 nađeno po ISBN-u, 1 slika prevelika (preko 1,5 MB); po knjizi 1 zahtev (stranica se kešira i pod završnom adresom), što je oko 10 s |
 | Delfi knjižare (delfi.rs) | nema robots.txt-a (404); uslovi korišćenja (/uslovi_koriscenja) su uslovi kupovine i privatnosti, bez odredbe o automatskom pristupu ili kopiranju slika | sajt je JavaScript aplikacija (svaka adresa vraća praznu ljusku), nema sitemap-a; **pretraga po naslovu** je GET `/api/pc-frontend-api/search/advance-search/<naslov>?limit=20&skip=0` (isti poziv koji šalje njihova stranica), pretraga po ISBN-u ne radi (0 rezultata), a ćirilicu ne razume | **probni režim** (odluka vlasnice, 2026-11-20); knjižara, ne izdavač: obrađuje sve knjige iz fonda bez korice |
+
+## Pauza po sajtu
+Opšte pravilo je najviše jedan zahtev u sekundi ka bilo kom sajtu. Crawl-delay iz robots.txt-a nekog sajta (Data Status: 10 s) važi **samo za taj sajt**: u režimu „sve" se
+zahtevi ka Data Statusu razmiču na 10 s, a ostali sajtovi se ne usporavaju. Izdavač može da ima više sitemap-ova (`sitemapi`, kod Prometeja dva), a izdavač bez sitemap-a
+može da koristi pretragu po ISBN-u koja preusmerava na stranicu knjige (`uzorakStranice`, Data Status).
 
 ## Delfi knjižare (probni režim)
 `npm run admin:obogati-korice -- --izdavac=delfi --uzorak=20`. Pokreće se **posle** izdavača (ostaju samo knjige koje oni nisu pokrili). Jedan zahtev vraća do 20 proizvoda sa
@@ -37,6 +44,18 @@ ISBN-om (barcode ili atribut), autorima i adresama slika, pa po knjizi ide 1 zah
 kvačica), a prihvata se **samo proizvod sa istim ISBN-om** (Delfi ima više izdanja istog naslova); knjiga bez ISBN-a se prihvata samo kad tačno jedan proizvod ima isti naslov i
 sve reči autora. Slika: xl, pa l, pa m (samo `/_img/...` na delfi.rs, bez zamenskih slika). Izveštaj upozorava kad ista slika stigne za više knjiga (moguća zamenska slika).
 Upis (`--upisi`) tek posle provere uzorka.
+
+## Režim „sve" (--izdavac=sve)
+`npm run admin:obogati-korice -- --izdavac=sve --limit=30` (probno), pa `--upisi`. Uzima SVE knjige iz fonda bez korice (`korice_url is null`, bez spojenih) koje imaju ISBN, i za svaku redom:
+1. **sajt njenog izdavača** (samo uključeni izdavači iz tabele iznad; izdavač se prepoznaje po nazivu iz baze),
+2. **Delfi** (samo uz `--delfi`, odluka vlasnice od 2026-11-20),
+3. **Open Library** po ISBN-u: prvo ISBN-13, pa ISBN-10 (samo 978...), `https://covers.openlibrary.org/b/isbn/<ISBN>-M.jpg?default=false`. Prihvata se samo odgovor 200 sa
+   image/jpeg većim od 1 KB (i po zaglavlju i po sadržaju). Najviše jedan zahtev na 3.5 s ka Open Library (njihov limit je oko 100 zahteva na 5 minuta po IP adresi);
+   isključuje se sa `--bez-open-library`.
+
+Isto kao ranije: jedan zahtev u sekundi, robots.txt, jasan User-Agent, prekid na 403 i 429, keš odgovora na disku, bez opisa, korica se nikad ne prepisuje (`korice_url is null` pri upisu).
+Stanje je u `uvoz/korice-sve.json` (nastavlja se gde je stalo; „nije nađeno" je konačno tek kad je probana i Open Library). Izveštaj: zbir po izvoru (sajt izdavača / Delfi / Open Library /
+nije nađeno), tabela po izdavaču i spisak izdavača BEZ podrške u skripti (kandidati za proveru robots.txt-a i pretrage po ISBN-u pre uključivanja).
 
 ## Pogađanje adrese (Laguna)
 1. Ceo naslov, pa naslov bez podnaslova (`slug`) traži se u sitemap-u; stranica se prihvata po ISBN-u **ili** naslovu.

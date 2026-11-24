@@ -107,7 +107,10 @@ try {
   const IZDAVAC = fajlovi.filter((f) => /^0025_/.test(f));
   const JEDINSTVEN = fajlovi.filter((f) => /^0026_/.test(f));
   const KORICA27 = fajlovi.filter((f) => /^0027_/.test(f));
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x) && !POTPIS.includes(x) && !BLOKADE.includes(x) && !PREGLED.includes(x) && !IZDAVAC.includes(x) && !JEDINSTVEN.includes(x) && !KORICA27.includes(x))) await pusti(f);
+  const DOMENI28 = fajlovi.filter((f) => /^0028_/.test(f));
+  // domeni koje dodaje tek 0028: do tada se lista u bazi poredi sa listom bez njih
+  const NOVI_DOMENI_28 = ["prometej.rs", "datastatus.rs"];
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x) && !POTPIS.includes(x) && !BLOKADE.includes(x) && !PREGLED.includes(x) && !IZDAVAC.includes(x) && !JEDINSTVEN.includes(x) && !KORICA27.includes(x) && !DOMENI28.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -167,7 +170,7 @@ try {
 
   faza("Migracija 0015: ispravka liste domena za korice (baza sa starom i sa ispravnom listom)");
   const listaDomena = async () => (await db.query("select domen from privatno.domeni_korica order by 1")).rows.map((x) => x.domen);
-  const ocekivana = [...new Set(DOZVOLJENI_DOMENI_KORICA)].sort();
+  const ocekivana = [...new Set(DOZVOLJENI_DOMENI_KORICA)].filter((d) => !NOVI_DOMENI_28.includes(d)).sort();
   const pre0015 = await listaDomena();
   ok(JSON.stringify(pre0015) === JSON.stringify(ocekivana), "baza napravljena iz 0001–0014 već ima ispravnu listu (kao 0009 i bela-lista.js)", pre0015);
   for (const f of ISPRAVKA) await pusti(f);
@@ -434,7 +437,7 @@ try {
 
   faza("Korice: lista domena (privatno.domeni_korica) i prava");
   const uBazi = (await db.query("select domen from privatno.domeni_korica order by domen")).rows.map((x) => x.domen);
-  const uJs = [...DOZVOLJENI_DOMENI_KORICA].sort();
+  const uJs = [...DOZVOLJENI_DOMENI_KORICA].filter((d) => !NOVI_DOMENI_28.includes(d)).sort();
   ok(JSON.stringify(uBazi) === JSON.stringify(uJs), "lista domena u bazi = DOZVOLJENI_DOMENI_KORICA u api/_lib/bela-lista.js (nema razilaženja)", {
     samoUBazi: uBazi.filter((d) => !uJs.includes(d)),
     samoUJs: uJs.filter((d) => !uBazi.includes(d)),
@@ -1912,6 +1915,33 @@ try {
   ok(pre27 === posle27 && (await otisakPolitika27()) === politikePre27, "0027 je idempotentna: drugo puštanje ne duplira funkcije i ne menja politike");
   r = await lista27("bez");
   ok(!r.greska && r.redovi.length === 4, "posle drugog puštanja filter i dalje radi", r.greska?.message ?? r.redovi?.length);
+
+  // ───────── 0028: Prometej i Data Status na listi domena za korice ─────────
+  faza("0028: domeni prometej.rs i datastatus.rs na listi za korice (samo dva reda; RLS i prava netaknuti; idempotentno)");
+  const pre28 = await listaDomena();
+  ok(NOVI_DOMENI_28.every((d) => !pre28.includes(d)), "PRE 0028: novih domena nema u bazi", pre28);
+  const nedozv28 = await db.query("select privatno.korice_dozvoljena('https://www.prometej.rs/wp-content/uploads/x.jpg') as p, privatno.korice_dozvoljena('https://datastatus.rs/wp-content/uploads/x.png') as d");
+  ok(nedozv28.rows[0].p === false && nedozv28.rows[0].d === false, "PRE 0028: adrese sa oba domena nisu dozvoljene za korice", nedozv28.rows[0]);
+  const politike28 = JSON.stringify((await db.query("select schemaname, tablename, policyname, cmd, roles::text, qual, with_check from pg_policies where schemaname = 'privatno' and tablename = 'domeni_korica' order by 1, 2, 3")).rows);
+  for (const f of DOMENI28) await pusti(f);
+  const posle28 = await listaDomena();
+  ok(JSON.stringify(posle28.filter((d) => !pre28.includes(d))) === JSON.stringify([...NOVI_DOMENI_28].sort()) && posle28.length === pre28.length + 2, "0028 dodaje tačno dva reda (prometej.rs, datastatus.rs), ništa ne briše", posle28.filter((d) => !pre28.includes(d)));
+  ok(JSON.stringify(posle28) === JSON.stringify([...new Set(DOZVOLJENI_DOMENI_KORICA)].sort()), "posle 0028 lista u bazi = DOZVOLJENI_DOMENI_KORICA u api/_lib/bela-lista.js (nema razilaženja)", {
+    samoUBazi: posle28.filter((d) => !DOZVOLJENI_DOMENI_KORICA.includes(d)),
+    samoUJs: DOZVOLJENI_DOMENI_KORICA.filter((d) => !posle28.includes(d)),
+  });
+  const dozv28 = await db.query(`select privatno.korice_dozvoljena('https://www.prometej.rs/wp-content/uploads/x.jpg') as p,
+                                        privatno.korice_dozvoljena('https://datastatus.rs/wp-content/uploads/x.png') as d,
+                                        privatno.korice_dozvoljena('https://evil-prometej.rs/x.jpg') as lp,
+                                        privatno.korice_dozvoljena('https://datastatus.rs.evil.com/x.jpg') as ld`);
+  ok(dozv28.rows[0].p === true && dozv28.rows[0].d === true && dozv28.rows[0].lp === false && dozv28.rows[0].ld === false, "posle 0028: oba domena (i www. poddomen) su dozvoljena, lažni domeni sa istim imenom nisu", dozv28.rows[0]);
+  ok(JSON.stringify((await db.query("select schemaname, tablename, policyname, cmd, roles::text, qual, with_check from pg_policies where schemaname = 'privatno' and tablename = 'domeni_korica' order by 1, 2, 3")).rows) === politike28, "0028: politike (RLS) tabele domeni_korica nisu menjane");
+  const m28 = fs.readFileSync(path.join(MIGRACIJE, DOMENI28[0]), "utf8").replace(/^\s*--.*$/gm, "");
+  ok(!/\b(create|drop|alter)\s+(policy|table|function)\b/i.test(m28) && !/\bdelete\b|\btruncate\b|\bgrant\b|\brevoke\b/i.test(m28) && /on conflict \(domen\) do nothing/i.test(m28) && /notify pgrst/i.test(m28), "0028 samo dodaje redove (on conflict do nothing), ne piše politike, funkcije ni prava, ništa ne briše", null);
+  for (const f of DOMENI28) await pusti(f);
+  ok(JSON.stringify(await listaDomena()) === JSON.stringify(posle28), "0028 je idempotentna: drugo puštanje ne duplira i ne menja listu", await listaDomena());
+  r = await kao("authenticated", BIB, "select * from privatno.domeni_korica");
+  ok(nemaPrava(r), "bibliotekar (authenticated) i posle 0028 ne vidi privatno.domeni_korica", r.greska?.message ?? r.redovi?.length);
 
   // ───────── uklanjanje knjige sa police ─────────
   faza("Polica: član uklanja samo svoj red (RLS polica_svoja), tuđi i bibliotekarov pokušaj ne brišu ništa, a utisak ostaje");

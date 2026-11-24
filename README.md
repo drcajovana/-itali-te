@@ -40,6 +40,17 @@ cp .env.example .env    # popuniti VITE_SUPABASE_URL i VITE_SUPABASE_ANON_KEY
 npm run dev
 ```
 
+### Rad sa drugog računara (npr. od kuće)
+
+1. Instalirati **Node.js 24** (isto kao na poslu) i **Git**; prijaviti se na GitHub nalog `drcajovana`.
+2. `git clone https://github.com/drcajovana/-itali-te citaliste`, pa `cd citaliste` i `npm install`.
+3. Napraviti `.env` po šablonu `.env.example`. Vrednosti se prepisuju iz kontrola servisa, nikad se ne šalju mejlom ni porukom: Supabase (Project Settings → API:
+   adresa, `anon` i `service_role` ključ) i Vercel (Settings → Environment Variables). `.env` nije na GitHub-u, namerno. `service_role` ključ treba samo za skripte
+   (uvoz, korice, PIN), ne za običan rad.
+4. Folder `uvoz/` (CSV fonda i keš korica, oko 800 MB) nije na GitHub-u. Treba samo za skripte `admin:*`; ako se one pokreću kod kuće, kopirati ga na USB, inače ne.
+5. Svakodnevno: `git pull` pre rada, pa `npm run lint`, `npm run build`, `npm run test:api` i `npm run test:db`; posle rada `git add -A`, `git commit`, `git push`
+   (Vercel sam objavljuje). Migracije se i dalje puštaju ručno u Supabase SQL Editoru.
+
 ## Baza
 
 Migracije se puštaju redom, brojevima:

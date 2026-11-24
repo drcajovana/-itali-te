@@ -154,6 +154,9 @@ menjaš ovaj red", ali ne i „smeš da menjaš ovu kolonu".
   **Delfi knjižare (odluka vlasnice, 2026-11-20): dozvoljeni su probni režim i, posle provere uzorka, upis** za knjige iz fonda koje izdavači nisu pokrili (`--izdavac=delfi`). Delfi je knjižara
   bez robots.txt-a i sitemap-a; koristi se njihova pretraga po naslovu (isti GET poziv kao njihova stranica), a prihvata se samo proizvod sa istim ISBN-om. Ista pravila: 1 zahtev u
   sekundi, 429 i 403 prekidaju, keš na disku, slika u naš Storage, bez opisa. Ovo ne važi za druge knjižare.
+  **Režim `--izdavac=sve`** (sve knjige iz fonda bez korice sa ISBN-om: sajt izdavača, pa `--delfi`, pa Open Library ISBN-13 pa ISBN-10, najviše 1 zahtev na 3.5 s, samo image/jpeg veći od 1 KB):
+  vidi `docs/korice-izdavaci.md`. Novi izdavač se uključuje tek po vlasničinoj potvrdi, posle provere robots.txt-a i pretrage po ISBN-u.
+  **Prometej i Data Status uključeni su po potvrdi vlasnice (2026-11-24)**, njihovi domeni su dodati u belu listu (migracija 0028). Crawl-delay iz robots.txt-a važi samo za sajt koji ga traži (Data Status: 10 s).
 - **Ne dodavati domene izdavača** u listu za korice. `knjige.korice_url`: samo https, do 500
   znakova, samo domeni sa liste (`DOZVOLJENI_DOMENI_KORICA` u `api/_lib/bela-lista.js` I
   `privatno.domeni_korica`; `npm run test:db` pada ako se razilaze). U praksi se koriste samo

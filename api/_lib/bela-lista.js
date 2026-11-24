@@ -29,6 +29,10 @@ export const DOZVOLJENI_DOMENI = [
   "klett.rs",
   // geopoetika.rs ne odgovara; izdavač je na geopoetika.com
   "geopoetika.com",
+
+  // Dodato po potvrdi vlasnice (2026-11-24, migracija 0028): robots.txt proveren, vidi docs/korice-izdavaci.md
+  "prometej.rs",
+  "datastatus.rs",
 ];
 
 // ───────────────────────── korice ─────────────────────────
