@@ -10,13 +10,14 @@ const T = tekst.osoblje;
 const STAVKE = [
   { putanja: "/bibliotekar/unos", kljuc: "unos" },
   { putanja: "/bibliotekar/knjige", kljuc: "knjige" },
+  { putanja: "/bibliotekar/razvrstavanje", kljuc: "razvrstavanje" },
   { putanja: "/bibliotekar/clanovi", kljuc: "clanovi" },
   { putanja: "/bibliotekar/nabavka", kljuc: "nabavka" },
   { putanja: "/bibliotekar/utisak", kljuc: "pult" },
   { putanja: "/bibliotekar/prijave", kljuc: "prijave" },
 ];
 
-// Početni ekran za bibliotekare i administratore: šest alata, svaki sa jednom rečenicom. Uz „Пријаве"
+// Početni ekran za bibliotekare i administratore: sedam alata, svaki sa jednom rečenicom. Uz „Пријаве"
 // stoji broj nerešenih (greška pri učitavanju je tiha: broj samo izostane).
 export default function BibliotekarPocetna() {
   const [otvorene, setOtvorene] = useState(0);
