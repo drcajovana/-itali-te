@@ -1778,6 +1778,32 @@ async function main() {
     return !z.error && z.data[0]?.bez_korice === direktno.count ? true : `${opis(z)} direktno=${direktno.count}`;
   });
 
+  faza("22a. Filter žanra: samo bibliotekar, filter i spisak žanrova se poklapaju sa direktnim brojanjem (migracija 0030)");
+  const U22a = await napraviClana("zanr1", "citalac");
+  const ZAN = "RLS-test žanr";
+  await napraviKnjigu("ZAN-A", { zanrovi: [ZAN, "RLS-test drugi"] });
+  await napraviKnjigu("ZAN-B", { zanrovi: [ZAN] });
+  await napraviKnjigu("ZAN-C", { zanrovi: [] });
+  const upitZan = N("ZAN-");
+  await provera("običan član dobija prazno (bez greške) iz liste sa žanrom i iz spiska žanrova", async () => {
+    const a = await U22a.db.rpc("pregled_knjiga", { p_upit: upitZan, p_zanr: ZAN });
+    const b = await U22a.db.rpc("pregled_knjiga_zanrovi", { p_upit: upitZan });
+    return !a.error && a.data.length === 0 && !b.error && b.data.length === 0 ? true : `${opis(a)} / ${opis(b)}`;
+  });
+  await provera("anon nema pravo ni na spisak žanrova ni na listu sa žanrom", async () => {
+    const a = await anon.rpc("pregled_knjiga_zanrovi");
+    const b = await anon.rpc("pregled_knjiga", { p_zanr: ZAN });
+    return nedostupna(a) && nedostupna(b) ? true : `${potpisGreske(a)} / ${potpisGreske(b)}`;
+  });
+  await provera("bibliotekar: žanr vraća 2 knjige (i niz žanrova u redu), „__bez__” 1, nepoznat žanr 0; spisak žanrova: žanr 2, drugi 1, bez žanra 1", async () => {
+    const l = await BIB.db.rpc("pregled_knjiga", { p_upit: upitZan, p_zanr: ZAN });
+    const b = await BIB.db.rpc("pregled_knjiga", { p_upit: upitZan, p_zanr: "__bez__" });
+    const n = await BIB.db.rpc("pregled_knjiga", { p_upit: upitZan, p_zanr: "RLS-test nepostojeci" });
+    const s = await BIB.db.rpc("pregled_knjiga_zanrovi", { p_upit: upitZan });
+    const m = Object.fromEntries((s.data ?? []).map((x) => [x.kljuc, x.broj]));
+    return !l.error && l.data.length === 2 && Array.isArray(l.data[0].zanrovi) && !b.error && b.data.length === 1 && !n.error && n.data.length === 0 && !s.error && m[ZAN] === 2 && m["RLS-test drugi"] === 1 && m.__bez__ === 1 ? true : `${opis(l)} ${opis(b)} ${opis(n)} ${opis(s)}`;
+  });
+
   faza("23. Uklanjanje knjige sa police: svoj red da, tuđi ne, utisak ostaje");
   const A23 = await napraviClana("pol1", "citalac");
   const B23 = await napraviClana("pol2", "citalac");

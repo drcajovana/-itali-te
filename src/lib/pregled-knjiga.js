@@ -10,10 +10,18 @@ export async function ucitajZbirKnjiga() {
   return data?.[0] ?? null;
 }
 
-// Spisak izdavača (kljuc, naziv, broj) po ostalim aktivnim filterima (pretraga, izvor, odluka, korica), ne po izabranom izdavaču.
-export async function ucitajIzdavace({ upit = "", izvor = "", odluka = "", korica = "" } = {}) {
-  const p = parametriPregleda({ upit, izvor, odluka, korica });
-  const { data, error } = await supabase.rpc("pregled_knjiga_izdavaci", { p_upit: p.p_upit, p_izvor: p.p_izvor, p_odluka: p.p_odluka, p_korica: p.p_korica });
+// Spisak izdavača (kljuc, naziv, broj) po ostalim aktivnim filterima (pretraga, izvor, odluka, korica, žanr), ne po izabranom izdavaču.
+export async function ucitajIzdavace({ upit = "", izvor = "", odluka = "", korica = "", zanr = "" } = {}) {
+  const p = parametriPregleda({ upit, izvor, odluka, korica, zanr });
+  const { data, error } = await supabase.rpc("pregled_knjiga_izdavaci", { p_upit: p.p_upit, p_izvor: p.p_izvor, p_odluka: p.p_odluka, p_korica: p.p_korica, p_zanr: p.p_zanr });
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Spisak žanrova (kljuc, naziv, broj) po ostalim aktivnim filterima (pretraga, izvor, odluka, korica, izdavač), ne po izabranom žanru (migracija 0030).
+export async function ucitajZanrove({ upit = "", izvor = "", odluka = "", korica = "", izdavac = "" } = {}) {
+  const p = parametriPregleda({ upit, izvor, odluka, korica, izdavac });
+  const { data, error } = await supabase.rpc("pregled_knjiga_zanrovi", { p_upit: p.p_upit, p_izvor: p.p_izvor, p_odluka: p.p_odluka, p_korica: p.p_korica, p_izdavac: p.p_izdavac });
   if (error) throw error;
   return data ?? [];
 }

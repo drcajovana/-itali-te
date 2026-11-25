@@ -113,7 +113,8 @@ try {
   const DOMENI29 = fajlovi.filter((f) => /^0029_/.test(f));
   const NOVI_DOMENI_29 = ["pravoslavnarec.com", "portalibris.rs"];
   const NOVI_DOMENI = [...NOVI_DOMENI_28, ...NOVI_DOMENI_29];
-  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x) && !POTPIS.includes(x) && !BLOKADE.includes(x) && !PREGLED.includes(x) && !IZDAVAC.includes(x) && !JEDINSTVEN.includes(x) && !KORICA27.includes(x) && !DOMENI28.includes(x) && !DOMENI29.includes(x))) await pusti(f);
+  const ZANR30 = fajlovi.filter((f) => /^0030_/.test(f));
+  for (const f of fajlovi.filter((x) => !KASNE.includes(x) && !POSLEDNJA.includes(x) && !NAKON.includes(x) && !STORAGE.includes(x) && !ISPRAVKA.includes(x) && !PUTANJA.includes(x) && !POLICA.includes(x) && !REZERVACIJE.includes(x) && !CITAOCI.includes(x) && !NABAVKA.includes(x) && !MODERACIJA.includes(x) && !POTPIS.includes(x) && !BLOKADE.includes(x) && !PREGLED.includes(x) && !IZDAVAC.includes(x) && !JEDINSTVEN.includes(x) && !KORICA27.includes(x) && !DOMENI28.includes(x) && !DOMENI29.includes(x) && !ZANR30.includes(x))) await pusti(f);
 
   // Redovi koji su mogli da nastanu pre 0009 i 0010: nenormalizovan ISBN, nesigurna korica.
   await db.query(
@@ -1970,6 +1971,102 @@ try {
   for (const f of DOMENI29) await pusti(f);
   ok(JSON.stringify(await listaDomena()) === JSON.stringify(posle29), "0029 je idempotentna: drugo puštanje ne duplira i ne menja listu", await listaDomena());
 
+  // ───────── 0030: filter po žanru u pregledu knjiga ─────────
+  faza("0030: filter po žanru u pregledu knjiga, žanrovi u listi, spisak žanrova sa brojevima, samo bibliotekar");
+  const otisakPolitika30 = async () =>
+    JSON.stringify((await db.query("select c.relname, p.polname, p.polcmd::text as cmd, pg_get_expr(p.polqual, p.polrelid) as q, pg_get_expr(p.polwithcheck, p.polrelid) as w from pg_policy p join pg_class c on c.oid = p.polrelid order by 1, 2")).rows);
+  const politikePre30 = await otisakPolitika30();
+  const SRP = "Српска књижевност";
+  const DEC = "Дечје књиге";
+  const IST = "Историја";
+  const k30 = async (naslov, izd, zanrovi, spojena = null) =>
+    (await db.query("insert into knjige (naslov, izdavac, zanrovi, spojena_sa_id) values ($1, $2, $3::text[], $4) returning id", [naslov, izd, zanrovi, spojena])).rows[0].id;
+  const K30A = await k30("Z30 roman 1", "Laguna", `{"${SRP}","${DEC}"}`);
+  await k30("Z30 roman 2", "Laguna", `{"${SRP}"}`);
+  await k30("Z30 istorija", "Vulkan", `{"${IST}"}`);
+  await k30("Z30 dupli", "Vulkan", `{"${IST}","${IST}"}`);
+  await k30("Z30 bez 1", "Laguna", "{}");
+  await k30("Z30 bez 2", null, "{}");
+  await k30("Z30 prazan", "Delfi", '{""}');
+  await k30("Z30 spojena", "Laguna", `{"${IST}"}`, K30A);
+
+  r = await kao("authenticated", BIB, "select * from public.pregled_knjiga('Z30', null, null, 'najnovije', 50, 0, null, null, $1)", [SRP]);
+  ok(Boolean(r.greska), "PRE 0030: lista nema parametar za žanr", r.greska?.message ?? r.redovi?.length);
+  r = await kao("authenticated", BIB, "select * from public.pregled_knjiga_zanrovi('Z30')");
+  ok(Boolean(r.greska), "PRE 0030: spiska žanrova nema", r.greska?.message ?? r.redovi?.length);
+
+  for (const f of ZANR30) await pusti(f);
+
+  ok((await otisakPolitika30()) === politikePre30, "0030: nijedna politika (RLS) nije dodata, izbrisana ni izmenjena");
+  const m30 = fs.readFileSync(path.join(MIGRACIJE, ZANR30[0]), "utf8").replace(/^\s*--.*$/gm, "");
+  ok(!/\b(create|drop|alter)\s+policy\b/i.test(m30) && !/create\s+table|add column/i.test(m30), "0030 ne piše politike, tabele ni kolone");
+  const verzije30 = (await db.query("select p.proname, count(*)::int as n from pg_proc p join pg_namespace n on n.oid = p.pronamespace where (n.nspname = 'public' and p.proname in ('pregled_knjiga', 'pregled_knjiga_izdavaci', 'pregled_knjiga_zanrovi', 'pregled_knjiga_zbir')) or (n.nspname = 'privatno' and p.proname = 'pregled_knjige_filter') group by 1 order by 1")).rows;
+  ok(verzije30.length === 5 && verzije30.every((v) => v.n === 1), "posle 0030 svaka od pet funkcija postoji u tačno jednoj verziji (stari potpisi su obrisani, nema dvosmislenih poziva)", verzije30);
+
+  const lista30 = (zanr, izd = null, korica = null) => kao("authenticated", BIB, "select naslov, zanrovi from public.pregled_knjiga('Z30', null, null, 'naslov', 50, 0, $1, $2, $3)", [izd, korica, zanr]);
+  r = await lista30(SRP);
+  ok(!r.greska && r.redovi.map((x) => x.naslov).join() === "Z30 roman 1,Z30 roman 2" && r.redovi[0].zanrovi.includes(DEC), "žanr „Српска књижевност” vraća dve knjige, a lista nosi i niz žanrova knjige", r.greska?.message ?? r.redovi);
+  r = await lista30(IST);
+  ok(!r.greska && r.redovi.map((x) => x.naslov).join() === "Z30 dupli,Z30 istorija", "žanr „Историја”: dve knjige (ona sa duplim žanrom jednom), spojeni duplikat se ne računa", r.greska?.message ?? r.redovi);
+  r = await lista30("__bez__");
+  ok(!r.greska && r.redovi.map((x) => x.naslov).join() === "Z30 bez 1,Z30 bez 2,Z30 prazan", "„__bez__” vraća knjige bez žanra (prazan niz i niz samo sa praznim tekstom)", r.greska?.message ?? r.redovi);
+  r = await lista30("Непостојећи");
+  ok(!r.greska && r.redovi.length === 0, "žanr koji niko nema daje praznu listu, bez greške", r.greska?.message ?? r.redovi);
+  r = await lista30(null);
+  ok(!r.greska && r.redovi.length === 7, "bez filtera žanra vraćene su sve matične knjige (7, bez spojene)", r.greska?.message ?? r.redovi?.length);
+  r = await lista30("  ");
+  ok(!r.greska && r.redovi.length === 7, "prazan filter žanra je isto što i bez filtera", r.greska?.message ?? r.redovi?.length);
+  r = await kao("authenticated", BIB, "select ukupno from public.pregled_knjiga('Z30', null, null, 'najnovije', 1, 0, null, null, $1) limit 1", [SRP]);
+  ok(!r.greska && Number(r.redovi[0]?.ukupno) === 2, "ukupan broj u redu prati filter žanra (2) i kad je stranica kraća", r.greska?.message ?? r.redovi);
+  r = await lista30(SRP, "laguna");
+  ok(!r.greska && r.redovi.length === 2, "filter žanra radi zajedno sa izdavačem (Laguna + srpska književnost: 2)", r.greska?.message ?? r.redovi);
+  r = await lista30(SRP, "vulkan");
+  ok(!r.greska && r.redovi.length === 0, "Vulkan + srpska književnost: nema knjiga", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select naslov from public.pregled_knjiga('Z30', null, null, 'naslov', 50, 0, null, 'bez', $1)", [IST]);
+  ok(!r.greska && r.redovi.length === 2, "filter žanra radi zajedno sa koricom (sve Z30 knjige su bez korice: istorija 2)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select * from public.pregled_knjiga('Z30', null, null, 'naslov', 50, 0, null, 'sa', $1)", [IST]);
+  ok(!r.greska && r.redovi.length === 0, "žanr + „Са корицом”: nema knjiga", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select naslov from public.pregled_knjiga('Z30 roman', null, null, 'naslov', 50, 0, null, null, $1)", [DEC]);
+  ok(!r.greska && r.redovi.length === 1, "žanr radi zajedno sa pretragom po naslovu", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select naslov from public.pregled_knjiga('Z30', null, null, 'naslov', 50, 0, null, null)");
+  ok(!r.greska && r.redovi.length === 7, "poziv sa starim brojem parametara (bez žanra) i dalje radi", r.greska?.message ?? r.redovi?.length);
+
+  r = await kao("authenticated", BIB, "select kljuc, naziv, broj from public.pregled_knjiga_zanrovi('Z30')");
+  const mz30 = Object.fromEntries((r.redovi ?? []).map((x) => [x.kljuc, x.broj]));
+  ok(!r.greska && mz30[SRP] === 2 && mz30[DEC] === 1 && mz30[IST] === 2 && mz30.__bez__ === 3 && r.redovi.length === 4 && r.redovi.at(-1).kljuc === "__bez__" && r.redovi[0].broj >= r.redovi[1].broj, "spisak žanrova: srpska 2, dečje 1, istorija 2 (knjiga se broji jednom po žanru), bez žanra 3 (poslednje), od najbrojnijeg", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select kljuc, broj from public.pregled_knjiga_zanrovi('Z30', null, null, null, 'laguna')");
+  const mzl = Object.fromEntries((r.redovi ?? []).map((x) => [x.kljuc, x.broj]));
+  ok(!r.greska && mzl[SRP] === 2 && mzl[DEC] === 1 && mzl.__bez__ === 1 && !(IST in mzl), "spisak žanrova prati izabranog izdavača (Laguna: srpska 2, dečje 1, bez žanra 1, istorije nema)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select kljuc, broj from public.pregled_knjiga_zanrovi('Z30', null, null, null, '__bez__')");
+  ok(!r.greska && r.redovi.length === 1 && r.redovi[0].kljuc === "__bez__" && r.redovi[0].broj === 1, "izdavač „bez” u spisku žanrova: jedna knjiga, bez žanra", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select kljuc from public.pregled_knjiga_zanrovi('Z30', 'drugo')");
+  ok(r.greska?.code === "22023", "spisak žanrova: nepoznat izvor je greška 22023 (isti filter kao lista)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select kljuc, broj from public.pregled_knjiga_izdavaci('Z30', null, null, null, $1)", [IST]);
+  const mi30 = Object.fromEntries((r.redovi ?? []).map((x) => [x.kljuc, x.broj]));
+  ok(!r.greska && mi30.vulkan === 2 && Object.keys(mi30).length === 1, "spisak izdavača prati filter žanra (istorija: samo Vulkan, 2)", r.greska?.message ?? r.redovi);
+  r = await kao("authenticated", BIB, "select kljuc from public.pregled_knjiga_izdavaci('Z30')");
+  ok(!r.greska && r.redovi.length > 0, "spisak izdavača radi i sa starim brojem parametara", r.greska?.message ?? r.redovi?.length);
+
+  r = await kao("authenticated", UA, "select * from public.pregled_knjiga('Z30', null, null, 'najnovije', 50, 0, null, null, $1)", [SRP]);
+  const rzz = await kao("authenticated", UA, "select * from public.pregled_knjiga_zanrovi('Z30')");
+  const rzi = await kao("authenticated", UA, "select * from public.pregled_knjiga_izdavaci('Z30', null, null, null, $1)", [IST]);
+  ok(!r.greska && r.redovi.length === 0 && !rzz.greska && rzz.redovi.length === 0 && !rzi.greska && rzi.redovi.length === 0, "običan član dobija prazno (bez greške) iz liste, spiska žanrova i spiska izdavača", [r.greska?.message, rzz.greska?.message, rzi.greska?.message]);
+  r = await kao("anon", null, "select * from public.pregled_knjiga(null, null, null, 'najnovije', 5, 0, null, null, $1)", [SRP]);
+  ok(nemaPrava(r), "anon ne sme da pozove listu", r.greska?.message ?? r.redovi);
+  r = await kao("anon", null, "select * from public.pregled_knjiga_zanrovi()");
+  ok(nemaPrava(r), "anon ne sme da pozove spisak žanrova", r.greska?.message ?? r.redovi);
+  const f30 = (await db.query("select p.proname, p.prosecdef, p.proconfig, has_function_privilege('anon', p.oid, 'execute') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname in ('pregled_knjiga', 'pregled_knjiga_izdavaci', 'pregled_knjiga_zanrovi', 'pregled_knjiga_zbir') order by 1")).rows;
+  ok(f30.length === 4 && f30.every((f) => f.prosecdef === true && (f.proconfig ?? []).some((c) => c.startsWith("search_path=")) && f.anon === false), "sve četiri javne funkcije su SECURITY DEFINER sa search_path i nedostupne anon-u", f30);
+  const kolone30 = (await db.query("select pg_get_function_result(p.oid) as t from pg_proc p where p.proname in ('pregled_knjiga', 'pregled_knjiga_zanrovi') and p.pronamespace = 'public'::regnamespace")).rows.map((x) => x.t).join(" ");
+  ok(!/uneo_id|clan_id|nadimak|broj_kartice|sifra_poziva/.test(kolone30) && /zanrovi text\[\]/.test(kolone30), "nijedna izlazna kolona ne vodi do člana; lista vraća zanrovi", kolone30);
+
+  const pre30 = JSON.stringify((await db.query("select proname, pg_get_functiondef(oid) as d from pg_proc where proname in ('pregled_knjiga', 'pregled_knjiga_izdavaci', 'pregled_knjiga_zanrovi', 'pregled_knjiga_zbir', 'pregled_knjige_filter') order by 1")).rows);
+  await db.exec(fs.readFileSync(path.join(MIGRACIJE, ZANR30[0]), "utf8"));
+  const posle30 = JSON.stringify((await db.query("select proname, pg_get_functiondef(oid) as d from pg_proc where proname in ('pregled_knjiga', 'pregled_knjiga_izdavaci', 'pregled_knjiga_zanrovi', 'pregled_knjiga_zbir', 'pregled_knjige_filter') order by 1")).rows);
+  ok(pre30 === posle30 && (await otisakPolitika30()) === politikePre30, "0030 je idempotentna: drugo puštanje ne duplira funkcije i ne menja politike");
+  r = await lista30(SRP);
+  ok(!r.greska && r.redovi.length === 2, "posle drugog puštanja filter i dalje radi", r.greska?.message ?? r.redovi?.length);
+
   // ───────── uklanjanje knjige sa police ─────────
   faza("Polica: član uklanja samo svoj red (RLS polica_svoja), tuđi i bibliotekarov pokušaj ne brišu ništa, a utisak ostaje");
   const KUP = await nova("POLICA Uklanjanje");
@@ -1994,8 +2091,8 @@ try {
   console.log("   javne funkcije u šemi public (anon / authenticated može da izvrši):");
   for (const f of javne.rows) console.log(`     ${f.proname.padEnd(18)} ${f.anon ? "anon" : "----"}  ${f.auth ? "authenticated" : "-------------"}`);
   ok(javne.rows.every((f) => !f.anon), "nijedna javna funkcija nije dostupna anon-u", javne.rows.filter((f) => f.anon));
-  ok(JSON.stringify(javne.rows.map((f) => f.proname)) === JSON.stringify(["posalji_poziv", "pregled_knjiga", "pregled_knjiga_izdavaci", "pregled_knjiga_zbir", "prihvati_poziv", "spoji_knjige", "trazi_knjige", "uzmi_zahtev"]),
-    "javne funkcije su tačno: posalji_poziv, pregled_knjiga, pregled_knjiga_izdavaci, pregled_knjiga_zbir, prihvati_poziv, spoji_knjige, trazi_knjige, uzmi_zahtev", javne.rows.map((f) => f.proname));
+  ok(JSON.stringify(javne.rows.map((f) => f.proname)) === JSON.stringify(["posalji_poziv", "pregled_knjiga", "pregled_knjiga_izdavaci", "pregled_knjiga_zanrovi", "pregled_knjiga_zbir", "prihvati_poziv", "spoji_knjige", "trazi_knjige", "uzmi_zahtev"]),
+    "javne funkcije su tačno: posalji_poziv, pregled_knjiga, pregled_knjiga_izdavaci, pregled_knjiga_zanrovi, pregled_knjiga_zbir, prihvati_poziv, spoji_knjige, trazi_knjige, uzmi_zahtev", javne.rows.map((f) => f.proname));
   const bezRls = await db.query(`select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
                                   where n.nspname in ('public', 'privatno') and c.relkind = 'r' and not c.relrowsecurity order by 1`);
   ok(bezRls.rows.length === 0, "svaka tabela u public i privatno ima uključen RLS", bezRls.rows);

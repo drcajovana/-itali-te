@@ -3,6 +3,7 @@
 //   npm run admin:uvezi-fond                  probni režim (podrazumevani): ništa se ne upisuje, ispisuje se plan
 //   npm run admin:uvezi-fond -- --upisi       upisuje u bazu (serije po 200), pa proverava da je drugi prolaz prazan
 //   npm run admin:uvezi-fond -- --fajl=putanja.csv --primeri=20
+//   npm run admin:uvezi-fond -- --fajl=putanja.csv --samo-dopune [--upisi]   ne upisuje nove knjige, samo dopunjuje postojeće
 //
 // Radi sa servisnim ključem iz .env (SUPABASE_SERVICE_ROLE_KEY), kao scripts/resetuj-pin.mjs. Ključ se nigde ne ispisuje.
 // Pravila uvoza su u src/lib/uvoz-fonda.js (ista logika koju proverava npm run test:api): izvor 'fond', u_fondu = true, odluka
@@ -34,6 +35,10 @@ if (UPISI && arg("probno")) {
   console.error("--probno i --upisi se međusobno isključuju.");
   process.exit(2);
 }
+// --samo-dopune: nove knjige se NE upisuju, samo se dopunjuju one koje su već u bazi (npr. žanrovi iz ponovnog izvoza). Treba kad su neke
+// knjige iz izvoza namerno obrisane iz baze, a uvoz ih inače vidi kao „nove" pa bi ih vratio.
+const SAMO_DOPUNE = Boolean(arg("samo-dopune"));
+const bezNovih = (p) => (SAMO_DOPUNE ? { ...p, nove: [] } : p);
 const FAJL = vrednost("fajl", "uvoz/fond-2025-2026.csv");
 const PRIMERA = Math.max(1, Number(vrednost("primeri", "10")) || 10);
 const SERIJA = 200;
@@ -44,7 +49,7 @@ async function ucitajPostojece() {
   const sve = [];
   for (let od = 0; ; od += 1000) {
     const { data, error } = await S.from("knjige")
-      .select("id, naslov, autor, izdavac, godina, isbn, izvor, u_fondu, odluka_nabavke, spojena_sa_id")
+      .select("id, naslov, autor, izdavac, godina, isbn, zanrovi, izvor, u_fondu, odluka_nabavke, spojena_sa_id")
       .order("id")
       .range(od, od + 999);
     if (error) throw new Error(`čitanje knjiga: ${error.message}`);
@@ -68,9 +73,12 @@ function ispisi(plan, ukupnoRedova) {
   console.log(`   PRESKOČENE, ponovljene u samom CSV-u:           ${z.duplikatiUFajlu}`);
   console.log(`   ODBIJENE:                                       ${z.odbijeni}`);
   console.log(`   upozorenja (knjiga se uvozi, polje se izostavlja): ${z.upozorenja}`);
+  const saZanrom = plan.nove.filter((k) => k.zanrovi?.length).length;
+  const zanrDopune = [...plan.dopune, ...plan.dopuneBezIsbna].filter((d) => d.izmena.zanrovi).length;
+  console.log(`   žanr: nove sa žanrom ${saZanrom}/${plan.nove.length}, postojećim knjigama se dopunjuje žanr: ${zanrDopune}`);
 
   console.log(`\n── Prvih ${PRIMERA} novih knjiga`);
-  naslovi(plan.nove, (k) => `red ${k.linija}: ${skrati(k.naslov)} | ${k.autor ?? "—"} | ${k.izdavac ?? "—"} | ${k.godina ?? "—"} | ISBN ${k.isbn ?? "—"}`);
+  naslovi(plan.nove, (k) => `red ${k.linija}: ${skrati(k.naslov)} | ${k.autor ?? "—"} | ${k.izdavac ?? "—"} | ${k.godina ?? "—"} | ISBN ${k.isbn ?? "—"} | ${k.zanrovi?.join("; ") || "bez žanra"}`);
   if (plan.dopune.length + plan.dopuneBezIsbna.length) {
     console.log(`\n── Prvih ${PRIMERA} dopuna postojećih knjiga`);
     naslovi([...plan.dopune, ...plan.dopuneBezIsbna], (d) => `red ${d.linija}: ${skrati(d.naslov)} → ${JSON.stringify(d.izmena)}`);
@@ -125,7 +133,9 @@ async function main() {
   const postojece = await ucitajPostojece();
   console.log(`U bazi je ${postojece.length} knjiga (${postojece.filter((k) => k.spojena_sa_id).length} spojenih duplikata se ne porede).`);
 
-  const plan = planiraj(unos, postojece);
+  const celPlan = planiraj(unos, postojece);
+  const plan = bezNovih(celPlan);
+  if (SAMO_DOPUNE) console.log(`\n--samo-dopune: ${celPlan.nove.length} novih knjiga iz CSV-a se NE upisuje (nema ih u bazi); samo se dopunjuju postojeće.`);
   ispisi(plan, podaci.length);
 
   if (!UPISI) {
@@ -162,7 +172,7 @@ async function main() {
   }
 
   // kontrola idempotentnosti: ponovno planiranje nad stanjem posle upisa ne sme da ima šta da radi
-  const posle = planiraj(unos, await ucitajPostojece());
+  const posle = bezNovih(planiraj(unos, await ucitajPostojece()));
   const z2 = sazetak(posle, podaci.length);
   console.log("\n── Izveštaj");
   console.log(`   upisano novih: ${izvestaj.nove}, dopunjeno: ${izvestaj.dopune}, grešaka: ${izvestaj.greske.length}`);

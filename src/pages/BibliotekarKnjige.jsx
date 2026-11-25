@@ -10,8 +10,8 @@ import { ukloniKoricu } from "../lib/knjige.js";
 import { postaviOdluku } from "../lib/nabavka.js";
 import { datumIzVremena } from "../lib/osoblje-logika.js";
 import { formatDatum } from "../lib/polica-logika.js";
-import { IZVORI, KORICE, ODLUKE, REDOSLEDI, filteriIzAdrese, filteriUAdresu, grupeZbira, imaJos, kljucFiltera, kljucGreskeIzmene, mozeDaBrise, opcijeIzdavaca, poljaIzmene } from "../lib/pregled-knjiga-logika.js";
-import { ucitajIzdavace, ucitajStranuKnjiga, ucitajZbirKnjiga } from "../lib/pregled-knjiga.js";
+import { IZVORI, KORICE, ODLUKE, REDOSLEDI, filteriIzAdrese, filteriUAdresu, grupeZbira, imaJos, kljucFiltera, kljucGreskeIzmene, mozeDaBrise, opcijeIzdavaca, opcijeZanrova, poljaIzmene } from "../lib/pregled-knjiga-logika.js";
+import { ucitajIzdavace, ucitajStranuKnjiga, ucitajZanrove, ucitajZbirKnjiga } from "../lib/pregled-knjiga.js";
 import { popuni } from "../lib/prijave-logika.js";
 import { stil } from "../lib/stil.js";
 import { tekst } from "../lib/tekst.js";
@@ -226,6 +226,7 @@ function KnjigaDijalog({ k: pocetna, uloga, onZatvori, naIzmenjeno, naObrisano }
         </dl>
       </div>
       <dl className="mt-2">
+        <Podatak natpis={T.detalji.zanr} vrednost={k.zanrovi?.join(", ")} />
         <Podatak natpis={T.detalji.izvor} vrednost={T.izvori[k.izvor] ?? k.izvor} />
         <div className="flex items-center gap-3 border-b border-linija py-2 text-sm">
           <label htmlFor="stanje-knjige" className="w-28 flex-none text-mastilo-2">
@@ -354,6 +355,7 @@ function RedKnjige({ k, naOtvori }) {
           <span className="line-clamp-3 font-naslov text-[15.5px] font-bold leading-tight tracking-[-0.02em]">{k.naslov}</span>
           <span className="mt-0.5 line-clamp-1 text-sm text-mastilo-2">{k.autor || T.bezAutora}</span>
           <span className="line-clamp-1 text-xs text-mastilo-2">{[k.izdavac, k.godina].filter(Boolean).join(", ") || "\u00A0"}</span>
+          {k.zanrovi?.length > 0 && <span className="line-clamp-1 text-xs font-medium text-bordo">{k.zanrovi.join(" \u00B7 ")}</span>}
           <span className="mt-2 flex flex-wrap items-center gap-1.5">
             <span className={k.izvor === "fond" ? stil.izvorFond : stil.izvor}>{T.izvoriKratko[k.izvor] ?? k.izvor}</span>
             <span className={k.odluka === "imamo" ? stil.izvorFond : stil.izvor}>{odluka}</span>
@@ -374,11 +376,12 @@ export default function BibliotekarKnjige() {
   // Filteri žive u adresi (?q=&izvor=&odluka=&izdavac=&redosled=), pa se izbor čuva pri osvežavanju i povratku na ekran.
   // Svaka promena filtera menja adresu bez novog zapisa u istoriji, a lista počinje iznova od prve strane (ključ filtera).
   const [params, setParams] = useSearchParams();
-  const { upit: trazi, izvor, odluka, izdavac, korica, redosled } = filteriIzAdrese(params);
-  const postavi = (izmena) => setParams(filteriUAdresu({ upit: trazi, izvor, odluka, izdavac, korica, redosled, ...izmena }), { replace: true });
+  const { upit: trazi, izvor, odluka, izdavac, korica, zanr, redosled } = filteriIzAdrese(params);
+  const postavi = (izmena) => setParams(filteriUAdresu({ upit: trazi, izvor, odluka, izdavac, korica, zanr, redosled, ...izmena }), { replace: true });
   // Polje za pretragu ima svoj tekst; u adresu ide tek kad se kucanje zaustavi.
   const [upit, setUpit] = useState(trazi);
   const [izdavaci, setIzdavaci] = useState({ kljuc: null, redovi: [] });
+  const [zanrovi, setZanrovi] = useState({ kljuc: null, redovi: [] });
   const [zbir, setZbir] = useState({ ucitano: false, podaci: null, greska: false });
   // Rezultat pamti za koji je filter učitan; dok se ne poklopi sa izabranim, ekran javlja da učitava.
   const [lista, setLista] = useState({ kljuc: null, redovi: [], ukupno: 0, greska: false });
@@ -389,9 +392,9 @@ export default function BibliotekarKnjige() {
 
   useEffect(() => {
     if (upit.trim() === trazi) return;
-    const t = setTimeout(() => setParams(filteriUAdresu({ upit, izvor, odluka, izdavac, korica, redosled }), { replace: true }), 300);
+    const t = setTimeout(() => setParams(filteriUAdresu({ upit, izvor, odluka, izdavac, korica, zanr, redosled }), { replace: true }), 300);
     return () => clearTimeout(t);
-  }, [upit, trazi, izvor, odluka, izdavac, korica, redosled, setParams]);
+  }, [upit, trazi, izvor, odluka, izdavac, korica, zanr, redosled, setParams]);
 
   useEffect(() => {
     let otkazano = false;
@@ -406,13 +409,13 @@ export default function BibliotekarKnjige() {
     };
   }, [osvezi]);
 
-  const filteri = { upit: trazi, izvor, odluka, izdavac, korica, redosled };
+  const filteri = { upit: trazi, izvor, odluka, izdavac, korica, zanr, redosled };
   const kljuc = kljucFiltera(filteri);
 
   useEffect(() => {
     let otkazano = false;
-    const k = kljucFiltera({ upit: trazi, izvor, odluka, izdavac, korica, redosled });
-    ucitajStranuKnjiga({ upit: trazi, izvor, odluka, izdavac, korica, redosled })
+    const k = kljucFiltera({ upit: trazi, izvor, odluka, izdavac, korica, zanr, redosled });
+    ucitajStranuKnjiga({ upit: trazi, izvor, odluka, izdavac, korica, zanr, redosled })
       .then(({ redovi, ukupno }) => !otkazano && setLista({ kljuc: k, redovi, ukupno, greska: false }))
       .catch((e) => {
         console.error("lista knjiga:", e?.code ?? e?.message);
@@ -421,13 +424,13 @@ export default function BibliotekarKnjige() {
     return () => {
       otkazano = true;
     };
-  }, [trazi, izvor, odluka, izdavac, korica, redosled]);
+  }, [trazi, izvor, odluka, izdavac, korica, zanr, redosled]);
 
-  // Spisak izdavača prati pretragu, izvor, odluku i koricu (ne i izabranog izdavača), pa brojevi odgovaraju onome što bi se dobilo.
+  // Spisak izdavača prati pretragu, izvor, odluku, koricu i žanr (ne i izabranog izdavača), pa brojevi odgovaraju onome što bi se dobilo.
   useEffect(() => {
     let otkazano = false;
-    const k = JSON.stringify([trazi, izvor, odluka, korica]);
-    ucitajIzdavace({ upit: trazi, izvor, odluka, korica })
+    const k = JSON.stringify([trazi, izvor, odluka, korica, zanr]);
+    ucitajIzdavace({ upit: trazi, izvor, odluka, korica, zanr })
       .then((redovi) => !otkazano && setIzdavaci({ kljuc: k, redovi }))
       .catch((e) => {
         console.error("izdavači:", e?.code ?? e?.message);
@@ -436,7 +439,22 @@ export default function BibliotekarKnjige() {
     return () => {
       otkazano = true;
     };
-  }, [trazi, izvor, odluka, korica, osvezi]);
+  }, [trazi, izvor, odluka, korica, zanr, osvezi]);
+
+  // Spisak žanrova prati pretragu, izvor, odluku, koricu i izdavača (ne i izabrani žanr), isto kao spisak izdavača.
+  useEffect(() => {
+    let otkazano = false;
+    const k = JSON.stringify([trazi, izvor, odluka, korica, izdavac]);
+    ucitajZanrove({ upit: trazi, izvor, odluka, korica, izdavac })
+      .then((redovi) => !otkazano && setZanrovi({ kljuc: k, redovi }))
+      .catch((e) => {
+        console.error("žanrovi:", e?.code ?? e?.message);
+        if (!otkazano) setZanrovi({ kljuc: k, redovi: [] });
+      });
+    return () => {
+      otkazano = true;
+    };
+  }, [trazi, izvor, odluka, korica, izdavac, osvezi]);
 
   async function ucitajJos() {
     if (jos) return;
@@ -464,6 +482,7 @@ export default function BibliotekarKnjige() {
   const ucitava = lista.kljuc !== kljuc;
   const g = grupeZbira(zbir.podaci);
   const opcijeIzd = opcijeIzdavaca(izdavaci.redovi, izdavac, T.izdavac);
+  const opcijeZan = opcijeZanrova(zanrovi.redovi, zanr, T.zanr);
 
   return (
     <>
@@ -522,6 +541,20 @@ export default function BibliotekarKnjige() {
           <select id="pregled-izdavac" value={izdavac} onChange={(e) => postavi({ izdavac: e.target.value })} className={`${stil.polje} mt-1.5`}>
             <option value="">{T.sviIzdavaci}</option>
             {opcijeIzd.map((o) => (
+              <option key={o.kljuc} value={o.kljuc}>
+                {o.natpis}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="pregled-zanr" className="text-sm font-medium text-mastilo-2">
+            {T.filterZanr}
+          </label>
+          <select id="pregled-zanr" value={zanr} onChange={(e) => postavi({ zanr: e.target.value })} className={`${stil.polje} mt-1.5`}>
+            <option value="">{T.sviZanrovi}</option>
+            {opcijeZan.map((o) => (
               <option key={o.kljuc} value={o.kljuc}>
                 {o.natpis}
               </option>

@@ -185,6 +185,9 @@ const cir = {
     filterIzdavac: "Издавач",
     sviIzdavaci: "Сви издавачи",
     izdavac: { stavka: "{naziv} ({n})", bez: "Без издавача" },
+    filterZanr: "Жанр",
+    sviZanrovi: "Сви жанрови",
+    zanr: { stavka: "{naziv} ({n})", bez: "Без жанра" },
     sve: "Све",
     redosled: "Редослед",
     redosledi: { najnovije: "Најновије прво", citaoca: "Највише читалаца", naslov: "По наслову" },
@@ -200,7 +203,7 @@ const cir = {
     obrisi: "Обриши",
     zatvori: "Затвори",
     otvori: "Отвори податке о књизи „{naslov}”",
-    detalji: { izvor: "Извор", odluka: "Стање", citaoca: "Читалаца на полици", uneto: "Унето", postaviSliku: "Постави слику", zameniSliku: "Замени слику", slikaPostavljena: "Слика корице је постављена.", koricaUklonjena: "Корица је уклоњена.", stranica: "Отвори страницу књиге", stanjeOk: "Стање је промењено.", stanjeGreska: "Стање није промењено. Покушајте поново.", stanjeNemaDozvole: "Немате право да мењате стање ове књиге." },
+    detalji: { izvor: "Извор", zanr: "Жанр", odluka: "Стање", citaoca: "Читалаца на полици", uneto: "Унето", postaviSliku: "Постави слику", zameniSliku: "Замени слику", slikaPostavljena: "Слика корице је постављена.", koricaUklonjena: "Корица је уклоњена.", stranica: "Отвори страницу књиге", stanjeOk: "Стање је промењено.", stanjeGreska: "Стање није промењено. Покушајте поново.", stanjeNemaDozvole: "Немате право да мењате стање ове књиге." },
     izmena: {
       naslov: "Измена књиге",
       polja: { naslov: "Наслов", autor: "Аутор", izdavac: "Издавач", godina: "Година", isbn: "ISBN" },

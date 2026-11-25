@@ -1,7 +1,8 @@
 // Izvoz iz COBISS-a (xlsx, kolone na ćirilici: COBISS.SR-ID, Наслов, Аутор, Издавач, Година издавања, ISBN, Број примерака (998c)...) →
-// CSV koji čita scripts/uvezi-fond.mjs (cobiss_id, naslov, autor, izdavac, godina, isbn, primeraka). Čista logika, bez fajlova i mreže
+// CSV koji čita scripts/uvezi-fond.mjs (cobiss_id, naslov, autor, izdavac, godina, isbn, primeraka, zanrovi). Čista logika, bez fajlova i mreže
 // (proverava je npm run test:api); raspakivanje xlsx-a (zip) je u scripts/cobiss-xlsx-u-csv.mjs.
 import { uIsbn13 } from "../src/lib/isbn.js";
+import { zanroviIzUdk } from "./udk-zanrovi.mjs";
 
 const ent = (s) =>
   String(s)
@@ -79,7 +80,9 @@ const KOLONE = {
   isbn: "ISBN",
   primeraka: "Број примерака (998c)",
 };
-export const ZAGLAVLJE_CSV = ["cobiss_id", "naslov", "autor", "izdavac", "godina", "isbn", "primeraka"];
+// Nije obavezna (stariji izvozi je mogu nemati): iz nje se prave žanrovi (scripts/udk-zanrovi.mjs).
+const KOLONA_UDK = "УДК за претраживање";
+export const ZAGLAVLJE_CSV = ["cobiss_id", "naslov", "autor", "izdavac", "godina", "isbn", "primeraka", "zanrovi"];
 
 const cisto = (v) => String(v ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
 
@@ -92,6 +95,7 @@ export function knjigeIzCobissa(redovi) {
     if (i < 0) return { greska: `u zaglavlju nema kolone „${ime}"` };
     ind[k] = i;
   }
+  const udk = zaglavlje.indexOf(KOLONA_UDK);
   const knjige = [];
   const preskoceno = [];
   for (const [n, red] of redovi.slice(1).entries()) {
@@ -110,6 +114,7 @@ export function knjigeIzCobissa(redovi) {
       godina: /^\d{4}$/.test(g) ? g : "",
       isbn: isbnIzCobissa(red[ind.isbn]),
       primeraka: String(primerakaIz998c(red[ind.primeraka])),
+      zanrovi: udk >= 0 ? zanroviIzUdk(red[udk]).join("; ") : "",
     });
   }
   return { knjige, preskoceno };

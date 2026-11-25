@@ -15,8 +15,9 @@ export const KORICE = ["bez", "sa"];
 export const BEZ_IZDAVACA = "__bez__";
 
 // Filteri iz ekrana → parametri RPC-a (prazno = bez filtera).
-export function parametriPregleda({ upit = "", izvor = "", odluka = "", izdavac = "", korica = "", redosled = "najnovije", pomeraj = 0 } = {}) {
+export function parametriPregleda({ upit = "", izvor = "", odluka = "", izdavac = "", korica = "", zanr = "", redosled = "najnovije", pomeraj = 0 } = {}) {
   return {
+    p_zanr: String(zanr ?? "").trim() || null, // tačan naziv žanra ili BEZ_ZANRA (migracija 0030)
     p_korica: KORICE.includes(korica) ? korica : null,
     p_izdavac: String(izdavac ?? "").trim() || null,
     p_upit: String(upit).trim() || null,
@@ -29,11 +30,11 @@ export function parametriPregleda({ upit = "", izvor = "", odluka = "", izdavac 
 }
 
 // Ključ filtera: kad se promeni, lista počinje iznova (stranice se ne mešaju).
-export const kljucFiltera = (f) => JSON.stringify([String(f.upit ?? "").trim(), f.izvor ?? "", f.odluka ?? "", f.izdavac ?? "", f.korica ?? "", f.redosled ?? "najnovije"]);
+export const kljucFiltera = (f) => JSON.stringify([String(f.upit ?? "").trim(), f.izvor ?? "", f.odluka ?? "", f.izdavac ?? "", f.korica ?? "", f.redosled ?? "najnovije", f.zanr ?? ""]);
 
 // Filteri u adresi (URL parametri), da se izbor sačuva pri osvežavanju i povratku na ekran. Samo vrednosti koje nisu
 // podrazumevane se upisuju; nepoznata vrednost izvora, odluke ili redosleda u adresi se ignoriše (ne šalje se bazi).
-export const PARAMETRI_ADRESE = { upit: "q", izvor: "izvor", odluka: "odluka", izdavac: "izdavac", korica: "korica", redosled: "redosled" };
+export const PARAMETRI_ADRESE = { upit: "q", izvor: "izvor", odluka: "odluka", izdavac: "izdavac", korica: "korica", zanr: "zanr", redosled: "redosled" };
 
 export function filteriIzAdrese(params) {
   const uzmi = (k) => params?.get?.(PARAMETRI_ADRESE[k]) ?? "";
@@ -47,6 +48,7 @@ export function filteriIzAdrese(params) {
     odluka: ODLUKE.includes(odluka) ? odluka : "",
     izdavac: uzmi("izdavac").slice(0, 200),
     korica: KORICE.includes(korica) ? korica : "",
+    zanr: uzmi("zanr").slice(0, 100),
     redosled: REDOSLEDI.includes(redosled) ? redosled : "najnovije",
   };
 }
@@ -60,6 +62,7 @@ export function filteriUAdresu(f) {
   if (ODLUKE.includes(f.odluka)) p.set(PARAMETRI_ADRESE.odluka, f.odluka);
   if (f.izdavac) p.set(PARAMETRI_ADRESE.izdavac, f.izdavac);
   if (KORICE.includes(f.korica)) p.set(PARAMETRI_ADRESE.korica, f.korica);
+  if (f.zanr) p.set(PARAMETRI_ADRESE.zanr, f.zanr);
   if (REDOSLEDI.includes(f.redosled) && f.redosled !== "najnovije") p.set(PARAMETRI_ADRESE.redosled, f.redosled);
   return p;
 }
@@ -74,6 +77,10 @@ export function opcijeIzdavaca(redovi, izabran, tekstovi) {
   if (izabran && !opcije.some((o) => o.kljuc === izabran)) opcije.push({ kljuc: izabran, natpis: natpis(izabran === BEZ_IZDAVACA ? tekstovi.bez : izabran, 0) });
   return opcije;
 }
+
+// Spisak žanrova iz baze (kljuc, naziv, broj) → opcije za padajući izbor, isto kao za izdavače: „Српска књижевност (42)", „Без жанра (3)".
+// „Без жанра" (BEZ_IZDAVACA = „__bez__") je isti znak koji baza koristi i za žanr (migracija 0030).
+export const opcijeZanrova = opcijeIzdavaca;
 
 // Polja forme za izmenu knjige iz reda liste (sve je tekst, kao i u formi za unos).
 export const poljaIzmene = (k) => ({ naslov: k?.naslov ?? "", autor: k?.autor ?? "", izdavac: k?.izdavac ?? "", godina: k?.godina != null ? String(k.godina) : "", isbn: k?.isbn ?? "" });

@@ -15,7 +15,7 @@ Radi sa servisnim ključem iz `.env` (`SUPABASE_SERVICE_ROLE_KEY`), kao `scripts
 
 ## Šta se upisuje
 
-Nova knjiga: `naslov`, `autor`, `izdavac`, `godina`, `isbn`, `izvor = 'fond'`, `u_fondu = true`. Ništa drugo: **ne** upisuju se COBISS ID (veza sa COBISS-om je
+Nova knjiga: `naslov`, `autor`, `izdavac`, `godina`, `isbn`, `zanrovi` (ako CSV ima kolonu `zanrovi`, vidi ispod), `izvor = 'fond'`, `u_fondu = true`. Ništa drugo: **ne** upisuju se COBISS ID (veza sa COBISS-om je
 uklonjena iz aplikacije), broj primeraka (aplikacija ih ne vodi; ostaje 0), opis, korice, `uneo_id` (prazan) ni odluka nabavke (prazna: knjiga u fondu bez odluke je
 efektivno „Имамо", isto kao u izveštaju za nabavku i u „Све књиге").
 
@@ -31,7 +31,7 @@ efektivno „Имамо", isto kao u izveštaju za nabavku i u „Све књи�
 
 ## Postojeća knjiga se samo dopunjava
 
-`u_fondu = true`, `izvor = 'fond'` (ako je bio drugi), i samo **prazna** polja (autor, izdavač, godina, ISBN). Popunjeno se ne prepisuje. **Odluka nabavke se ne menja**:
+`u_fondu = true`, `izvor = 'fond'` (ako je bio drugi), i samo **prazna** polja (autor, izdavač, godina, ISBN, žanrovi). Popunjeno se ne prepisuje (žanr koji je bibliotekar upisao ostaje). **Odluka nabavke se ne menja**:
 ako je postojeća knjiga imala odluku „набављамо" ili „не набављамо", a sada postaje „у фонду", to se ispiše u izveštaju da ga bibliotekar ručno uskladi.
 
 ## Neispravan ISBN ili godina
@@ -69,6 +69,27 @@ Pravila pretvaranja (`scripts/cobiss-izvoz.mjs`, proverava ih `npm run test:api`
 → „Кетрин Арден"; ako je nema, prva), „Prezime, Ime" postaje „Ime Prezime" (osim kad iza zareza ima cifara); **ISBN** je prva vrednost bez napomena u zagradama
 („978-86-7818-742-1 (PortaLibris; брош.)" → 9788678187421); **primeraka** iz polja 998c (`?c2/…` → 2); naslov i izdavač ostaju kakvi jesu. Redovi bez naslova se preskaču.
 Izvoz iz 2023. ima 1359 zapisa (sve su iz 2023, monografske publikacije); 93 su bez autora, 7 bez ISBN-a („Брош." bez broja), takvi se uvoze bez tih polja.
+
+## Žanrovi (iz UDK-a)
+
+Izvoz iz COBISS-a ima kolonu „УДК за претраживање" (npr. „821.163.41 - Српска књижевност; 94(497.11) - Историја Србије"). Pretvarač (`npm run admin:cobiss-csv`) je
+pretvara u kolonu `zanrovi` CSV-a: svaka UDK oznaka ide u jednu od oko 23 grupe po oblasti (srpska / strana književnost i književnost regiona, dečje knjige, strip, istorija,
+biografije, psihologija, filozofija i religija, ekonomija i pravo, medicina, tehnika, umetnost, sport, opšte znanje…), grupe se sabiraju bez ponavljanja, **najviše tri**
+po knjizi. Oznaka koju nijedno pravilo ne poznaje se ignoriše: knjiga bez poznate oznake ostaje bez žanra, a ne sa pogrešnim.
+
+Tabela pravila i nazivi grupa su u `scripts/udk-zanrovi.mjs` (menja se samo tamo; nazivi ne smeju da imaju zarez ni tačku-zarez, jer se žanrovi njima razdvajaju). Nazivi su
+podaci koji idu u bazu, ne tekst aplikacije. UDK je naučna klasifikacija: razlikuje oblast i jezik književnosti, ali ne i krimić, ljubavni roman ili fantastiku.
+
+U aplikaciji se žanr vidi i filtrira u „Све књиге" (bibliotekar i administrator): padajući izbor „Жанр" sa brojem knjiga u svakom žanru i opcijom „Без жанра", žanrovi na kartici
+i u dijalogu o knjizi. To je migracija `0030_pregled_knjiga_zanr.sql` (proširuje funkcije pregleda, a nova je `pregled_knjiga_zanrovi`); stanje filtera je u adresi (`?zanr=`).
+
+Kolona `zanrovi` nije obavezna (stariji CSV-ovi je nemaju, uvoz tada radi kao pre). Ponovni uvoz izvoza **dopunjava žanrove i knjigama koje su već u bazi** (isti ISBN):
+probni režim to prikazuje kao „postojećim knjigama se dopunjuje žanr", a knjiga kojoj je žanr već upisan se ne menja. Da bi se žanrovi dopunili starim knjigama, treba ponovo
+izvesti iz COBISS-a (stari CSV-ovi nemaju UDK) i pustiti `admin:cobiss-csv`, pa `admin:uvezi-fond` (probno, pa `--upisi`).
+
+**Obrisane knjige.** Uvoz ne zna da je neka knjiga namerno obrisana iz baze: za njega je „nova" i vratio bi je. Zato postoji `--samo-dopune`
+(`npm run admin:uvezi-fond -- --fajl=… --samo-dopune [--upisi]`): nove knjige se ne upisuju, samo se dopunjuju one koje su već u bazi (npr. žanrovi iz ponovnog izvoza).
+Probni režim ispiše koliko novih knjiga se preskače.
 
 ## Idempotentnost
 

@@ -7,7 +7,8 @@
 //   - ISBN se normalizuje kao u aplikaciji i bazi (isbn.js, privatno.isbn13, migracija 0010);
 //   - ista knjiga = isti ISBN I isti normalizovan naslov. Isti ISBN sa različitim naslovom su RAZLIČITE knjige (greška u
 //     COBISS-u) i ne spajaju se. Bez ISBN-a: normalizovan naslov + autor + godina;
-//   - postojeća knjiga se samo dopunjava (u_fondu, izvor, prazna polja), ništa popunjeno se ne prepisuje;
+//   - postojeća knjiga se samo dopunjava (u_fondu, izvor, prazna polja, žanrovi ako ih nema), ništa popunjeno se ne prepisuje;
+//   - žanrovi su neobavezna kolona CSV-a (pravi je scripts/cobiss-xlsx-u-csv.mjs iz UDK-a), pa ponovni uvoz izvoza dopuni žanrove i starim knjigama;
 //   - idempotentno: posle uspešnog upisa novo planiranje daje nula novih i nula dopuna.
 import { uIsbn13 } from "./isbn.js";
 
@@ -83,10 +84,17 @@ export function indeksiKolona(zaglavlje) {
     if (i < 0) return { greska: `u zaglavlju nema kolone „${k}"` };
     m[k] = i;
   }
+  m.zanrovi = imena.indexOf("zanrovi"); // nije obavezna: stariji CSV-ovi je nemaju (-1)
   return m;
 }
 
 const cisto = (v) => String(v ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
+
+// Žanrovi iz CSV-a: odvojeni tačka-zarezom ili zarezom, bez ponavljanja, najviše 5 po 50 znakova (isto ograničenje kao pri ručnom unosu u
+// unos-knjiga.js). Što ne staje se izostavlja, a ne odbija knjigu.
+export function zanroviIzPolja(sirov) {
+  return [...new Set(String(sirov ?? "").split(/[,;]/).map(cisto).filter((z) => z && z.length <= 50))].slice(0, 5);
+}
 
 // Jedan red CSV-a → { ok, knjiga, upozorenja } ili { ok: false, razlog }.
 // Neispravan ISBN ili godina NE odbijaju knjigu (knjiga postoji u fondu): polje se izostavlja, uz upozorenje.
@@ -121,6 +129,7 @@ export function urediRed(red, ind) {
       izdavac: cisto(red.polja[ind.izdavac]) || null,
       godina,
       isbn,
+      zanrovi: ind.zanrovi >= 0 ? zanroviIzPolja(red.polja[ind.zanrovi]) : [],
     },
   };
 }
@@ -152,12 +161,22 @@ export function dopunaPostojece(post, nova) {
   if (!post.izdavac && nova.izdavac) p.izdavac = nova.izdavac;
   if (post.godina == null && nova.godina != null) p.godina = nova.godina;
   if (!post.isbn && nova.isbn) p.isbn = nova.isbn;
+  if (!post.zanrovi?.length && nova.zanrovi?.length) p.zanrovi = nova.zanrovi; // žanr koji je neko već upisao se ne menja
   return p;
 }
 
 // Red za upis nove knjige. Ništa osim ovih kolona: bez opisa, korica, cobiss_id, primeraka, uneo_id i odluke
 // (odluka_nabavke ostaje prazna: knjiga u_fondu bez odluke je efektivno "Imamo").
-export const redZaUpis = (k) => ({ naslov: k.naslov, autor: k.autor, izdavac: k.izdavac, godina: k.godina, isbn: k.isbn, izvor: "fond", u_fondu: true });
+export const redZaUpis = (k) => ({
+  naslov: k.naslov,
+  autor: k.autor,
+  izdavac: k.izdavac,
+  godina: k.godina,
+  isbn: k.isbn,
+  ...(k.zanrovi?.length ? { zanrovi: k.zanrovi } : {}), // bez kolone u CSV-u red ostaje isti kao ranije (baza daje prazan niz)
+  izvor: "fond",
+  u_fondu: true,
+});
 
 // Ceo plan. `redovi` su rezultat urediRed za sve redove (ili { ok: false } sa linijom), `postojece` knjige iz baze.
 //   nove, dopune (po ISBN-u i naslovu), dopuneBezIsbna (po naslovu, autoru i godini kod knjige bez ISBN-a u bazi),
