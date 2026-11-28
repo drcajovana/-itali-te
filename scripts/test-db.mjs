@@ -1756,7 +1756,20 @@ try {
   const idClan = (await db.query("insert into public.knjige (naslov, izvor, u_fondu, odluka_nabavke, odluka_datum) values ('UVOZ Dopuna', 'clan', false, 'nabavljamo', '2026-01-01T00:00:00Z') returning id")).rows[0].id;
   r = await kao("service_role", null, "update public.knjige set u_fondu = true, izvor = 'fond', autor = 'Dopunjen Autor', isbn = '9780306406157' where id = $1 returning u_fondu, izvor, autor, isbn, odluka_nabavke, odluka_datum", [idClan]);
   ok(!r.greska && r.redovi[0]?.u_fondu === true && r.redovi[0]?.izvor === "fond" && r.redovi[0]?.autor === "Dopunjen Autor" && r.redovi[0]?.isbn === "9780306406157" && r.redovi[0]?.odluka_nabavke === "nabavljamo" && new Date(r.redovi[0]?.odluka_datum).toISOString().startsWith("2026-01-01"), "dopuna servisnom ulogom: u_fondu, izvor i prazna polja se postavljaju, a odluka nabavke i njen datum ostaju netaknuti (okidač knjige_odluka_zastita)", r.greska?.message ?? r.redovi);
-  ok(Object.keys(redZaUpis({ naslov: "x", autor: null, izdavac: null, godina: null, isbn: null })).sort().join() === "autor,godina,isbn,izdavac,izvor,naslov,u_fondu", "redZaUpis iz skripte ima samo kolone koje test iznad proverava (nikakvo uneo_id, odluka_nabavke, cobiss_id, broj_primeraka)");
+  ok(Object.keys(redZaUpis({ naslov: "x", autor: null, izdavac: null, godina: null, isbn: null })).sort().join() === "autor,godina,isbn,izdavac,izvor,naslov,u_fondu,zanrovi", "redZaUpis iz skripte ima samo očekivane kolone (nikakvo uneo_id, odluka_nabavke, cobiss_id, broj_primeraka)");
+  // Upis više redova odjednom kao kod Supabase-a (PostgREST): lista kolona je unija ključeva svih redova, a ključ koji redu nedostaje postaje null,
+  // NE podrazumevana vrednost. Zato jedna knjiga bez žanra bez polja zanrovi obara celu seriju (zanrovi je not null).
+  const kaoPostgrest = (redovi) => {
+    const kolone = [...new Set(redovi.flatMap((x) => Object.keys(x)))].join(", ");
+    return kao("service_role", null, `insert into public.knjige (${kolone}) select ${kolone} from jsonb_populate_recordset(null::public.knjige, $1::jsonb) returning naslov, zanrovi`, [JSON.stringify(redovi)]);
+  };
+  const uvozni = (naslov, zanrovi) => redZaUpis({ naslov: "UVOZ zanr " + naslov, autor: null, izdavac: null, godina: null, isbn: null, zanrovi });
+  const redBezPolja = uvozni("bez polja", []);
+  delete redBezPolja.zanrovi;
+  r = await kaoPostgrest([uvozni("sa", ["Историја"]), redBezPolja]);
+  ok(r.greska?.code === "23502" && /zanrovi/.test(r.greska.message), "serija u kojoj jednom redu nedostaje zanrovi pada cela (null krši not null) — ovako se prekidao uvoz 2017. i 2014.", r.greska?.message ?? r.redovi);
+  r = await kaoPostgrest([uvozni("sa", ["Историја"]), uvozni("bez", []), uvozni("star CSV", undefined)]);
+  ok(!r.greska && r.redovi.length === 3 && r.redovi.filter((x) => x.zanrovi.length === 0).length === 2, "redovi iz redZaUpis (sa žanrom, bez njega i bez kolone u CSV-u) upisuju se zajedno; bez žanra je prazan niz", r.greska?.message ?? r.redovi);
   const serija = Array.from({ length: 200 }, (_, i) => ["UVOZ serija " + i, "fond", true]);
   r = await kao("service_role", null, "insert into public.knjige (naslov, izvor, u_fondu) select * from unnest($1::text[], $2::text[], $3::boolean[]) returning id", [serija.map((x) => x[0]), serija.map((x) => x[1]), serija.map((x) => x[2])]);
   ok(!r.greska && r.redovi.length === 200, "serija od 200 knjiga se upisuje u jednom upitu", r.greska?.message ?? r.redovi?.length);

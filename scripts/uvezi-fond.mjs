@@ -15,7 +15,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { indeksiKolona, parsirajCsv, planiraj, redZaUpis, sazetak, urediRed } from "../src/lib/uvoz-fonda.js";
+import { indeksiKolona, parsirajCsv, planiraj, redZaUpis, sazetak, urediRedPremaZaglavlju } from "../src/lib/uvoz-fonda.js";
 
 const URL_ = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL;
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -126,7 +126,7 @@ async function main() {
     return 1;
   }
   const podaci = redovi.slice(1);
-  const sirova = podaci.map((r) => (r.polja.length === Object.keys(ind).length ? urediRed(r, ind) : { ok: false, razlog: `očekivano ${Object.keys(ind).length} kolona, ima ${r.polja.length}`, linija: r.linija }));
+  const sirova = podaci.map((r) => urediRedPremaZaglavlju(r, redovi[0].polja.length, ind));
   // redovi iz urediRed nose liniju u knjiga.linija; odbijeni nemaju knjigu, pa im se linija dodaje ovde
   const unos = sirova.map((u, i) => (u.ok ? u : { ...u, linija: podaci[i].linija, naslov: String(podaci[i].polja[ind.naslov] ?? "").trim() || null }));
 

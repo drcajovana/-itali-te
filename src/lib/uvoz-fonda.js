@@ -134,6 +134,12 @@ export function urediRed(red, ind) {
   };
 }
 
+// Red mora imati onoliko polja koliko ZAGLAVLJE tog fajla (ne koliko kolona poznajemo: zanrovi nije obavezna, pa stariji CSV ima 7).
+export function urediRedPremaZaglavlju(red, brojKolona, ind) {
+  if (red.polja.length !== brojKolona) return { ok: false, razlog: `očekivano ${brojKolona} kolona, ima ${red.polja.length}` };
+  return urediRed(red, ind);
+}
+
 const kNaslov = (k) => kljucTeksta(k.naslov);
 const kBezIsbn = (k) => `${kljucTeksta(k.naslov)}|${kljucTeksta(k.autor)}|${k.godina ?? ""}`;
 
@@ -173,7 +179,9 @@ export const redZaUpis = (k) => ({
   izdavac: k.izdavac,
   godina: k.godina,
   isbn: k.isbn,
-  ...(k.zanrovi?.length ? { zanrovi: k.zanrovi } : {}), // bez kolone u CSV-u red ostaje isti kao ranije (baza daje prazan niz)
+  // UVEK niz, i prazan: svi redovi jedne serije moraju imati iste ključeve. Pri upisu više redova odjednom, ključ koji jednom redu
+  // nedostaje šalje se kao null (a ne kao podrazumevana vrednost), pa pada cela serija (knjige.zanrovi je not null).
+  zanrovi: k.zanrovi?.length ? k.zanrovi : [],
   izvor: "fond",
   u_fondu: true,
 });
